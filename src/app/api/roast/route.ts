@@ -3,6 +3,12 @@ import { getPercentile, recordScore } from "@/lib/db";
 import { LlmConfig, LlmQuotaError, chatStream, defaultLlmConfig } from "@/lib/llm";
 import { beatPercent } from "@/lib/percentile";
 import { buildRoastMessages } from "@/lib/prompt";
+import {
+  checkRoastRateLimit,
+  getCachedRoast,
+  getCachedScan,
+  setCachedRoast,
+} from "@/lib/redis";
 import { clampScore, tierFor } from "@/lib/score";
 import type { RoastMeta, ScanResult } from "@/lib/types";
 
@@ -11,6 +17,8 @@ export const dynamic = "force-dynamic";
 
 /** Response header carrying the AI-adjusted score (base64'd JSON; it contains CJK). */
 export const ROAST_META_HEADER = "X-Roast-Meta";
+
+const USERNAME_RE = /^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$/;
 
 interface ByoKey {
   baseURL?: string;
@@ -21,6 +29,10 @@ interface ByoKey {
 interface RoastBody {
   scan?: ScanResult;
   byoKey?: ByoKey;
+}
+
+function clientIp(req: NextRequest): string {
+  return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "0.0.0.0";
 }
 
 function resolveConfig(byo?: ByoKey): { config: LlmConfig; isDefault: boolean } | null {
@@ -40,6 +52,65 @@ function parseDelta(head: string): number {
   return Math.max(-10, Math.min(10, n));
 }
 
+/** Bound a client-supplied scan so a fabricated payload can't bloat the prompt. */
+function sanitizeScan(scan: ScanResult): ScanResult {
+  return {
+    metrics: scan.metrics,
+    top_repos: (scan.top_repos ?? []).slice(0, 10).map((r) => ({
+      ...r,
+      description: r.description?.slice(0, 300) ?? null,
+      readme_excerpt: r.readme_excerpt?.slice(0, 500) ?? null,
+    })),
+    recent_prs: (scan.recent_prs ?? []).slice(0, 20).map((p) => ({
+      ...p,
+      title: p.title?.slice(0, 200) ?? null,
+    })),
+    scoring: scan.scoring,
+  };
+}
+
+function metaHeader(meta: RoastMeta): string {
+  return Buffer.from(JSON.stringify(meta), "utf-8").toString("base64");
+}
+
+function roastResponse(body: ReadableStream<Uint8Array> | string, meta: RoastMeta): Response {
+  return new Response(body, {
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Accel-Buffering": "no",
+      [ROAST_META_HEADER]: metaHeader(meta),
+    },
+  });
+}
+
+/** Adjusted score + tier + fresh percentile. Records to the leaderboard only on a
+ * fresh (non-replayed) default-model roast. */
+async function computeMeta(
+  scan: ScanResult,
+  delta: number,
+  record: boolean,
+): Promise<RoastMeta> {
+  const adjusted = clampScore(scan.scoring.final_score + delta);
+  const { tier, tier_label } = tierFor(adjusted);
+  if (record) {
+    await recordScore({
+      username: scan.metrics.username,
+      display_name: scan.metrics.name,
+      avatar_url: scan.metrics.avatar_url,
+      profile_url: scan.metrics.profile_url,
+      final_score: adjusted,
+      tier,
+      scanned_at: Date.now(),
+    });
+  }
+  const counts = await getPercentile(adjusted);
+  const percentile = counts
+    ? { beat: beatPercent(counts.below, counts.total), total: counts.total }
+    : null;
+  return { final_score: adjusted, tier, tier_label, delta, percentile };
+}
+
 export async function POST(req: NextRequest) {
   let body: RoastBody;
   try {
@@ -48,8 +119,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid_body" }, { status: 400 });
   }
 
-  const scan = body.scan;
-  if (!scan?.metrics || !scan.scoring) {
+  const username = body.scan?.metrics?.username;
+  if (!username || !USERNAME_RE.test(username)) {
     return NextResponse.json({ error: "missing_scan" }, { status: 400 });
   }
 
@@ -58,6 +129,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "no_llm_configured", useByoKey: true }, { status: 400 });
   }
   const { config, isDefault } = resolved;
+
+  // Prefer the server's cached scan (authoritative — the client cannot fabricate
+  // metrics to inflate the prompt or the score). Fall back to the sanitized
+  // client scan when there is no cache (e.g. Redis unconfigured).
+  const cachedScan = await getCachedScan(username);
+  const scan = cachedScan ?? (body.scan ? sanitizeScan(body.scan) : null);
+  if (!scan?.metrics || !scan.scoring) {
+    return NextResponse.json({ error: "missing_scan" }, { status: 400 });
+  }
+
+  // Default-model protections: serve a cached roast for free, else rate-limit the
+  // (credit-spending) LLM call. BYO keys skip both — it's the user's own credit.
+  if (isDefault) {
+    const cachedRoast = await getCachedRoast(username);
+    if (cachedRoast) {
+      const meta = await computeMeta(scan, cachedRoast.delta, false);
+      return roastResponse(cachedRoast.report, meta);
+    }
+    const { success } = await checkRoastRateLimit(clientIp(req));
+    if (!success) {
+      return NextResponse.json(
+        { error: "rate_limited", useByoKey: true },
+        { status: 429 },
+      );
+    }
+  }
 
   const generator = chatStream(config, buildRoastMessages(scan));
 
@@ -82,45 +179,26 @@ export async function POST(req: NextRequest) {
   }
 
   const delta = parseDelta(head);
-  // Strip the control line so it never reaches the rendered report.
   let report = head;
   const newlineAt = head.indexOf("\n");
   if (/@@ADJUST/.test(head) && newlineAt >= 0) {
     report = head.slice(newlineAt + 1);
   }
 
-  const adjusted = clampScore(scan.scoring.final_score + delta);
-  const { tier, tier_label } = tierFor(adjusted);
-
-  // Persist the AI-adjusted score for the leaderboard — only for the default
-  // (operator) model, so a user can't inflate their public rank with a BYO model.
-  if (isDefault) {
-    await recordScore({
-      username: scan.metrics.username,
-      display_name: scan.metrics.name,
-      avatar_url: scan.metrics.avatar_url,
-      profile_url: scan.metrics.profile_url,
-      final_score: adjusted,
-      tier,
-      scanned_at: Date.now(),
-    });
-  }
-  const counts = await getPercentile(adjusted);
-  const percentile = counts ? { beat: beatPercent(counts.below, counts.total), total: counts.total } : null;
-
-  // Metadata travels in a header (base64 JSON — it contains CJK), so the streamed
-  // body is pure markdown and there is no in-band parsing to get wrong.
-  const meta: RoastMeta = { final_score: adjusted, tier, tier_label, delta, percentile };
-  const metaHeader = Buffer.from(JSON.stringify(meta), "utf-8").toString("base64");
+  const meta = await computeMeta(scan, delta, isDefault);
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      let full = report;
       try {
         if (report) controller.enqueue(encoder.encode(report));
         for await (const chunk of generator) {
+          full += chunk;
           controller.enqueue(encoder.encode(chunk));
         }
+        // Cache the finished roast so repeat views don't re-spend LLM credit.
+        if (isDefault) await setCachedRoast(username, { report: full, delta });
       } catch (e) {
         console.error("roast stream error:", e);
       } finally {
@@ -129,12 +207,5 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/plain; charset=utf-8",
-      "Cache-Control": "no-store",
-      "X-Accel-Buffering": "no",
-      [ROAST_META_HEADER]: metaHeader,
-    },
-  });
+  return roastResponse(stream, meta);
 }

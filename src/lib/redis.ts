@@ -15,6 +15,8 @@ import type { ScanResult } from "./types";
 
 let redis: Redis | null = null;
 let scanLimiter: Ratelimit | null = null;
+let roastMinuteLimiter: Ratelimit | null = null;
+let roastDayLimiter: Ratelimit | null = null;
 
 function getRedis(): Redis | null {
   if (redis) return redis;
@@ -115,6 +117,70 @@ export async function checkRateLimit(ip: string): Promise<{ success: boolean }> 
     return { success };
   } catch {
     return { success: true };
+  }
+}
+
+/**
+ * Per-IP limiter for the (expensive) roast endpoint — the LLM call burns the
+ * operator's credit, so it's limited tighter than scans: a burst window and a
+ * daily cap. Only gates the default model; BYO keys are not limited.
+ */
+export async function checkRoastRateLimit(ip: string): Promise<{ success: boolean }> {
+  const r = getRedis();
+  if (!r) return { success: true };
+  if (!roastMinuteLimiter) {
+    roastMinuteLimiter = new Ratelimit({
+      redis: r,
+      limiter: Ratelimit.slidingWindow(8, "60 s"),
+      prefix: "rl:roast:m",
+      analytics: false,
+    });
+  }
+  if (!roastDayLimiter) {
+    roastDayLimiter = new Ratelimit({
+      redis: r,
+      limiter: Ratelimit.slidingWindow(60, "1 d"),
+      prefix: "rl:roast:d",
+      analytics: false,
+    });
+  }
+  try {
+    const [minute, day] = await Promise.all([
+      roastMinuteLimiter.limit(ip),
+      roastDayLimiter.limit(ip),
+    ]);
+    return { success: minute.success && day.success };
+  } catch {
+    return { success: true };
+  }
+}
+
+/** Cached roast: the LLM-written report + its ±delta, keyed by username (24h). */
+export interface CachedRoast {
+  report: string;
+  delta: number;
+}
+
+const ROAST_TTL_SECONDS = 60 * 60 * 24;
+const roastKey = (username: string) => `roast:${username.toLowerCase()}`;
+
+export async function getCachedRoast(username: string): Promise<CachedRoast | null> {
+  const r = getRedis();
+  if (!r) return null;
+  try {
+    return (await r.get<CachedRoast>(roastKey(username))) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setCachedRoast(username: string, value: CachedRoast): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  try {
+    await r.set(roastKey(username), value, { ex: ROAST_TTL_SECONDS });
+  } catch {
+    // best-effort
   }
 }
 

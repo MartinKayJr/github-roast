@@ -19,8 +19,32 @@ export default function Home() {
       </Link>
 
       <header className="mb-10 flex flex-col items-center text-center">
-        <div className="mb-3 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-zinc-400">
-          🔥 公开数据 · 30 秒出分 · 专治刷量号
+        <div className="mb-3 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs text-zinc-400">
+          <span>作者 hikariming，欢迎关注 👉</span>
+          <a
+            href="https://github.com/hikariming"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-zinc-300 hover:bg-white/10"
+          >
+            GitHub
+          </a>
+          <a
+            href="https://www.xiaohongshu.com/user/profile/63d3f4cc00000000260105e2"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-rose-300 hover:bg-white/10"
+          >
+            小红书
+          </a>
+          <a
+            href="https://x.com/owmio39659"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-zinc-200 hover:bg-white/10"
+          >
+            X
+          </a>
         </div>
         <h1 className="text-4xl font-black tracking-tight sm:text-5xl">
           毒舌 <span className="text-orange-500">GitHub</span> 评分

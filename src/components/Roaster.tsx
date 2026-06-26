@@ -62,8 +62,10 @@ export function Roaster() {
         if (data?.useByoKey) {
           setByoReason(
             data.error === "llm_quota"
-              ? "免费额度用完了 😵 填入你自己的 API Key 继续毒舌（OpenAI / OpenRouter / Groq 都行）。"
-              : "服务端还没配默认模型，填入你自己的 API Key 即可开评。",
+              ? "免费额度用完了 😵 填入你自己的 API Key 继续毒舌（OpenAI / StepFun / Groq 都行）。"
+              : data.error === "rate_limited"
+                ? "你今天点评得有点多啦 🥵 歇会儿，或填入自己的 API Key 不限量继续。"
+                : "服务端还没配默认模型，填入你自己的 API Key 即可开评。",
           );
           setByoOpen(true);
           setRoasting(false);
