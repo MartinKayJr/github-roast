@@ -167,14 +167,12 @@ export function Roaster() {
     percentile && percentile.beat !== null ? `，超越了 ${percentile.beat}% 的开发者` : "";
   const shareText =
     scan && display
-      ? `我的 GitHub 含金量被审判了：${display.score.toFixed(2)}/100 · ${display.tier}（${display.tierLabel}）${beatText}。来测测你的 👉`
+      ? `我的 GitHub 含金量被审判了：${display.score.toFixed(2)}/100 · ${display.tier}（${display.tierLabel}）${beatText}。来测测你的 👉 githubroast.icu`
       : "";
 
   const copyShare = async () => {
     try {
-      await navigator.clipboard.writeText(
-        `${shareText}\n${typeof window !== "undefined" ? window.location.href : ""}`,
-      );
+      await navigator.clipboard.writeText(shareText);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {

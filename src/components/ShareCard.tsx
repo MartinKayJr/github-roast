@@ -97,9 +97,9 @@ export const ShareCard = forwardRef<HTMLDivElement, ShareCardProps>(function Sha
       </div>
 
       {/* Footer brand */}
-      <div className="flex items-center justify-between text-xs text-zinc-500">
-        <span>🔥 毒舌 GitHub 评分</span>
-        <span>github-roast · 来测测你的含金量</span>
+      <div className="flex items-center justify-between text-sm">
+        <span className="text-zinc-500">🔥 毒舌 GitHub 评分 · 来测测你的含金量</span>
+        <span className="font-black text-orange-400">githubroast.icu</span>
       </div>
     </div>
   );

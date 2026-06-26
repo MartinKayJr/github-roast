@@ -50,6 +50,12 @@ export default function Home() {
         <h1 className="text-4xl font-black tracking-tight sm:text-5xl">
           毒舌 <span className="text-orange-500">GitHub</span> 评分
         </h1>
+        <a
+          href="https://githubroast.icu"
+          className="mt-2 text-base font-bold tracking-wide text-orange-400 hover:text-orange-300"
+        >
+          githubroast.icu
+        </a>
         <p className="mt-3 max-w-md text-zinc-400">
           输入一个 GitHub 账号，得到 0–100 分的价值与信任评分，外加一句扎心又有梗的毒舌点评。
         </p>
@@ -97,6 +103,11 @@ export default function Home() {
           评分核心开源于{" "}
           <code className="text-zinc-400">github-account-value</code> 技能 ·
           自带 Key 仅存于你的浏览器本地。
+        </p>
+        <p className="mt-2">
+          <a href="https://githubroast.icu" className="font-bold text-orange-400 hover:text-orange-300">
+            githubroast.icu
+          </a>
         </p>
       </footer>
     </main>
