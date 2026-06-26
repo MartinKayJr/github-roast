@@ -29,18 +29,34 @@ export class LlmQuotaError extends Error {
   }
 }
 
-const DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
-const DEFAULT_MODEL = "deepseek/deepseek-chat-v3-0324:free";
+// Default provider: StepFun (阶跃星辰) — OpenAI-compatible, strong Chinese.
+const STEPFUN_BASE_URL = "https://api.stepfun.com/v1";
+const STEPFUN_MODEL = "step-3.7-flash";
 
-/** Resolve the default (operator-funded) provider config, or null if unset. */
+/**
+ * Resolve the default (operator-funded) provider config, or null if unset.
+ *
+ * Provider-neutral `LLM_*` vars take precedence (StepFun by default). The legacy
+ * `OPENROUTER_*` vars are kept as a self-consistent fallback so older deploys
+ * keep working — each key is paired only with its own base URL/model so an
+ * OpenRouter key is never sent to StepFun (or vice-versa).
+ */
 export function defaultLlmConfig(): LlmConfig | null {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) return null;
-  return {
-    baseURL: process.env.OPENROUTER_BASE_URL || DEFAULT_BASE_URL,
-    apiKey,
-    model: process.env.OPENROUTER_MODEL || DEFAULT_MODEL,
-  };
+  if (process.env.LLM_API_KEY) {
+    return {
+      baseURL: process.env.LLM_BASE_URL || STEPFUN_BASE_URL,
+      apiKey: process.env.LLM_API_KEY,
+      model: process.env.LLM_MODEL || STEPFUN_MODEL,
+    };
+  }
+  if (process.env.OPENROUTER_API_KEY) {
+    return {
+      baseURL: process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",
+      apiKey: process.env.OPENROUTER_API_KEY,
+      model: process.env.OPENROUTER_MODEL || "deepseek/deepseek-chat-v3-0324:free",
+    };
+  }
+  return null;
 }
 
 /**

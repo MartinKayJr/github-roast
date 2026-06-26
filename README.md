@@ -10,7 +10,7 @@
 浏览器 ─▶ /api/scan ─▶ [Redis 缓存?] ─▶ lib/github.ts  (GitHub REST + GraphQL, 运营方 PAT)
                                    └─▶ lib/score.ts   (确定性打分, 与 Python 技能一致)
                                    └─▶ 写入缓存 24h
-        ─▶ /api/roast (流式) ─▶ lib/llm.ts (OpenAI 兼容; 默认 OpenRouter 免费; 可自带 Key)
+        ─▶ /api/roast (流式) ─▶ lib/llm.ts (OpenAI 兼容; 默认 StepFun 阶跃; 可自带 Key)
 ```
 
 - **分数是确定性的**，由 `lib/score.ts` 在服务端算出 —— 大模型改不了数字。
@@ -21,7 +21,7 @@
 
 ```bash
 pnpm install
-cp .env.example .env.local   # 填入 GITHUB_TOKEN 和 OPENROUTER_API_KEY
+cp .env.example .env.local   # 填入 GITHUB_TOKEN 和 LLM_API_KEY（默认 StepFun 阶跃）
 pnpm dev
 ```
 
@@ -39,7 +39,7 @@ pnpm dev
 
 ## 环境变量
 
-见 [`.env.example`](./.env.example)。最小可跑只需 `GITHUB_TOKEN` + `OPENROUTER_API_KEY`；缓存、限流、人机校验在未配置时会**静默降级**（适合本地）。生产强烈建议全配齐。
+见 [`.env.example`](./.env.example)。最小可跑只需 `GITHUB_TOKEN` + `LLM_API_KEY`（默认 StepFun 阶跃，OpenAI 兼容；可换任意 OpenAI 兼容服务）；缓存、限流、人机校验、排行榜在未配置时会**静默降级**（适合本地）。生产强烈建议全配齐。
 
 ## 排行榜 + 百分位（Turso，可选）
 
@@ -69,7 +69,7 @@ TURSO_DATABASE_URL=file:./local.db
 |----|------|------|
 | 托管 / Serverless | Vercel | 免费额度内 |
 | GitHub API | 运营方 PAT（5000 req/h；瓶颈是 search 30/min） | $0 |
-| 大模型 | OpenRouter `:free` 模型（按天限额）；超额转用户自带 Key | $0 |
+| 大模型 | StepFun `step-3.7-flash`（flash 档很便宜，吃官方赠送额度）；额度耗尽转用户自带 Key | ~$0 |
 | 缓存 / 限流 | Upstash Redis 免费档 | $0 |
 | 人机校验 | Cloudflare Turnstile | $0 |
 | 排行榜 | Turso 免费档（~25M 写 / 10亿读 每月） | $0 |

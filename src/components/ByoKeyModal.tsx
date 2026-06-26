@@ -23,6 +23,7 @@ export function loadByoKey(): ByoKeyConfig | null {
 }
 
 const PRESETS: { label: string; baseURL: string; model: string }[] = [
+  { label: "StepFun 阶跃", baseURL: "https://api.stepfun.com/v1", model: "step-3.7-flash" },
   { label: "OpenAI", baseURL: "https://api.openai.com/v1", model: "gpt-4o-mini" },
   { label: "OpenRouter", baseURL: "https://openrouter.ai/api/v1", model: "deepseek/deepseek-chat-v3-0324" },
   { label: "Groq", baseURL: "https://api.groq.com/openai/v1", model: "llama-3.3-70b-versatile" },
