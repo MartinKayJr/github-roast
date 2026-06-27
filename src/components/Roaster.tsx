@@ -11,6 +11,7 @@ import {
   loadByoKey,
 } from "./ByoKeyModal";
 import { CopyBadge } from "./CopyBadge";
+import { ShareMenu } from "./ShareMenu";
 import { SponsorPill } from "./Sponsor";
 import { ShareCard } from "./ShareCard";
 import { Turnstile, turnstileEnabled } from "./Turnstile";
@@ -59,7 +60,6 @@ export function Roaster() {
   const [error, setError] = useState("");
   const [byoOpen, setByoOpen] = useState(false);
   const [byoReason, setByoReason] = useState<string | undefined>();
-  const [copied, setCopied] = useState(false);
   const [percentile, setPercentile] = useState<{ beat: number | null; total: number } | null>(
     null,
   );
@@ -193,16 +193,6 @@ export function Roaster() {
       ? `我的 GitHub 含金量被审判了：${display.score.toFixed(2)}/100 · ${display.tier}（${display.tierLabel}）${beatText}。来测测你的 👉 githubroast.icu`
       : "";
 
-  const copyShare = async () => {
-    try {
-      await navigator.clipboard.writeText(shareText);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* clipboard blocked */
-    }
-  };
-
   const style = display ? tierStyle(display.tier) : null;
   const { body: reportBody, roast: roastLine } = splitReport(report);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -225,18 +215,52 @@ export function Roaster() {
     badgeRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  const fileName = () => `github-roast-${scan?.metrics.username ?? "score"}.png`;
+
+  const genCardBlob = async (): Promise<Blob | null> => {
+    if (!cardRef.current) return null;
+    const { toBlob } = await import("html-to-image");
+    return toBlob(cardRef.current, { pixelRatio: 2, cacheBust: true });
+  };
+
+  const downloadBlob = (blob: Blob) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName();
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const saveImage = async () => {
     if (!cardRef.current || savingImg) return;
     setSavingImg(true);
     try {
-      const { toPng } = await import("html-to-image");
-      const dataUrl = await toPng(cardRef.current, { pixelRatio: 2, cacheBust: true });
-      const a = document.createElement("a");
-      a.href = dataUrl;
-      a.download = `github-roast-${scan?.metrics.username ?? "score"}.png`;
-      a.click();
+      const blob = await genCardBlob();
+      if (blob) downloadBlob(blob);
     } catch (e) {
       console.error("save image failed:", e);
+    } finally {
+      setSavingImg(false);
+    }
+  };
+
+  // For 微信 / 小红书: hand the card PNG to the native share sheet on mobile
+  // (pick the app, post the image); fall back to a plain download elsewhere.
+  const shareImage = async () => {
+    if (savingImg) return;
+    setSavingImg(true);
+    try {
+      const blob = await genCardBlob();
+      if (!blob) return;
+      const file = new File([blob], fileName(), { type: "image/png" });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], text: shareText });
+      } else {
+        downloadBlob(blob);
+      }
+    } catch (e) {
+      if ((e as Error)?.name !== "AbortError") console.error("share image failed:", e);
     } finally {
       setSavingImg(false);
     }
@@ -363,12 +387,6 @@ export function Roaster() {
 
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
               <button
-                onClick={copyShare}
-                className="rounded-full border border-white/10 px-4 py-1.5 text-xs text-zinc-300 hover:bg-white/10"
-              >
-                {copied ? "已复制 ✓" : "复制分享文案"}
-              </button>
-              <button
                 onClick={saveImage}
                 disabled={savingImg}
                 className="rounded-full bg-orange-600/90 px-4 py-1.5 text-xs font-medium text-white hover:bg-orange-500 disabled:opacity-50"
@@ -381,6 +399,15 @@ export function Roaster() {
               >
                 {embedCopied ? "已复制 ✓" : "📌 贴到 GitHub"}
               </button>
+              <ShareMenu
+                link={
+                  loadByoKey()
+                    ? SITE_URL
+                    : `${SITE_URL}/u/${scan.metrics.username}`
+                }
+                text={shareText}
+                onShareImage={shareImage}
+              />
             </div>
           </div>
 

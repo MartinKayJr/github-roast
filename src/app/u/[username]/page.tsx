@@ -42,11 +42,24 @@ export async function generateMetadata({
   const { username } = await params;
   const d = await getDetail(decodeURIComponent(username));
   if (!d) return { title: "查无此号 · 毒舌 GitHub 评分" };
+  const title = `${d.username} — ${d.final_score.toFixed(2)}/100 · ${d.tier} | 毒舌 GitHub 评分`;
+  const description = d.tags.zh.length
+    ? `#${d.tags.zh.join(" #")} —— 在 githubroast.icu 查看 ${d.username} 的完整评分报告。`
+    : `${d.username} 的 GitHub 价值评分报告 —— githubroast.icu。`;
+  // The flex card doubles as the social preview image (resolved absolute via
+  // metadataBase in layout.tsx) — so shared /u links render a rich card.
+  const image = `/api/card/${d.username}`;
   return {
-    title: `${d.username} — ${d.final_score.toFixed(2)}/100 · ${d.tier} | 毒舌 GitHub 评分`,
-    description: d.tags.zh.length
-      ? `#${d.tags.zh.join(" #")} —— 在 githubroast.icu 查看 ${d.username} 的完整评分报告。`
-      : `${d.username} 的 GitHub 价值评分报告 —— githubroast.icu。`,
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      url: `/u/${d.username}`,
+      type: "website",
+      images: [{ url: image, width: 1200, height: 630 }],
+    },
+    twitter: { card: "summary_large_image", title, description, images: [image] },
   };
 }
 
