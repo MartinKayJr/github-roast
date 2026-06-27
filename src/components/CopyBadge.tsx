@@ -3,6 +3,41 @@
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 
+/** One copyable snippet row. Declared at module scope (not inside render) so it
+ *  keeps a stable identity and doesn't reset state on every parent render. */
+function SnippetRow({
+  label,
+  value,
+  copied,
+  onCopy,
+  copyLabel,
+  copiedLabel,
+}: {
+  label: string;
+  value: string;
+  copied: boolean;
+  onCopy: () => void;
+  copyLabel: string;
+  copiedLabel: string;
+}) {
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between">
+        <span className="text-xs font-medium text-zinc-400">{label}</span>
+        <button
+          onClick={onCopy}
+          className="rounded-md border border-white/10 px-2 py-0.5 text-[11px] text-zinc-300 hover:bg-white/10"
+        >
+          {copied ? copiedLabel : copyLabel}
+        </button>
+      </div>
+      <pre className="overflow-x-auto rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-[11px] leading-relaxed text-zinc-300">
+        <code>{value}</code>
+      </pre>
+    </div>
+  );
+}
+
 export function CopyBadge({ baseUrl, username }: { baseUrl: string; username: string }) {
   const T = useTranslations("badge");
   const [copied, setCopied] = useState<string | null>(null);
@@ -31,23 +66,6 @@ export function CopyBadge({ baseUrl, username }: { baseUrl: string; username: st
     }
   };
 
-  const Row = ({ label, value, k }: { label: string; value: string; k: string }) => (
-    <div>
-      <div className="mb-1 flex items-center justify-between">
-        <span className="text-xs font-medium text-zinc-400">{label}</span>
-        <button
-          onClick={() => copy(value, k)}
-          className="rounded-md border border-white/10 px-2 py-0.5 text-[11px] text-zinc-300 hover:bg-white/10"
-        >
-          {copied === k ? T("copied") : T("copy")}
-        </button>
-      </div>
-      <pre className="overflow-x-auto rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-[11px] leading-relaxed text-zinc-300">
-        <code>{value}</code>
-      </pre>
-    </div>
-  );
-
   return (
     <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 sm:p-6">
       <h2 className="text-base font-bold text-zinc-200">{T("heading")}</h2>
@@ -59,8 +77,22 @@ export function CopyBadge({ baseUrl, username }: { baseUrl: string; username: st
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={badgeUrl} alt={badgeAlt} className="h-5" />
         <div className="mt-3 flex flex-col gap-3">
-          <Row label={T("markdown")} value={snippets.badgeMd} k="badge-md" />
-          <Row label={T("html")} value={snippets.badgeHtml} k="badge-html" />
+          <SnippetRow
+            label={T("markdown")}
+            value={snippets.badgeMd}
+            copied={copied === "badge-md"}
+            onCopy={() => copy(snippets.badgeMd, "badge-md")}
+            copyLabel={T("copy")}
+            copiedLabel={T("copied")}
+          />
+          <SnippetRow
+            label={T("html")}
+            value={snippets.badgeHtml}
+            copied={copied === "badge-html"}
+            onCopy={() => copy(snippets.badgeHtml, "badge-html")}
+            copyLabel={T("copy")}
+            copiedLabel={T("copied")}
+          />
         </div>
       </div>
 
@@ -74,8 +106,22 @@ export function CopyBadge({ baseUrl, username }: { baseUrl: string; username: st
           className="w-full max-w-md rounded-xl border border-white/10"
         />
         <div className="mt-3 flex flex-col gap-3">
-          <Row label={T("markdown")} value={snippets.cardMd} k="card-md" />
-          <Row label={T("html")} value={snippets.cardHtml} k="card-html" />
+          <SnippetRow
+            label={T("markdown")}
+            value={snippets.cardMd}
+            copied={copied === "card-md"}
+            onCopy={() => copy(snippets.cardMd, "card-md")}
+            copyLabel={T("copy")}
+            copiedLabel={T("copied")}
+          />
+          <SnippetRow
+            label={T("html")}
+            value={snippets.cardHtml}
+            copied={copied === "card-html"}
+            onCopy={() => copy(snippets.cardHtml, "card-html")}
+            copyLabel={T("copy")}
+            copiedLabel={T("copied")}
+          />
         </div>
       </div>
     </section>

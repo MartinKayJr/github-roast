@@ -1,7 +1,14 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
+
+/** Whether the browser supports the native Web Share API. Read via
+ *  useSyncExternalStore so SSR sees `false` and the client reads the real value
+ *  after hydration — no setState-in-effect, no hydration mismatch. */
+const subscribeNoop = () => () => {};
+const getCanNative = () =>
+  typeof navigator !== "undefined" && typeof navigator.share === "function";
 
 type Platform = { key: string; label: string; color: string; href: (u: string, t: string) => string };
 
@@ -28,11 +35,7 @@ export function ShareMenu({
   const T = useTranslations("share");
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [canNative, setCanNative] = useState(false);
-
-  useEffect(() => {
-    setCanNative(typeof navigator !== "undefined" && typeof navigator.share === "function");
-  }, []);
+  const canNative = useSyncExternalStore(subscribeNoop, getCanNative, () => false);
 
   const u = encodeURIComponent(link);
   const t = encodeURIComponent(text);
