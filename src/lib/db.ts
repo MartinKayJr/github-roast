@@ -23,6 +23,32 @@ function parseTags(raw: unknown): Tags {
   }
 }
 
+const EMPTY_SUB: SubScores = {
+  account_maturity: 0,
+  original_project_quality: 0,
+  contribution_quality: 0,
+  ecosystem_impact: 0,
+  community_influence: 0,
+  activity_authenticity: 0,
+};
+
+function parseSubScores(raw: unknown): SubScores {
+  if (typeof raw !== "string" || !raw) return EMPTY_SUB;
+  try {
+    const s = JSON.parse(raw) as Partial<SubScores>;
+    return {
+      account_maturity: Number(s.account_maturity) || 0,
+      original_project_quality: Number(s.original_project_quality) || 0,
+      contribution_quality: Number(s.contribution_quality) || 0,
+      ecosystem_impact: Number(s.ecosystem_impact) || 0,
+      community_influence: Number(s.community_influence) || 0,
+      activity_authenticity: Number(s.activity_authenticity) || 0,
+    };
+  } catch {
+    return EMPTY_SUB;
+  }
+}
+
 let client: Client | null = null;
 let schemaReady: Promise<void> | null = null;
 
@@ -226,6 +252,53 @@ export async function getLeaderboard(
   } catch (e) {
     console.error("getLeaderboard failed:", e);
     return [];
+  }
+}
+
+export interface AccountDetail {
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  profile_url: string | null;
+  final_score: number;
+  tier: Tier;
+  tags: Tags;
+  sub_scores: SubScores;
+  roast: string | null;
+  scanned_at: number;
+}
+
+/** Full persisted record for one account's detail page (null if absent/hidden). */
+export async function getAccountDetail(username: string): Promise<AccountDetail | null> {
+  const db = getClient();
+  if (!db) return null;
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT username, display_name, avatar_url, profile_url, final_score, tier,
+                   tags, sub_scores, roast, scanned_at
+            FROM scores
+            WHERE username = ? AND hidden = 0
+            LIMIT 1`,
+      args: [username.toLowerCase()],
+    });
+    const r = res.rows[0];
+    if (!r) return null;
+    return {
+      username: String(r.username),
+      display_name: r.display_name as string | null,
+      avatar_url: r.avatar_url as string | null,
+      profile_url: r.profile_url as string | null,
+      final_score: Number(r.final_score),
+      tier: String(r.tier) as Tier,
+      tags: parseTags(r.tags),
+      sub_scores: parseSubScores(r.sub_scores),
+      roast: (r.roast as string | null) ?? null,
+      scanned_at: Number(r.scanned_at),
+    };
+  } catch (e) {
+    console.error("getAccountDetail failed:", e);
+    return null;
   }
 }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { tierStyle } from "@/lib/tier";
 import type { Tier } from "@/lib/types";
@@ -128,14 +129,13 @@ export function Leaderboard({ pageSize }: { pageSize?: number }) {
             )}
             <div className="min-w-0 flex-1">
               <div className="truncate">
-                <a
-                  href={e.profile_url ?? `https://github.com/${e.username}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <Link
+                  href={`/u/${e.username}`}
+                  prefetch={false}
                   className="font-medium hover:underline"
                 >
                   @{e.username}
-                </a>
+                </Link>
                 {e.display_name && (
                   <span className="ml-1.5 text-sm text-zinc-500">{e.display_name}</span>
                 )}

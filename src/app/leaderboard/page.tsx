@@ -21,7 +21,7 @@ export default function LeaderboardPage() {
         </Link>
       </header>
 
-      <Leaderboard />
+      <Leaderboard pageSize={20} />
 
       <footer className="mt-12 text-center text-xs leading-relaxed text-zinc-600">
         仅收录基于 GitHub 公开数据的高分账号。如需将自己从榜单移除，

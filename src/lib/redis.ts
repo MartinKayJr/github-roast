@@ -210,7 +210,7 @@ export async function setCachedStats(total: number): Promise<void> {
 }
 
 const LEADERBOARD_KEY = "leaderboard:top";
-const LEADERBOARD_TTL_SECONDS = 60;
+const LEADERBOARD_TTL_SECONDS = 300; // 5 min — board moves slowly; fewer DB reads
 
 export async function getCachedLeaderboard(): Promise<LeaderboardEntry[] | null> {
   const r = getRedis();
