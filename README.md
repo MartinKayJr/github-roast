@@ -67,19 +67,6 @@ TURSO_DATABASE_URL=file:./local.db
 4. (Optional) Turso: `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` to enable the leaderboard.
 5. Deploy.
 
-## Cost (≈ $0 / month)
-
-| Item | Approach | Cost |
-|----|------|------|
-| Hosting / Serverless | Vercel | within free tier |
-| GitHub API | operator PAT (5000 req/h; bottleneck is search 30/min) | $0 |
-| LLM | StepFun `step-3.7-flash` (the flash tier is very cheap, runs on free credits); falls back to user's own key when credits run out | ~$0 |
-| Cache / rate limit | Upstash Redis free tier | $0 |
-| Human verification | Cloudflare Turnstile | $0 |
-| Leaderboard | Turso free tier (~25M writes / 1B reads per month) | $0 |
-
-Three levers pin the cost down: ① a **24h cache** per account (fewer GitHub calls and model calls — the same handle gets re-scanned a lot during viral spread) ② **rate limiting + Turnstile** to block scripted abuse ③ **automatic fallback to the user's own key** once free credits run out.
-
 ## Bring your own model / API key
 
 Click "Use your own model" on the page and enter Base URL + API Key + Model. Compatible with any OpenAI-style API (OpenAI / OpenRouter / Groq / DeepSeek / local). **The key lives only in your own browser's localStorage, is passed directly on call, and is never uploaded to the server or persisted.**

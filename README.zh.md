@@ -67,19 +67,6 @@ TURSO_DATABASE_URL=file:./local.db
 4. (可选)Turso:`TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` 开排行榜。
 5. Deploy。
 
-## 成本(≈ $0 / 月)
-
-| 项 | 方案 | 成本 |
-|----|------|------|
-| 托管 / Serverless | Vercel | 免费额度内 |
-| GitHub API | 运营方 PAT(5000 req/h;瓶颈是 search 30/min) | $0 |
-| 大模型 | StepFun `step-3.7-flash`(flash 档很便宜,吃官方赠送额度);额度耗尽转用户自带 Key | ~$0 |
-| 缓存 / 限流 | Upstash Redis 免费档 | $0 |
-| 人机校验 | Cloudflare Turnstile | $0 |
-| 排行榜 | Turso 免费档(~25M 写 / 10亿读 每月) | $0 |
-
-三个杠杆把成本钉死:① 同账号 **24h 缓存**(少打 GitHub、少调模型,病毒传播时同名账号被反复扫)② **限流 + Turnstile** 挡脚本刷量 ③ **免费额度耗尽自动引导用户填自己的 Key**。
-
 ## 自带模型 / API Key
 
 点页面上的「用自己的模型」,填 Base URL + API Key + Model。兼容任意 OpenAI 接口(OpenAI / OpenRouter / Groq / DeepSeek / 本地)。**Key 只存在你自己的浏览器 localStorage,调用时直传,绝不上传到服务器、绝不落库。**
