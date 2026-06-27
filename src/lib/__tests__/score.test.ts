@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { computeFloodSignals, isEcosystemImpactPr } from "../github";
+import {
+  computeFloodSignals,
+  isEcosystemImpactPr,
+  isExternalTrivialFarmPr,
+} from "../github";
 import { logRatio, score, spamBotScore, tierFor } from "../score";
 import type { RawMetrics, RecentPr } from "../types";
 import fixtures from "./score-fixtures.json";
@@ -43,11 +47,10 @@ const NEUTRAL: RawMetrics = {
   days_since_last_activity: 30,
   recent_merged_pr_sample: 20,
   recent_trivial_pr_count: 2,
+  external_trivial_pr_count: 0,
   max_impact_repo_stars: 0,
   impact_pr_count: 0,
   impact_depth_raw: 0,
-  self_pr_farm_count: 0,
-  self_pr_farm_ratio: 0,
   star_inflation_suspect: false,
   closed_unmerged_pr_count: 2,
   pr_rejection_rate: 0.06,
@@ -105,6 +108,22 @@ describe("spam-PR red flags", () => {
       ),
     ).toBe(false); // decided 7 < 10
   });
+
+  it("flags trivial_pr_farming for garbage PRs into popular external repos", () => {
+    const m: RawMetrics = { ...NEUTRAL, recent_merged_pr_sample: 18, external_trivial_pr_count: 12 };
+    expect(hasFlag(m, "trivial_pr_farming")).toBe(true);
+  });
+
+  it("does NOT flag a heavy self-PR dev (no external garbage)", () => {
+    // iamPulakesh-like: lots of own-repo PRs, zero external-trivial → no spam flags.
+    const m: RawMetrics = {
+      ...NEUTRAL,
+      merged_pr_count: 30,
+      recent_merged_pr_sample: 20,
+      external_trivial_pr_count: 0,
+    };
+    expect(score(m).red_flags).toHaveLength(0);
+  });
 });
 
 describe("spamBotScore (hidden 0-10 farming/bot likelihood)", () => {
@@ -112,33 +131,30 @@ describe("spamBotScore (hidden 0-10 farming/bot likelihood)", () => {
     expect(spamBotScore(NEUTRAL)).toBeLessThanOrEqual(0.5);
   });
 
-  it("stays LOW for a genuine solo dev (self-PRs but substantial, not trivial)", () => {
-    // iamPulakesh-like: all PRs into own 0-star repo, but real engineering (few trivial).
+  it("stays ~0 for a genuine solo dev (all PRs into own repo — never penalized)", () => {
+    // iamPulakesh-like: real engineering on own 0-star project. No external garbage,
+    // no flood → bot_score ≈ 0 regardless of how many self-PRs.
     const m: RawMetrics = {
       ...NEUTRAL,
       recent_merged_pr_sample: 20,
-      recent_trivial_pr_count: 1, // substantial PRs
-      self_pr_farm_ratio: 1,
-      self_pr_farm_count: 20,
+      recent_trivial_pr_count: 1,
+      external_trivial_pr_count: 0,
       total_stars: 0,
       max_stars: 0,
     };
-    expect(spamBotScore(m)).toBeLessThanOrEqual(2);
+    expect(spamBotScore(m)).toBeLessThanOrEqual(0.5);
   });
 
-  it("is HIGH for trivial self-PR farming (AsperforMias-like)", () => {
+  it("is HIGH for garbage PRs into popular external repos (Hacktoberfest farming)", () => {
     const m: RawMetrics = {
       ...NEUTRAL,
       recent_merged_pr_sample: 17,
-      recent_trivial_pr_count: 13, // mostly trivial
-      self_pr_farm_ratio: 0.85,
-      self_pr_farm_count: 15,
-      total_stars: 0,
+      external_trivial_pr_count: 14, // mostly typo PRs into others' famous repos
     };
-    expect(spamBotScore(m)).toBeGreaterThanOrEqual(4);
+    expect(spamBotScore(m)).toBeGreaterThanOrEqual(3);
   });
 
-  it("is HIGH for templated PR flooding (cqjjjzr-like)", () => {
+  it("is HIGH for templated PR flooding of an external repo (cqjjjzr-like)", () => {
     const m: RawMetrics = {
       ...NEUTRAL,
       pr_flood_suspect: true,
@@ -157,8 +173,7 @@ describe("spamBotScore (hidden 0-10 farming/bot likelihood)", () => {
       top_repo_pr_share: 1,
       templated_pr_ratio: 1,
       recent_merged_pr_sample: 20,
-      recent_trivial_pr_count: 20,
-      self_pr_farm_ratio: 1,
+      external_trivial_pr_count: 20,
       following: 5000,
       followers: 10,
     };
@@ -203,6 +218,37 @@ describe("computeFloodSignals", () => {
 
   it("handles an empty list", () => {
     expect(computeFloodSignals([]).pr_flood_suspect).toBe(false);
+  });
+
+  it("does NOT flag flooding your OWN repo (self-PRs are fine)", () => {
+    const prs = Array.from({ length: 18 }, (_, i) => ({
+      title: `refactor: migrate ${i} module to v2`,
+      repo: "alice/myproject",
+    }));
+    expect(computeFloodSignals(prs, "alice").pr_flood_suspect).toBe(false); // own repo
+    expect(computeFloodSignals(prs, "bob").pr_flood_suspect).toBe(true); // someone else's
+  });
+});
+
+describe("isExternalTrivialFarmPr (garbage into popular community repos)", () => {
+  const me = "alice";
+  it("flags a trivial PR into someone else's ≥200★ repo", () => {
+    expect(
+      isExternalTrivialFarmPr(pr({ repo: "facebook/react", repo_stars: 200000, trivial: true }), me),
+    ).toBe(true);
+  });
+  it("does NOT flag PRs into your own repo (any size/substance)", () => {
+    expect(
+      isExternalTrivialFarmPr(pr({ repo: "alice/toy", repo_stars: 0, trivial: true }), me),
+    ).toBe(false);
+  });
+  it("does NOT flag substantial external PRs, or trivial PRs to small repos", () => {
+    expect(
+      isExternalTrivialFarmPr(pr({ repo: "facebook/react", repo_stars: 200000, trivial: false }), me),
+    ).toBe(false);
+    expect(
+      isExternalTrivialFarmPr(pr({ repo: "someone/tiny", repo_stars: 12, trivial: true }), me),
+    ).toBe(false);
   });
 });
 

@@ -64,28 +64,21 @@ export function spamBotScore(m: RawMetrics): number {
   }
 
   const mergedSample = m.recent_merged_pr_sample ?? 0;
-  const trivialRatio = mergedSample > 0 ? (m.recent_trivial_pr_count ?? 0) / mergedSample : 0;
 
-  // 2. Trivial-PR farming (0..3).
-  if (mergedSample >= 8 && trivialRatio > 0.4) {
-    s += Math.min(3, ((trivialRatio - 0.4) / 0.5) * 3);
+  // 2. Garbage PRs into popular EXTERNAL repos (0..4). Self-PRs never counted.
+  const extTrivialRatio =
+    mergedSample > 0 ? (m.external_trivial_pr_count ?? 0) / mergedSample : 0;
+  if (mergedSample >= 8 && extTrivialRatio > 0.3) {
+    s += Math.min(4, ((extTrivialRatio - 0.3) / 0.6) * 4);
   }
 
-  // 3. Self-PR into own ~0-star repos (0..3), weighted DOWN when those self-PRs
-  //    are substantial (real solo dev) rather than trivial (padding).
-  const selfRatio = m.self_pr_farm_ratio ?? 0;
-  if (mergedSample >= 8 && selfRatio > 0.5) {
-    const w = 0.4 + 0.6 * Math.min(1, trivialRatio / 0.3);
-    s += selfRatio * 3 * w;
-  }
-
-  // 4. High PR rejection (0..2).
+  // 3. High PR rejection (0..2).
   const decided = m.merged_pr_count + (m.closed_unmerged_pr_count ?? 0);
   if (decided >= 10 && (m.pr_rejection_rate ?? 0) > 0.5) {
     s += Math.min(2, (((m.pr_rejection_rate ?? 0) - 0.5) / 0.5) * 2);
   }
 
-  // 5. Other classic farm/bot red flags.
+  // 4. Other classic farm/bot red flags.
   if (m.following > 1000 && m.followers < m.following * 0.3) s += 2; // follow farming
   if (m.account_age_years < 1 && m.public_repos > 30) s += 1.5; // new-account mass repos
   const fetched = Math.max(m.fetched_repo_count, 1);
@@ -131,8 +124,9 @@ export function score(m: RawMetrics): Scoring {
   }
 
   // 3. Contribution Quality (27) — merged-PR volume, acceptance, issue engagement.
-  let prVolume = logRatio(m.merged_pr_count, 200) * 16;
-  prVolume *= 1 - 0.8 * (m.self_pr_farm_ratio ?? 0.0);
+  // PRs into one's own projects count normally (solo-dev work / learning / testing
+  // is legitimate); spam is judged separately by the external-trivial / flood flags.
+  const prVolume = logRatio(m.merged_pr_count, 200) * 16;
   let acceptance: number;
   if (m.total_pr_count >= 3) {
     acceptance = (m.merged_pr_count / m.total_pr_count) * 6;
@@ -238,19 +232,16 @@ export function score(m: RawMetrics): Scoring {
     );
   }
   const sample = m.recent_merged_pr_sample;
-  if (sample >= 10 && m.recent_trivial_pr_count / sample > 0.6) {
+  // Garbage farming into popular community projects: trivial PRs into OTHERS'
+  // ≥200★ repos (typo/whitespace PRs to famous repos for a contributor badge).
+  // PRs into one's own projects are never counted here.
+  const externalTrivial = m.external_trivial_pr_count ?? 0;
+  if (sample >= 10 && externalTrivial / sample > 0.5) {
     flag(
       "trivial_pr_farming",
       8,
-      `${m.recent_trivial_pr_count}/${sample} recent merged PRs are ≤5-line changes — PR farming.`,
-    );
-  }
-  if (sample >= 10 && m.self_pr_farm_ratio > 0.6) {
-    flag(
-      "self_pr_farming",
-      6,
-      `${m.self_pr_farm_count}/${sample} recent merged PRs are self-PRs into own ~0-star ` +
-        "repos — contribution-count inflation (often AI-agent / self-review loops).",
+      `${externalTrivial}/${sample} recent merged PRs are ≤5-line changes into others' ` +
+        "≥200★ repos — garbage PR farming into popular community projects.",
     );
   }
   // Templated-PR flooding: many recent PRs blasted at one repo with near-identical

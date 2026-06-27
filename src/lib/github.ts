@@ -210,8 +210,12 @@ export interface FloodSignals {
  * Detect "templated PR flooding": many recent PRs aimed at a single repo whose
  * titles share a long common prefix (e.g. one-day AI batches of
  * `refactor(api): migrate ___ to BaseModel`). Pure so it can be unit-tested.
+ *
+ * Only flags flooding of a repo the user does NOT own — blasting your own repo
+ * with templated PRs is normal solo-dev work; spamming someone else's project is
+ * the problem. Pass the lowercased login to enable that check.
  */
-export function computeFloodSignals(prs: AnyPr[]): FloodSignals {
+export function computeFloodSignals(prs: AnyPr[], loginLower = ""): FloodSignals {
   const sample = prs.length;
   if (sample === 0) {
     return {
@@ -250,7 +254,11 @@ export function computeFloodSignals(prs: AnyPr[]): FloodSignals {
   for (const arr of titleClusters.values()) if (arr.length > biggest.length) biggest = arr;
   const templatedRatio = Math.round((biggest.length / sample) * 100) / 100;
 
-  const suspect = sample >= 10 && topRepoShare >= 0.5 && templatedRatio >= 0.5;
+  const topOwner =
+    topRepo && topRepo.includes("/") ? topRepo.split("/", 1)[0].toLowerCase() : "";
+  const topIsExternal = topOwner !== "" && topOwner !== loginLower;
+  const suspect =
+    sample >= 10 && topIsExternal && topRepoShare >= 0.5 && templatedRatio >= 0.5;
 
   return {
     recent_pr_sample: sample,
@@ -280,6 +288,18 @@ export function isEcosystemImpactPr(pr: RecentPr, loginLower: string): boolean {
   if (!owner || pr.trivial) return false;
   const threshold = owner === loginLower ? 1000 : 200;
   return pr.repo_stars >= threshold;
+}
+
+/**
+ * Whether a merged PR is "garbage farming into a popular community project":
+ * a trivial (≤5-line) PR into a repo the user does NOT own with ≥200 stars
+ * (typo/whitespace PRs to famous repos to farm a contributor badge). PRs into
+ * one's own repos never count — those are normal solo-dev work.
+ */
+export function isExternalTrivialFarmPr(pr: RecentPr, loginLower: string): boolean {
+  const repo = pr.repo ?? "";
+  const owner = repo.includes("/") ? repo.split("/", 1)[0].toLowerCase() : "";
+  return owner !== "" && owner !== loginLower && pr.trivial && pr.repo_stars >= 200;
 }
 
 export async function collect(username: string): Promise<{
@@ -420,8 +440,9 @@ export async function collect(username: string): Promise<{
   const recentPrs = await fetchRecentPrs(login);
   const trivialPrs = recentPrs.filter((p) => p.trivial).length;
 
-  // Templated-PR flooding signal (recent PRs across all states).
-  const flood = computeFloodSignals(await fetchRecentAllPrs(login));
+  // Templated-PR flooding signal (recent PRs across all states) — only flags
+  // flooding of OTHER people's repos (own-repo floods are normal solo work).
+  const flood = computeFloodSignals(await fetchRecentAllPrs(login), loginLower);
 
   // Ecosystem & maintainer impact: substantial PRs into popular repos — others'
   // projects (≥200★) or the user's own genuinely popular repos (≥1000★).
@@ -431,17 +452,11 @@ export async function collect(username: string): Promise<{
     Math.round(impactPrs.reduce((a, p) => a + logRatio(p.repo_stars, 5000), 0) * 100) /
     100;
 
-  // Self-PR farming: PRs into the user's OWN <10-star repos.
-  const selfFarmPrs = recentPrs.filter((p) => {
-    const repo = p.repo ?? "";
-    const owner = repo.includes("/") ? repo.split("/", 1)[0].toLowerCase() : "";
-    return owner === loginLower && p.repo_stars < 10;
-  });
-  const selfPrFarmCount = selfFarmPrs.length;
-  const selfPrFarmRatio =
-    recentPrs.length > 0
-      ? Math.round((selfPrFarmCount / recentPrs.length) * 100) / 100
-      : 0.0;
+  // Garbage farming into popular community projects: trivial PRs into others'
+  // ≥200★ repos. (PRs into one's OWN repos are never penalized.)
+  const externalTrivialPrCount = recentPrs.filter((p) =>
+    isExternalTrivialFarmPr(p, loginLower),
+  ).length;
 
   // Star-inflation signal: notable stars but almost no forks/issues engagement
   let starInflationSuspect = false;
@@ -482,8 +497,7 @@ export async function collect(username: string): Promise<{
     max_impact_repo_stars: maxImpactRepoStars,
     impact_pr_count: impactPrs.length,
     impact_depth_raw: impactDepthRaw,
-    self_pr_farm_count: selfPrFarmCount,
-    self_pr_farm_ratio: selfPrFarmRatio,
+    external_trivial_pr_count: externalTrivialPrCount,
     star_inflation_suspect: starInflationSuspect,
     closed_unmerged_pr_count: closedUnmergedPrCount,
     pr_rejection_rate: prRejectionRate,

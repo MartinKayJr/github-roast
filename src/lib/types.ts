@@ -53,11 +53,10 @@ export interface RawMetrics {
   days_since_last_activity: number | null;
   recent_merged_pr_sample: number;
   recent_trivial_pr_count: number;
+  external_trivial_pr_count: number;
   max_impact_repo_stars: number;
   impact_pr_count: number;
   impact_depth_raw: number;
-  self_pr_farm_count: number;
-  self_pr_farm_ratio: number;
   star_inflation_suspect: boolean;
   // Spam / low-quality PR signals.
   closed_unmerged_pr_count: number;
