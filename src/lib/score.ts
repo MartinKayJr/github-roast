@@ -9,7 +9,17 @@
  * See `github-account-value/references/scoring_rubric.md` for the rubric.
  */
 
-import type { RawMetrics, RedFlag, Scoring, SubScores, Tier } from "./types";
+import type { RawMetrics, RedFlag, Scoring, SubScoreKey, SubScores, Tier } from "./types";
+
+/** Max points per sub-dimension (sums to 100). Single source for normalization. */
+export const SUBSCORE_MAX: Record<SubScoreKey, number> = {
+  account_maturity: 10,
+  original_project_quality: 18,
+  contribution_quality: 27,
+  ecosystem_impact: 20,
+  community_influence: 8,
+  activity_authenticity: 17,
+};
 
 /**
  * Round to `digits` decimals using round-half-to-even (banker's rounding), exactly

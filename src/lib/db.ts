@@ -9,6 +9,7 @@
  */
 
 import { Client, createClient } from "@libsql/client";
+import { rankSimilar } from "./similarity";
 import type { SubScores, Tags, Tier } from "./types";
 
 const EMPTY_TAGS: Tags = { zh: [], en: [] };
@@ -299,6 +300,61 @@ export async function getAccountDetail(username: string): Promise<AccountDetail 
   } catch (e) {
     console.error("getAccountDetail failed:", e);
     return null;
+  }
+}
+
+/** Score band (± points) used to pre-filter candidates before profile ranking. */
+const SIMILAR_SCORE_BAND = 10;
+/** Cap on candidates scanned, so this stays cheap as the table grows. */
+const SIMILAR_POOL = 300;
+
+/**
+ * Developers most similar to `username`: pre-filter by a score band (uses the
+ * final_score index — the cost-safe lever), then rank that pool by 6-dim profile
+ * distance and return the closest `limit`. The target's score/profile are passed
+ * in (the caller already has them) to avoid a second lookup. Returns [] on any
+ * failure or when the DB is unconfigured.
+ */
+export async function getSimilarAccounts(
+  username: string,
+  finalScore: number,
+  subScores: SubScores,
+  limit = 6,
+): Promise<LeaderboardEntry[]> {
+  const db = getClient();
+  if (!db) return [];
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT username, display_name, avatar_url, profile_url, final_score, tier, tags, sub_scores
+            FROM scores
+            WHERE hidden = 0
+              AND username != ?
+              AND final_score BETWEEN ? AND ?
+            ORDER BY final_score DESC
+            LIMIT ?`,
+      args: [
+        username.toLowerCase(),
+        finalScore - SIMILAR_SCORE_BAND,
+        finalScore + SIMILAR_SCORE_BAND,
+        SIMILAR_POOL,
+      ],
+    });
+    const candidates = res.rows.map((r) => ({
+      username: String(r.username),
+      display_name: r.display_name as string | null,
+      avatar_url: r.avatar_url as string | null,
+      profile_url: r.profile_url as string | null,
+      final_score: Number(r.final_score),
+      tier: String(r.tier) as Tier,
+      tags: parseTags(r.tags),
+      sub_scores: parseSubScores(r.sub_scores),
+    }));
+    // Rank by profile distance, then drop sub_scores to match LeaderboardEntry.
+    return rankSimilar(subScores, candidates, limit).map(({ sub_scores: _omit, ...e }) => e);
+  } catch (e) {
+    console.error("getSimilarAccounts failed:", e);
+    return [];
   }
 }
 
