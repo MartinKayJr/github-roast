@@ -7,10 +7,22 @@
 
 import type { PaperData } from "./paper-types";
 
-const ARXIV_API = "http://export.arxiv.org/api/query";
+const ARXIV_API = "https://export.arxiv.org/api/query";
 const S2_API = "https://api.semanticscholar.org/graph/v1/paper";
 
 export class PaperNotFoundError extends Error {}
+
+/** fetch with an abort timeout — arXiv/S2 can be slow/unreachable (e.g. from CN),
+ *  and without this the request hangs forever and freezes the scan button. */
+async function fetchTimeout(url: string, init: RequestInit, ms: number): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * Extract a canonical arXiv id (no version) from a raw id or any arXiv URL.
@@ -42,9 +54,11 @@ function tag(xml: string, name: string): string | null {
 
 /** Fetch + parse the arXiv Atom entry. Throws PaperNotFoundError if absent. */
 async function fetchArxivMeta(id: string): Promise<Omit<PaperData, "citation_count" | "influential_citation_count" | "venue" | "tldr">> {
-  const res = await fetch(`${ARXIV_API}?id_list=${encodeURIComponent(id)}&max_results=1`, {
-    headers: { "User-Agent": "githubroast.dev paper-review" },
-  });
+  const res = await fetchTimeout(
+    `${ARXIV_API}?id_list=${encodeURIComponent(id)}&max_results=1`,
+    { headers: { "User-Agent": "githubroast.dev paper-review" } },
+    12000,
+  );
   if (!res.ok) throw new Error(`arXiv API ${res.status}`);
   const xml = await res.text();
   const entry = xml.match(/<entry>([\s\S]*?)<\/entry>/i)?.[1];
@@ -79,9 +93,10 @@ async function fetchCitations(id: string): Promise<Pick<PaperData, "citation_cou
   try {
     const headers: Record<string, string> = {};
     if (process.env.SEMANTIC_SCHOLAR_API_KEY) headers["x-api-key"] = process.env.SEMANTIC_SCHOLAR_API_KEY;
-    const res = await fetch(
+    const res = await fetchTimeout(
       `${S2_API}/arXiv:${encodeURIComponent(id)}?fields=citationCount,influentialCitationCount,venue,tldr`,
       { headers },
+      8000,
     );
     if (!res.ok) return empty;
     const j = (await res.json()) as S2Response;
