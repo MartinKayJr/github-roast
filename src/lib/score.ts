@@ -100,16 +100,57 @@ export function spamBotScore(m: RawMetrics): number {
 }
 
 export function docLikePrVolumeDiscount(m: RawMetrics, prVolume: number): number {
-  const sample = m.recent_merged_pr_sample ?? 0;
+  const sample = m.recent_external_pr_sample ?? m.recent_merged_pr_sample ?? 0;
   const ratio =
+    m.recent_external_doc_like_pr_ratio ??
     m.recent_doc_like_pr_ratio ??
-    (sample > 0 && m.recent_doc_like_pr_count !== undefined
-      ? m.recent_doc_like_pr_count / sample
+    (sample > 0 && m.recent_external_doc_like_pr_count !== undefined
+      ? m.recent_external_doc_like_pr_count / sample
+      : sample > 0 && m.recent_doc_like_pr_count !== undefined
+        ? m.recent_doc_like_pr_count / sample
       : 0);
   if (sample < 20 || ratio < 0.55) return 0;
 
   const severity = Math.max(0, Math.min(1, (ratio - 0.55) / 0.075));
-  return Math.min(prVolume * 0.35, 1.5 + severity * 2.0);
+  return Math.min(prVolume * 0.55, 2.5 + severity * 3.0);
+}
+
+export function contributionQualityCap(m: RawMetrics): number | undefined {
+  const sample = m.recent_external_pr_sample ?? m.recent_merged_pr_sample ?? 0;
+  const ratio =
+    m.recent_external_doc_like_pr_ratio ??
+    m.recent_doc_like_pr_ratio ??
+    (sample > 0 && m.recent_external_doc_like_pr_count !== undefined
+      ? m.recent_external_doc_like_pr_count / sample
+      : sample > 0 && m.recent_doc_like_pr_count !== undefined
+        ? m.recent_doc_like_pr_count / sample
+        : 0);
+  if (sample < 20 || ratio < 0.55) return undefined;
+
+  const lowTrustImpact =
+    m.impact_quality_cap !== undefined &&
+    m.impact_quality_cap <= 4 &&
+    (m.core_impact_pr_count ?? 0) <= 2;
+  const weakTopStarProject =
+    (m.top_starred_original_repo_quality_score ?? 1) < 0.3 && m.total_stars > 0;
+  const manySelfClosedExternal = (m.self_closed_external_pr_count ?? 0) >= 10;
+
+  if (lowTrustImpact && weakTopStarProject) return 12;
+  if (lowTrustImpact && manySelfClosedExternal) return 12.5;
+  return undefined;
+}
+
+function hasSocialOnlyDormantSignal(m: RawMetrics): boolean {
+  const bestProjectQuality = m.best_original_repo_quality_score ?? 0;
+  return (
+    m.followers >= 500 &&
+    m.last_year_contributions === 0 &&
+    m.merged_pr_count === 0 &&
+    (m.impact_pr_count ?? 0) === 0 &&
+    (m.max_impact_repo_stars ?? 0) === 0 &&
+    m.total_stars <= 300 &&
+    bestProjectQuality < 0.85
+  );
 }
 
 /** Map a final score to its tier label. Shared by the scorer and the AI-adjust step. */
@@ -137,12 +178,24 @@ export function score(m: RawMetrics): Scoring {
   const spanPts = years === 0 ? 0 : years === 1 ? 1 : years === 2 ? 2 : 3;
   sub.account_maturity = round(agePts + spanPts, 1);
 
-  // 2. Original Project Quality (18) — stars are gameable, so capped lower
+  // 2. Original Project Quality (18) — stars are only part of quality. A useful
+  // 0-star project can still earn substance points, while stars alone cannot
+  // max out the dimension without a complete-looking original repo.
   if (m.nonempty_original_repo_count === 0) {
     sub.original_project_quality = 0.0;
   } else {
+    const starQuality =
+      m.total_stars > 0
+        ? Math.max(0, Math.min(m.top_starred_original_repo_quality_score ?? 1, 1))
+        : 1;
+    const starPts =
+      (logRatio(m.total_stars, 5000) * 7 + logRatio(m.max_stars, 2000) * 5) * starQuality;
+    const projectSubstance = Math.max(
+      0,
+      Math.min(m.best_original_repo_quality_score ?? 0, 1),
+    ) * 6;
     sub.original_project_quality = round(
-      logRatio(m.total_stars, 5000) * 11 + logRatio(m.max_stars, 2000) * 7,
+      starPts + projectSubstance,
       1,
     );
   }
@@ -164,7 +217,14 @@ export function score(m: RawMetrics): Scoring {
   }
   acceptance = Math.min(acceptance, 6.0);
   const issuePts = logRatio(m.issues_created, 100) * 5;
-  sub.contribution_quality = round(prVolume + acceptance + issuePts, 1);
+  const contributionQualityRaw = prVolume + acceptance + issuePts;
+  const contributionCap = contributionQualityCap(m);
+  sub.contribution_quality = round(
+    contributionCap === undefined
+      ? contributionQualityRaw
+      : Math.min(contributionQualityRaw, contributionCap),
+    1,
+  );
 
   // 4. Ecosystem & Maintainer Impact (20) — substantial PRs into popular repos,
   // whether contributing to others' projects or actively maintaining one's own
@@ -193,7 +253,11 @@ export function score(m: RawMetrics): Scoring {
     const ratio = followers / following;
     ratioPts = ratio >= 2 ? 3 : ratio >= 1 ? 2 : ratio >= 0.5 ? 1.5 : 1;
   }
-  sub.community_influence = round(followerPts + ratioPts, 1);
+  const communityRaw = followerPts + ratioPts;
+  sub.community_influence = round(
+    hasSocialOnlyDormantSignal(m) ? Math.min(communityRaw, 2.5) : communityRaw,
+    1,
+  );
 
   // 6. Activity Authenticity (17)
   const contribPts = logRatio(m.last_year_contributions, 2000) * 8;
@@ -258,6 +322,14 @@ export function score(m: RawMetrics): Scoring {
     (m.days_since_last_activity ?? 999) > 365
   ) {
     flag("burst_then_dormant", 5, "Active in only one year then dormant — burst pattern.");
+  }
+  if (hasSocialOnlyDormantSignal(m)) {
+    flag(
+      "social_only_dormant_profile",
+      5,
+      `${m.followers} followers but 0 last-year contributions, 0 PRs, no external impact, ` +
+        "and no strong original project signal — social/profile attention is disconnected from code work.",
+    );
   }
   if (m.star_inflation_suspect) {
     flag(

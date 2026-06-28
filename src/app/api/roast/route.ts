@@ -6,6 +6,7 @@ import { LlmConfig, LlmQuotaError, chatStream, defaultLlmConfig } from "@/lib/ll
 import { beatPercent } from "@/lib/percentile";
 import { buildRoastMessages } from "@/lib/prompt";
 import { reportMatchesLang } from "@/lib/report";
+import { sanitizeIdentityClaims } from "@/lib/identity";
 import {
   acquireRoastLock,
   checkRoastRateLimit,
@@ -383,9 +384,15 @@ export async function POST(req: NextRequest) {
   }
 
   const delta = parseDelta(head);
-  const tags = parseTags(head);
-  const roastLine = parseRoast(head);
-  const report = extractReport(head);
+  const parsedTags = parseTags(head);
+  const parsedRoastLine = parseRoast(head);
+  const parsedReport = extractReport(head);
+  const { tags, roastLine, report } = sanitizeIdentityClaims(
+    scan,
+    parsedTags,
+    parsedRoastLine,
+    parsedReport,
+  );
 
   const meta = await computeMeta(scan, delta, tags, roastLine, isDefault, lang);
 
