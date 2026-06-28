@@ -22,7 +22,8 @@
     "detailTitle": "{title} — {score}/100 · {tier} | arXiv Paper Roast",
     "notFoundTitle": "Paper not found · arXiv Paper Roast",
     "boardTitle": "Paper Roast Board · Hall of Fame / Filler | GitHub Roast",
-    "boardDescription": "Ranked, strictly-scored arXiv papers: the Hall of Fame for the best, the Filler board for the worst."
+    "boardDescription": "Ranked, strictly-scored arXiv papers: the Hall of Fame for the best, the Filler board for the worst.",
+    "teaserTitle": "{title} | arXiv Paper Roast"
   },
   "paper": {
     "heading": "arXiv Paper Roast",
@@ -35,6 +36,10 @@
     "boardTop": "🏆 Hall of Fame",
     "boardBottom": "💧 Filler board",
     "boardEmpty": "🧮 No papers on the board yet — go roast one…",
+    "teaserPending": "⏳ Not roasted yet — be the first",
+    "teaserCta": "🔥 Roast this paper now →",
+    "shareScored": "\"{title}\" got roasted: {score}/100 · {tier} 🔥 See how your paper scores",
+    "shareTeaser": "What's \"{title}\" really worth? Roast it 🔥",
     "inputPlaceholder": "arXiv link or ID, e.g. 1706.03762",
     "judge": "Roast it",
     "judging": "Fetching…",

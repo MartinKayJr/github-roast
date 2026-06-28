@@ -6,7 +6,11 @@ import remarkGfm from "remark-gfm";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
 import { getPaper, getPaperRoast } from "@/lib/db";
+import type { PaperDetail } from "@/lib/db";
+import { fetchPaper, normalizeArxivId } from "@/lib/arxiv";
+import type { PaperData } from "@/lib/paper-types";
 import { JsonLd, paperReviewJsonLd } from "@/components/JsonLd";
+import { PaperShare } from "@/components/PaperShare";
 import { PAPER_DIM_KEYS, paperTierStyle } from "@/lib/paper-score";
 import { normLang } from "@/lib/lang";
 import { normPaperMode } from "@/lib/paper-types";
@@ -14,7 +18,21 @@ import { SITE_URL } from "@/lib/site";
 
 export const revalidate = 3600;
 
-const getDetail = cache((id: string) => getPaper(id));
+type Loaded =
+  | { kind: "scored"; paper: PaperDetail }
+  | { kind: "teaser"; paper: PaperData }
+  | null;
+
+// Dedupe between generateMetadata() and the render. Falls back to a no-LLM arXiv
+// fetch (teaser) so a real paper that hasn't been roasted yet never 404s — and
+// only LLM scoring happens on the dedicated /arxiv tool (no LLM-on-GET abuse).
+const load = cache(async (rawId: string): Promise<Loaded> => {
+  const id = normalizeArxivId(rawId) ?? rawId;
+  const scored = await getPaper(id);
+  if (scored) return { kind: "scored", paper: scored };
+  const meta = await fetchPaper(id).catch(() => null);
+  return meta ? { kind: "teaser", paper: meta } : null;
+});
 
 export async function generateMetadata({
   params,
@@ -24,17 +42,35 @@ export async function generateMetadata({
   const { locale, id } = await params;
   const t = await getTranslations({ locale, namespace: "paperMeta" });
   const tt = await getTranslations({ locale, namespace: "paperTiers" });
-  const p = await getDetail(decodeURIComponent(id));
-  if (!p) return { title: t("notFoundTitle") };
+  const loaded = await load(decodeURIComponent(id));
+  if (!loaded) return { title: t("notFoundTitle") };
+  const image = `/api/paper-card/${loaded.paper.arxiv_id}`;
+  const path =
+    locale === "en" ? `/en/arxiv/${loaded.paper.arxiv_id}` : `/arxiv/${loaded.paper.arxiv_id}`;
+  const alternates = {
+    languages: {
+      "zh-CN": `/arxiv/${loaded.paper.arxiv_id}`,
+      en: `/en/arxiv/${loaded.paper.arxiv_id}`,
+    },
+  };
+  if (loaded.kind === "teaser") {
+    const title = t("teaserTitle", { title: loaded.paper.title });
+    return {
+      title,
+      description: loaded.paper.abstract.slice(0, 160) || t("description"),
+      alternates,
+      openGraph: { title, description: t("description"), url: path, type: "article", images: [image] },
+      twitter: { card: "summary_large_image", title, images: [image] },
+    };
+  }
+  const p = loaded.paper;
   const tier = tt(`${p.tier}.name`);
   const tldr = normLang(locale) === "en" ? p.tldr_line.en : p.tldr_line.zh;
   const title = t("detailTitle", { title: p.title, score: p.final_score.toFixed(2), tier });
-  const image = `/api/paper-card/${p.arxiv_id}`;
-  const path = locale === "en" ? `/en/arxiv/${p.arxiv_id}` : `/arxiv/${p.arxiv_id}`;
   return {
     title,
     description: tldr || t("description"),
-    alternates: { languages: { "zh-CN": `/arxiv/${p.arxiv_id}`, en: `/en/arxiv/${p.arxiv_id}` } },
+    alternates,
     openGraph: {
       title,
       description: tldr || t("description"),
@@ -55,22 +91,70 @@ export default async function PaperDetailPage({
 }) {
   const { locale, id } = await params;
   setRequestLocale(locale);
-  const p = await getDetail(decodeURIComponent(id));
-  if (!p) notFound();
+  const loaded = await load(decodeURIComponent(id));
+  if (!loaded) notFound();
 
   const t = await getTranslations("paper");
   const tTier = await getTranslations("paperTiers");
   const lang = normLang(locale);
+  const arxivId = loaded.paper.arxiv_id;
+  const shareLink = `${SITE_URL}${locale === "en" ? `/en/arxiv/${arxivId}` : `/arxiv/${arxivId}`}`;
+  const cardUrl = `${SITE_URL}/api/paper-card/${arxivId}`;
+
+  // ── Teaser: real paper, not roasted yet — drive to the tool, never 404. ──
+  if (loaded.kind === "teaser") {
+    const p = loaded.paper;
+    return (
+      <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-5 py-14 sm:py-20">
+        <div className="flex flex-col items-center rounded-2xl border border-white/10 bg-white/[0.03] p-6 text-center">
+          <a
+            href={`https://arxiv.org/abs/${arxivId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-balance text-lg font-bold leading-snug text-zinc-100 hover:text-white"
+          >
+            {p.title}
+          </a>
+          <div className="mt-1 max-w-full truncate text-xs text-zinc-500">
+            {p.authors.slice(0, 4).join(", ")}
+            {p.authors.length > 4 ? " et al." : ""}
+          </div>
+          <div className="mt-5 rounded-full border border-amber-400/40 bg-amber-500/10 px-3 py-1 text-sm font-medium text-amber-200">
+            {t("teaserPending")}
+          </div>
+          {p.abstract && (
+            <p className="mt-4 line-clamp-5 text-left text-sm leading-relaxed text-zinc-400">
+              {p.abstract}
+            </p>
+          )}
+          <Link
+            href={`/arxiv?id=${arxivId}`}
+            className="mt-6 inline-block rounded-full bg-orange-600 px-6 py-2.5 text-sm font-bold text-white hover:bg-orange-500"
+          >
+            {t("teaserCta")}
+          </Link>
+          <div className="mt-4">
+            <PaperShare link={shareLink} text={t("shareTeaser", { title: p.title })} cardUrl={cardUrl} />
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // ── Scored review ──
+  const p = loaded.paper;
   const mode = normPaperMode((await searchParams)?.mode);
   const style = paperTierStyle(p.tier);
   const tldr = lang === "en" ? p.tldr_line.en : p.tldr_line.zh;
-  const report = await getPaperRoast(p.arxiv_id, mode, lang);
+  const tierName = tTier(`${p.tier}.name`);
+  const report = await getPaperRoast(arxivId, mode, lang);
+  const shareText = t("shareScored", { title: p.title, score: p.final_score.toFixed(1), tier: tierName });
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-5 py-14 sm:py-20">
       <JsonLd
         data={paperReviewJsonLd({
-          arxivId: p.arxiv_id,
+          arxivId,
           title: p.title,
           authors: p.authors,
           score: p.final_score,
@@ -88,7 +172,7 @@ export default async function PaperDetailPage({
         style={{ boxShadow: `0 0 80px -20px ${style.glow}` }}
       >
         <a
-          href={`https://arxiv.org/abs/${p.arxiv_id}`}
+          href={`https://arxiv.org/abs/${arxivId}`}
           target="_blank"
           rel="noopener noreferrer"
           className="max-w-full text-balance text-lg font-bold leading-snug text-zinc-100 hover:text-white"
@@ -104,7 +188,7 @@ export default async function PaperDetailPage({
           <span className="text-2xl text-zinc-600">/100</span>
         </div>
         <div className={`mt-1 text-2xl font-bold ${style.text}`}>
-          {style.emoji} {tTier(`${p.tier}.name`)}
+          {style.emoji} {tierName}
         </div>
         <div className="mt-1 text-sm text-zinc-400">{tTier(`${p.tier}.blurb`)}</div>
         <div className="mt-1 text-xs text-zinc-500">
@@ -129,6 +213,15 @@ export default async function PaperDetailPage({
             ))}
           </div>
         )}
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+          <PaperShare link={shareLink} text={shareText} cardUrl={cardUrl} />
+          <Link
+            href="/arxiv"
+            className="rounded-full bg-orange-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-orange-500"
+          >
+            {t("detailCta")}
+          </Link>
+        </div>
       </div>
 
       {/* Dimensions */}
@@ -167,13 +260,13 @@ export default async function PaperDetailPage({
           </h2>
           <div className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] p-1 text-xs font-bold">
             <Link
-              href={`/arxiv/${p.arxiv_id}`}
+              href={`/arxiv/${arxivId}`}
               className={`rounded-full px-2.5 py-1 ${mode === "roast" ? "bg-white/10 text-zinc-100" : "text-zinc-500 hover:text-zinc-200"}`}
             >
               {t("modeRoast")}
             </Link>
             <Link
-              href={`/arxiv/${p.arxiv_id}?mode=praise`}
+              href={`/arxiv/${arxivId}?mode=praise`}
               className={`rounded-full px-2.5 py-1 ${mode === "praise" ? "bg-white/10 text-zinc-100" : "text-zinc-500 hover:text-zinc-200"}`}
             >
               {t("modePraise")}
@@ -188,7 +281,7 @@ export default async function PaperDetailPage({
           <p className="text-sm text-zinc-500">
             {t.rich("detailNoMode", {
               a: (c) => (
-                <Link href="/arxiv" className="text-orange-400 hover:underline">
+                <Link href={`/arxiv?id=${arxivId}`} className="text-orange-400 hover:underline">
                   {c}
                 </Link>
               ),
@@ -196,20 +289,6 @@ export default async function PaperDetailPage({
           </p>
         )}
       </section>
-
-      <footer className="mt-10 text-center">
-        <Link
-          href="/arxiv"
-          className="inline-block rounded-full bg-orange-600 px-5 py-2 text-sm font-medium text-white hover:bg-orange-500"
-        >
-          {t("detailCta")}
-        </Link>
-        <div className="mt-3 text-xs text-zinc-600">
-          <a href={`${SITE_URL}/arxiv/${p.arxiv_id}`} className="hover:text-zinc-400">
-            {SITE_URL.replace(/^https?:\/\//, "")}/arxiv/{p.arxiv_id}
-          </a>
-        </div>
-      </footer>
     </main>
   );
 }

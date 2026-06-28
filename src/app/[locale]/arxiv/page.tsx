@@ -19,10 +19,17 @@ export async function generateMetadata({
   };
 }
 
-export default async function ArxivPage({ params }: { params: Promise<{ locale: string }> }) {
+export default async function ArxivPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ locale: string }>;
+  searchParams?: Promise<{ id?: string }>;
+}) {
   const { locale } = await params;
   setRequestLocale(locale);
   const t = await getTranslations("paper");
+  const initialId = (await searchParams)?.id ?? "";
 
   return (
     <main className="flex flex-1 flex-col items-center px-5 py-14 sm:py-20">
@@ -33,7 +40,7 @@ export default async function ArxivPage({ params }: { params: Promise<{ locale: 
         <h1 className="text-3xl font-black tracking-tight sm:text-4xl">{t("heading")}</h1>
         <p className="mt-3 max-w-md text-zinc-400">{t("tagline")}</p>
       </header>
-      <PaperRoaster />
+      <PaperRoaster initialInput={initialId} />
     </main>
   );
 }

@@ -134,10 +134,10 @@ export async function POST(req: NextRequest) {
 
   const stored = await getPaper(paper.arxiv_id);
 
-  // Cache-serve: default model + this (mode,lang) already generated → return the
-  // persisted commentary, NO LLM call. Saves tokens on repeat views and tone
-  // toggles. (BYO keys skip the cache — it's the user's own credit, may want fresh.)
-  if (isDefault && stored) {
+  // Cache-serve: this (mode,lang) already generated → return the persisted
+  // commentary, NO LLM call. Saves tokens on repeat views and tone toggles, and
+  // means a shared /arxiv/[id] link never re-spends credit.
+  if (stored) {
     const cached = await getPaperRoast(paper.arxiv_id, mode, lang);
     if (cached) {
       return new Response(cached, { headers: paperHeaders(metaFromStored(stored)) });
@@ -201,9 +201,9 @@ export async function POST(req: NextRequest) {
     tldr_line,
   };
 
-  // Persist a freshly computed score (default model only — mirrors the GitHub
-  // roast). An existing/locked score is already stored, so skip.
-  if (!lock && isDefault) {
+  // Persist a freshly computed score so the shareable /arxiv/[id] page works for
+  // anyone (any model). An existing/locked score is already stored, so skip.
+  if (!lock) {
     await recordPaper({
       arxiv_id: paper.arxiv_id,
       title: paper.title,
@@ -241,8 +241,8 @@ export async function POST(req: NextRequest) {
           full += chunk;
           push(encoder.encode(chunk));
         }
-        // Persist the commentary (default model only) so the detail page has it.
-        if (isDefault && full.trim()) {
+        // Persist the commentary so the detail page / share link has it.
+        if (full.trim()) {
           await updatePaperRoast(paper.arxiv_id, mode, lang, full);
         }
       } catch (e) {

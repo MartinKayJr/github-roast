@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -14,12 +14,12 @@ interface Locked {
   dims: PaperDims;
 }
 
-export function PaperRoaster() {
+export function PaperRoaster({ initialInput = "" }: { initialInput?: string }) {
   const t = useTranslations("paper");
   const tTier = useTranslations("paperTiers");
   const locale = useLocale();
 
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(initialInput);
   const [mode, setMode] = useState<PaperMode>("roast");
   const [scanning, setScanning] = useState(false);
   const [roasting, setRoasting] = useState(false);
@@ -127,6 +127,15 @@ export function PaperRoaster() {
     },
     [input, scanning, roasting, mode, runRoast, t],
   );
+
+  // Arrived via /arxiv?id=... (e.g. from a teaser CTA) → auto-roast once.
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (initialInput.trim() && !autoRan.current) {
+      autoRan.current = true;
+      void submit();
+    }
+  }, [initialInput, submit]);
 
   // Switching tone reuses the locked (fixed) score so the number never wobbles.
   const switchMode = (m: PaperMode) => {
