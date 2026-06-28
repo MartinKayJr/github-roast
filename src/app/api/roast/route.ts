@@ -117,11 +117,12 @@ function sanitizeScan(scan: ScanResult): ScanResult {
       description: r.description?.slice(0, 300) ?? null,
       readme_excerpt: r.readme_excerpt?.slice(0, 500) ?? null,
     })),
-    recent_prs: (scan.recent_prs ?? []).slice(0, 20).map((p) => ({
+    recent_prs: (scan.recent_prs ?? []).slice(0, 50).map((p) => ({
       ...p,
       title: p.title?.slice(0, 200) ?? null,
     })),
     flood_pr_titles: (scan.flood_pr_titles ?? []).slice(0, 5).map((t) => t.slice(0, 200)),
+    impact_repos: (scan.impact_repos ?? []).slice(0, 8),
     scoring: scan.scoring,
   };
 }

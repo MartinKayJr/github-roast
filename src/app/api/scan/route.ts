@@ -71,9 +71,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await coalesceScan(username, async (): Promise<ScanResult> => {
-      const { metrics, top_repos, recent_prs, flood_pr_titles } = await collect(username);
+      const { metrics, top_repos, recent_prs, flood_pr_titles, impact_repos } =
+        await collect(username);
       const scoring = score(metrics);
-      return { metrics, top_repos, recent_prs, flood_pr_titles, scoring };
+      return { metrics, top_repos, recent_prs, flood_pr_titles, impact_repos, scoring };
     });
     await recordSuccessfulLookup(result.metrics.username, ip);
     return NextResponse.json({ ...result, cached: false });

@@ -8,7 +8,7 @@
  */
 
 import { logRatio } from "./score";
-import type { RawMetrics, RecentPr, TopRepo } from "./types";
+import type { ImpactRepo, RawMetrics, RecentPr, TopRepo } from "./types";
 
 const GITHUB_API = "https://api.github.com";
 
@@ -140,7 +140,7 @@ interface PrNode {
   } | null;
 }
 
-async function fetchRecentPrs(username: string, count = 20): Promise<RecentPr[]> {
+async function fetchRecentPrs(username: string, count = 50): Promise<RecentPr[]> {
   const data = await graphql<{
     user: { pullRequests: { nodes: PrNode[] } } | null;
   }>(
@@ -302,11 +302,181 @@ export function isExternalTrivialFarmPr(pr: RecentPr, loginLower: string): boole
   return owner !== "" && owner !== loginLower && pr.trivial && pr.repo_stars >= 200;
 }
 
+/** One repo's all-time contribution aggregate, keyed by `nameWithOwner`. */
+export interface ContribRepoAgg {
+  repo: string;
+  stars: number;
+  is_private: boolean;
+  is_fork: boolean;
+  owner_login: string;
+  commits: number;
+  prs: number;
+}
+
+/** Derived ecosystem-impact metrics (the fields `score.ts` consumes plus extras). */
+export interface ImpactMetrics {
+  max_impact_repo_stars: number;
+  impact_depth_raw: number;
+  impact_repo_count: number;
+  impact_commit_count: number;
+  impact_pr_count: number;
+  impact_repos: ImpactRepo[];
+}
+
+/** Cap how many recent years of the contribution graph we aggregate (latency). */
+export const IMPACT_YEAR_CAP = 6;
+/** Min landed commits for a repo to qualify on commits alone (avoids drive-bys). */
+export const IMPACT_COMMIT_MIN = 2;
+
+/**
+ * Compute Ecosystem & Maintainer Impact from all-time per-repo contribution
+ * aggregates (commits + PRs), instead of the recent-PR window. A repo qualifies
+ * when it is popular enough (external ≥200★, the user's own ≥1000★ — same
+ * thresholds as {@link isEcosystemImpactPr}) AND the user did real work in it
+ * (≥{@link IMPACT_COMMIT_MIN} landed commits OR ≥1 PR). Private and fork repos
+ * are excluded (a fork's star count is borrowed; pushing to it isn't impact).
+ *
+ * Pure so it can be unit-tested without network access.
+ */
+export function computeImpactFromContribMap(
+  repos: ContribRepoAgg[],
+  loginLower: string,
+): ImpactMetrics {
+  const qualifying = repos.filter((r) => {
+    if (r.is_private || r.is_fork) return false;
+    const isExternal = r.owner_login.toLowerCase() !== loginLower;
+    const threshold = isExternal ? 200 : 1000;
+    if (r.stars < threshold) return false;
+    return r.commits >= IMPACT_COMMIT_MIN || r.prs >= 1;
+  });
+
+  const maxImpactRepoStars = qualifying.reduce((a, r) => Math.max(a, r.stars), 0);
+  const impactDepthRaw =
+    Math.round(
+      qualifying.reduce((a, r) => {
+        // Weight a repo by how much work landed there, so "17 PRs + many
+        // commits" beats a single PR (the per-repo aggregate would otherwise
+        // flatten that signal). Bounded so one mega-repo can't dominate.
+        const weight = Math.min(1 + Math.log10(r.commits + r.prs), 2.5);
+        return a + logRatio(r.stars, 5000) * weight;
+      }, 0) * 100,
+    ) / 100;
+
+  const impactRepos: ImpactRepo[] = qualifying
+    .map((r) => ({ repo: r.repo, stars: r.stars, commits: r.commits, prs: r.prs }))
+    .sort((a, b) => b.stars - a.stars)
+    .slice(0, 8);
+
+  return {
+    max_impact_repo_stars: maxImpactRepoStars,
+    impact_depth_raw: impactDepthRaw,
+    impact_repo_count: qualifying.length,
+    impact_commit_count: qualifying.reduce((a, r) => a + r.commits, 0),
+    impact_pr_count: qualifying.reduce((a, r) => a + r.prs, 0),
+    impact_repos: impactRepos,
+  };
+}
+
+interface ContribByRepoNode {
+  contributions: { totalCount: number };
+  repository: {
+    nameWithOwner: string;
+    stargazerCount: number;
+    isPrivate: boolean;
+    isFork: boolean;
+    owner: { login: string } | null;
+  } | null;
+}
+
+interface YearContribs {
+  commitContributionsByRepository: ContribByRepoNode[];
+  pullRequestContributionsByRepository: ContribByRepoNode[];
+}
+
+/**
+ * Fetch all-time per-repo commit + PR contributions by aliasing one
+ * `contributionsCollection(from,to)` per year (GraphQL caps each to a 1-year
+ * span), capped to the most recent {@link IMPACT_YEAR_CAP} years. Returns null
+ * when unauthenticated (caller falls back to the recent-PR computation).
+ */
+async function fetchContribReposByYear(
+  username: string,
+  years: number[],
+): Promise<ContribRepoAgg[] | null> {
+  const capped = [...years].sort((a, b) => b - a).slice(0, IMPACT_YEAR_CAP);
+  if (capped.length === 0) return null;
+
+  const fragment = `fragment RepoContribs on ContributionsCollection {
+    commitContributionsByRepository(maxRepositories: 100) {
+      contributions { totalCount }
+      repository { nameWithOwner stargazerCount isPrivate isFork owner { login } }
+    }
+    pullRequestContributionsByRepository(maxRepositories: 100) {
+      contributions { totalCount }
+      repository { nameWithOwner stargazerCount isPrivate isFork owner { login } }
+    }
+  }`;
+  const varDecls = capped
+    .map((_, i) => `$from${i}: DateTime!, $to${i}: DateTime!`)
+    .join(", ");
+  const aliases = capped
+    .map((_, i) => `y${i}: contributionsCollection(from: $from${i}, to: $to${i}) { ...RepoContribs }`)
+    .join("\n        ");
+  const query = `query($login: String!, ${varDecls}) {
+      user(login: $login) {
+        ${aliases}
+      }
+    }
+    ${fragment}`;
+
+  const variables: Record<string, unknown> = { login: username };
+  for (let i = 0; i < capped.length; i++) {
+    variables[`from${i}`] = `${capped[i]}-01-01T00:00:00Z`;
+    variables[`to${i}`] = `${capped[i]}-12-31T23:59:59Z`;
+  }
+
+  const data = await graphql<{ user: Record<string, YearContribs> | null }>(
+    query,
+    variables,
+  );
+  if (!data?.user) return null;
+
+  // Merge per-year per-repo aggregates: sum commits/prs, take max stars.
+  const map = new Map<string, ContribRepoAgg>();
+  const ingest = (node: ContribByRepoNode, kind: "commits" | "prs"): void => {
+    const repo = node.repository;
+    if (!repo) return;
+    const key = repo.nameWithOwner;
+    const entry =
+      map.get(key) ??
+      {
+        repo: key,
+        stars: 0,
+        is_private: repo.isPrivate,
+        is_fork: repo.isFork,
+        owner_login: repo.owner?.login ?? key.split("/", 1)[0],
+        commits: 0,
+        prs: 0,
+      };
+    entry.stars = Math.max(entry.stars, repo.stargazerCount ?? 0);
+    entry[kind] += node.contributions?.totalCount ?? 0;
+    map.set(key, entry);
+  };
+  for (let i = 0; i < capped.length; i++) {
+    const yc = data.user[`y${i}`];
+    if (!yc) continue;
+    for (const n of yc.commitContributionsByRepository ?? []) ingest(n, "commits");
+    for (const n of yc.pullRequestContributionsByRepository ?? []) ingest(n, "prs");
+  }
+  return [...map.values()];
+}
+
 export async function collect(username: string): Promise<{
   metrics: RawMetrics;
   top_repos: TopRepo[];
   recent_prs: RecentPr[];
   flood_pr_titles: string[];
+  impact_repos: ImpactRepo[];
 }> {
   const now = new Date();
 
@@ -444,13 +614,31 @@ export async function collect(username: string): Promise<{
   // flooding of OTHER people's repos (own-repo floods are normal solo work).
   const flood = computeFloodSignals(await fetchRecentAllPrs(login), loginLower);
 
-  // Ecosystem & maintainer impact: substantial PRs into popular repos — others'
-  // projects (≥200★) or the user's own genuinely popular repos (≥1000★).
-  const impactPrs = recentPrs.filter((p) => isEcosystemImpactPr(p, loginLower));
-  const maxImpactRepoStars = impactPrs.reduce((a, p) => Math.max(a, p.repo_stars), 0);
-  const impactDepthRaw =
-    Math.round(impactPrs.reduce((a, p) => a + logRatio(p.repo_stars, 5000), 0) * 100) /
-    100;
+  // Ecosystem & maintainer impact: substantial work (PRs + landed commits) into
+  // popular repos — others' projects (≥200★) or the user's own genuinely popular
+  // repos (≥1000★). Computed from all-time per-repo contribution aggregates so
+  // old high-value work (e.g. apache/flink commits) still counts; falls back to
+  // the recent-PR window when unauthenticated (no GraphQL).
+  const contribRepos = await fetchContribReposByYear(login, contributionYears);
+  let impact: ImpactMetrics;
+  if (contribRepos) {
+    impact = computeImpactFromContribMap(contribRepos, loginLower);
+  } else {
+    const impactPrs = recentPrs.filter((p) => isEcosystemImpactPr(p, loginLower));
+    impact = {
+      max_impact_repo_stars: impactPrs.reduce((a, p) => Math.max(a, p.repo_stars), 0),
+      impact_depth_raw:
+        Math.round(
+          impactPrs.reduce((a, p) => a + logRatio(p.repo_stars, 5000), 0) * 100,
+        ) / 100,
+      impact_repo_count: impactPrs.length,
+      impact_commit_count: 0,
+      impact_pr_count: impactPrs.length,
+      impact_repos: [],
+    };
+  }
+  const maxImpactRepoStars = impact.max_impact_repo_stars;
+  const impactDepthRaw = impact.impact_depth_raw;
 
   // Garbage farming into popular community projects: trivial PRs into others'
   // ≥200★ repos. (PRs into one's OWN repos are never penalized.)
@@ -495,8 +683,10 @@ export async function collect(username: string): Promise<{
     recent_merged_pr_sample: recentPrs.length,
     recent_trivial_pr_count: trivialPrs,
     max_impact_repo_stars: maxImpactRepoStars,
-    impact_pr_count: impactPrs.length,
+    impact_pr_count: impact.impact_pr_count,
     impact_depth_raw: impactDepthRaw,
+    impact_repo_count: impact.impact_repo_count,
+    impact_commit_count: impact.impact_commit_count,
     external_trivial_pr_count: externalTrivialPrCount,
     star_inflation_suspect: starInflationSuspect,
     closed_unmerged_pr_count: closedUnmergedPrCount,
@@ -513,5 +703,6 @@ export async function collect(username: string): Promise<{
     top_repos: topRepos,
     recent_prs: recentPrs,
     flood_pr_titles: flood.flood_pr_titles,
+    impact_repos: impact.impact_repos,
   };
 }

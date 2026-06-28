@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   computeFloodSignals,
+  computeImpactFromContribMap,
   isEcosystemImpactPr,
   isExternalTrivialFarmPr,
+  type ContribRepoAgg,
 } from "../github";
 import { logRatio, score, spamBotScore, tierFor } from "../score";
 import type { RawMetrics, RecentPr } from "../types";
@@ -294,6 +296,64 @@ describe("isEcosystemImpactPr (dimension 4 qualification)", () => {
     expect(
       isEcosystemImpactPr(pr({ repo: "torvalds/linux", repo_stars: 200000, trivial: true }), me),
     ).toBe(false);
+  });
+});
+
+describe("computeImpactFromContribMap (all-time PR + commit impact)", () => {
+  const me = "syhily";
+  const agg = (over: Partial<ContribRepoAgg>): ContribRepoAgg => ({
+    repo: "apache/flink",
+    stars: 24000,
+    is_private: false,
+    is_fork: false,
+    owner_login: "apache",
+    commits: 0,
+    prs: 0,
+    ...over,
+  });
+
+  it("credits old high-star external work via commits even with no recent PRs", () => {
+    // The syhily/apache-flink case: lots of 2022 commits, outside any recent-PR window.
+    const m = computeImpactFromContribMap([agg({ commits: 30, prs: 0 })], me);
+    expect(m.max_impact_repo_stars).toBe(24000);
+    expect(m.impact_depth_raw).toBeGreaterThan(0);
+    expect(m.impact_repo_count).toBe(1);
+    expect(m.impact_commit_count).toBe(30);
+    expect(m.impact_repos[0].repo).toBe("apache/flink");
+  });
+
+  it("credits a single landed PR into an external ≥200★ repo", () => {
+    const m = computeImpactFromContribMap([agg({ repo: "langgenius/dify", owner_login: "langgenius", stars: 5000, prs: 1 })], me);
+    expect(m.impact_repo_count).toBe(1);
+  });
+
+  it("ignores a single drive-by commit (needs ≥2 commits or ≥1 PR)", () => {
+    const m = computeImpactFromContribMap([agg({ commits: 1, prs: 0 })], me);
+    expect(m.impact_repo_count).toBe(0);
+    expect(m.max_impact_repo_stars).toBe(0);
+  });
+
+  it("excludes forks and private repos", () => {
+    const m = computeImpactFromContribMap(
+      [
+        agg({ repo: "me/flink-fork", is_fork: true, commits: 50 }),
+        agg({ repo: "me/secret", is_private: true, commits: 50 }),
+      ],
+      me,
+    );
+    expect(m.impact_repo_count).toBe(0);
+  });
+
+  it("applies the higher ≥1000★ bar to the user's OWN repos", () => {
+    const own500 = computeImpactFromContribMap([agg({ repo: "syhily/proj", owner_login: "syhily", stars: 500, commits: 50 })], me);
+    expect(own500.impact_repo_count).toBe(0);
+    const own2000 = computeImpactFromContribMap([agg({ repo: "syhily/proj", owner_login: "syhily", stars: 2000, commits: 50 })], me);
+    expect(own2000.impact_repo_count).toBe(1);
+  });
+
+  it("does NOT count an external repo below 200★", () => {
+    const m = computeImpactFromContribMap([agg({ repo: "someone/tiny", owner_login: "someone", stars: 100, commits: 50 })], me);
+    expect(m.impact_repo_count).toBe(0);
   });
 });
 

@@ -25,6 +25,19 @@ export interface RecentPr {
   trivial: boolean;
 }
 
+/**
+ * A popular repo the user has materially contributed to (PRs and/or commits),
+ * aggregated all-time from the contribution graph rather than the recent-PR
+ * window. Surfaces work that predates the last ~50 PRs (e.g. old apache/flink
+ * commits) so both the score and the LLM can credit it.
+ */
+export interface ImpactRepo {
+  repo: string;
+  stars: number;
+  commits: number;
+  prs: number;
+}
+
 export interface RawMetrics {
   username: string;
   profile_url: string | null;
@@ -57,6 +70,10 @@ export interface RawMetrics {
   max_impact_repo_stars: number;
   impact_pr_count: number;
   impact_depth_raw: number;
+  // All-time per-repo impact aggregates (commits + PRs into popular repos).
+  // Optional so existing RawMetrics literals / fixtures stay valid.
+  impact_repo_count?: number;
+  impact_commit_count?: number;
   star_inflation_suspect: boolean;
   // Spam / low-quality PR signals.
   closed_unmerged_pr_count: number;
@@ -103,6 +120,9 @@ export interface ScanResult {
   recent_prs: RecentPr[];
   /** Representative titles from the largest templated-PR cluster (for the LLM). */
   flood_pr_titles: string[];
+  /** Popular repos the user contributed to all-time (PRs + commits). Optional
+   * for backward compatibility with cached scans written before this field. */
+  impact_repos?: ImpactRepo[];
   scoring: Scoring;
 }
 
