@@ -274,7 +274,7 @@ export default async function AccountPage({
       </section>
 
       <div className="mt-6">
-        <CopyBadge baseUrl={SITE_URL} username={d.username} />
+        <CopyBadge baseUrl={SITE_URL} username={d.username} version={d.scanned_at} />
       </div>
 
       <footer className="mt-10 text-center">
