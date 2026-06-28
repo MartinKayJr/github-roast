@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPaper, recordPaper, updatePaperRoast } from "@/lib/db";
+import { getPaper, getPaperRoast, recordPaper, updatePaperRoast } from "@/lib/db";
+import type { PaperDetail } from "@/lib/db";
 import { normLang } from "@/lib/lang";
 import { LlmConfig, LlmQuotaError, chatStream, defaultLlmConfig } from "@/lib/llm";
 import { buildPaperMessages } from "@/lib/paper-prompt";
@@ -82,6 +83,27 @@ interface PaperRoastBody {
   locked?: { score: number; dims: PaperDims };
 }
 
+function metaFromStored(p: PaperDetail): PaperMeta {
+  return {
+    final_score: p.final_score,
+    tier: p.tier,
+    dims: p.dims,
+    content_base: p.content_base,
+    citation_bonus: p.citation_bonus,
+    tags: p.tags,
+    tldr_line: p.tldr_line,
+  };
+}
+
+function paperHeaders(meta: PaperMeta): HeadersInit {
+  return {
+    "Content-Type": "text/plain; charset=utf-8",
+    "Cache-Control": "no-store",
+    "X-Accel-Buffering": "no",
+    [PAPER_META_HEADER]: Buffer.from(JSON.stringify(meta), "utf-8").toString("base64"),
+  };
+}
+
 export async function POST(req: NextRequest) {
   let body: PaperRoastBody;
   try {
@@ -110,11 +132,22 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const stored = await getPaper(paper.arxiv_id);
+
+  // Cache-serve: default model + this (mode,lang) already generated → return the
+  // persisted commentary, NO LLM call. Saves tokens on repeat views and tone
+  // toggles. (BYO keys skip the cache — it's the user's own credit, may want fresh.)
+  if (isDefault && stored) {
+    const cached = await getPaperRoast(paper.arxiv_id, mode, lang);
+    if (cached) {
+      return new Response(cached, { headers: paperHeaders(metaFromStored(stored)) });
+    }
+  }
+
   // Reuse a persisted score so it stays stable forever (across modes/sessions).
   // Client passes `locked` for snappy in-session tone switches; the DB lookup
   // covers fresh sessions and the detail page.
-  const existing = body.locked ? null : await getPaper(paper.arxiv_id);
-  const lock = body.locked ?? (existing ? { score: existing.final_score, dims: existing.dims } : null);
+  const lock = body.locked ?? (stored ? { score: stored.final_score, dims: stored.dims } : null);
 
   const generator = chatStream(
     config,
@@ -224,12 +257,5 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/plain; charset=utf-8",
-      "Cache-Control": "no-store",
-      "X-Accel-Buffering": "no",
-      [PAPER_META_HEADER]: Buffer.from(JSON.stringify(meta), "utf-8").toString("base64"),
-    },
-  });
+  return new Response(stream, { headers: paperHeaders(meta) });
 }
