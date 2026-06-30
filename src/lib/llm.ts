@@ -60,6 +60,27 @@ export function defaultLlmConfig(): LlmConfig | null {
 }
 
 /**
+ * Resolve the operator's *fallback* provider (DeepSeek by default), or null if
+ * unset. Used only on the default (operator-funded) path: when the primary
+ * provider drops/queues the connection or rate-limits before producing any
+ * answer text, the roast fails over to this provider instead of erroring out.
+ * BYO-key requests never use it — that's the user's own single key/credit.
+ *
+ * Configure with `LLM_FALLBACK_API_KEY` (+ optional `LLM_FALLBACK_BASE_URL` /
+ * `LLM_FALLBACK_MODEL`). DeepSeek's `deepseek-v4-flash` is a fast model, so
+ * failover both rescues hard drops AND avoids the primary reasoning model's
+ * long chain-of-thought latency.
+ */
+export function fallbackLlmConfig(): LlmConfig | null {
+  if (!process.env.LLM_FALLBACK_API_KEY) return null;
+  return {
+    baseURL: process.env.LLM_FALLBACK_BASE_URL || "https://api.deepseek.com",
+    apiKey: process.env.LLM_FALLBACK_API_KEY,
+    model: process.env.LLM_FALLBACK_MODEL || "deepseek-v4-flash",
+  };
+}
+
+/**
  * Stream a chat completion, yielding text deltas. Throws {@link LlmQuotaError}
  * on 401/402/429 so the caller can prompt the user for their own key.
  */
@@ -210,6 +231,48 @@ export async function* chatStreamEvents(
     // disconnect) so we don't leak a half-read upstream stream.
     if (!ctrl.signal.aborted) ctrl.abort();
   }
+}
+
+/**
+ * Try each provider config in order, failing over to the next ONLY when the
+ * current one errors *before emitting any answer `content`* — the dominant prod
+ * failure, where the primary drops or queues the connection before the first
+ * token (e.g. StepFun resetting at ~10s under load). Once answer text has
+ * streamed we can't restart on another provider without duplicating output, so
+ * the error propagates. Reasoning-only deltas don't count as committed output,
+ * so a stall during a long "think" still fails over.
+ *
+ * Quota errors (401/402/429) fail over too — the operator's primary may be
+ * exhausted while the fallback still has credit — and the LAST provider's quota
+ * error surfaces, so the caller can still prompt for a BYO key once every
+ * operator option is spent. A shared `opts.deadlineMs` is honoured across
+ * providers, so the fallback runs on whatever wall-clock budget the primary
+ * left behind (it never gets a fresh 105s).
+ */
+export async function* chatStreamEventsWithFallback(
+  configs: LlmConfig[],
+  messages: ChatMessage[],
+  opts?: Parameters<typeof chatStreamEvents>[2],
+): AsyncGenerator<ChatEvent> {
+  let lastErr: unknown;
+  for (let i = 0; i < configs.length; i++) {
+    const isLast = i === configs.length - 1;
+    let emittedContent = false;
+    try {
+      for await (const ev of chatStreamEvents(configs[i], messages, opts)) {
+        if (ev.type === "content") emittedContent = true;
+        yield ev;
+      }
+      return;
+    } catch (e) {
+      lastErr = e;
+      // Can't restart on another provider once answer text is committed, and the
+      // last provider has nowhere to fall over to — surface the error either way.
+      if (emittedContent || isLast) throw e;
+      // Otherwise fall through and retry the request on the next provider.
+    }
+  }
+  if (lastErr) throw lastErr;
 }
 
 /**

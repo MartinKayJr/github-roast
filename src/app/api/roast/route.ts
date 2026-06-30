@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { TIER_EN, TIER_LABEL_EN } from "@/lib/badge";
 import { getArchivedRoast, getRank, recordProfileSnapshot, recordScore, updateRoast } from "@/lib/db";
 import { Lang, normLang } from "@/lib/lang";
-import { LlmConfig, LlmQuotaError, chatStreamEvents, defaultLlmConfig } from "@/lib/llm";
+import {
+  LlmConfig,
+  LlmQuotaError,
+  chatStreamEventsWithFallback,
+  defaultLlmConfig,
+  fallbackLlmConfig,
+} from "@/lib/llm";
 import { beatPercent } from "@/lib/percentile";
 import { buildRoastJudgeMessages, buildRoastMessages } from "@/lib/prompt";
 import { reportMatchesLang } from "@/lib/report";
@@ -371,6 +377,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "no_llm_configured", useByoKey: true }, { status: 400 });
   }
   const { config, isDefault } = resolved;
+  // Default path fails over to the operator's fallback provider (DeepSeek) when
+  // the primary drops/queues the connection before any answer text. BYO keys
+  // never fail over — the user supplied a single key and pays their own way.
+  const fallback = isDefault ? fallbackLlmConfig() : null;
+  const llmConfigs = fallback ? [config, fallback] : [config];
   // Single-flight: set once we hold the roast lock, so the stream/error paths
   // know to release it. Only the default model coalesces (BYO keys self-serve).
   let isLeader = false;
@@ -521,7 +532,7 @@ export async function POST(req: NextRequest) {
       try {
         beat(calibrating, true);
         let judgeText = "";
-        for await (const ev of chatStreamEvents(config, buildRoastJudgeMessages(scan, lang), {
+        for await (const ev of chatStreamEventsWithFallback(llmConfigs, buildRoastJudgeMessages(scan, lang), {
           deadlineMs: llmDeadlineMs,
         })) {
           if (ev.type === "content") {
@@ -543,7 +554,7 @@ export async function POST(req: NextRequest) {
       // 2) Savage writer pass. Read the leading control lines (@@ADJUST@@ /
       // @@TAGS@@ / @@ROAST@@) up to the report heading; reasoning → writing beat.
       beat(writing, true);
-      const events = chatStreamEvents(config, buildRoastMessages(scan, lang, judge), {
+      const events = chatStreamEventsWithFallback(llmConfigs, buildRoastMessages(scan, lang, judge), {
         deadlineMs: llmDeadlineMs,
       });
       let head = "";

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   updateRoast: vi.fn(),
   chatStreamEvents: vi.fn(),
   defaultLlmConfig: vi.fn(),
+  fallbackLlmConfig: vi.fn(),
   acquireRoastLock: vi.fn(),
   checkRoastRateLimit: vi.fn(),
   getCachedRoast: vi.fn(),
@@ -61,8 +62,17 @@ vi.mock("@/lib/llm", () => {
   }
   return {
     LlmQuotaError,
+    // The route calls the fallback wrapper; delegate to the per-call
+    // chatStreamEvents mock (driven by mockReturnValueOnce) using the primary
+    // config, preserving the existing judge-then-writer stream sequence.
+    chatStreamEventsWithFallback: (
+      configs: unknown[],
+      messages: unknown,
+      opts: unknown,
+    ) => mocks.chatStreamEvents(configs[0], messages, opts),
     chatStreamEvents: mocks.chatStreamEvents,
     defaultLlmConfig: mocks.defaultLlmConfig,
+    fallbackLlmConfig: mocks.fallbackLlmConfig,
   };
 });
 
@@ -185,6 +195,7 @@ beforeEach(() => {
     apiKey: "test-key",
     model: "test-model",
   });
+  mocks.fallbackLlmConfig.mockReturnValue(null);
   mocks.getCachedScan.mockResolvedValue(null);
   mocks.getCachedRoast.mockResolvedValue(null);
   mocks.getArchivedRoast.mockResolvedValue(null);
