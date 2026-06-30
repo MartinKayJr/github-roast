@@ -104,8 +104,6 @@
     "title": "源码与评分算法均开源 · 在 GitHub 查看"
   },
   "home": {
-    "leaderboardPill": "名人堂",
-    "leaderboardPillTag": "发现最强开发者",
     "titleBefore": "毒舌",
     "titleAfter": "评分",
     "subtitle": "给自己打分 · 发现最佳开发者",
@@ -163,6 +161,7 @@
   "reactions": {
     "heading": "社区反应",
     "hint": "每个 GitHub 账号只能保留一种反应，可随时改选",
+    "addReaction": "添加反应",
     "loginRequired": "登录 GitHub 后才能投票，选择会长期保留。",
     "loginAction": "使用 GitHub 登录",
     "failed": "反应没有保存成功，请稍后重试。",

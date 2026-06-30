@@ -104,8 +104,6 @@
     "title": "Source code & scoring algorithm are open source · View on GitHub"
   },
   "home": {
-    "leaderboardPill": "Hall of Fame",
-    "leaderboardPillTag": "Discover top devs",
     "titleBefore": "Savage",
     "titleAfter": "Roast",
     "subtitle": "Score yourself · Discover the best developers",
@@ -163,6 +161,7 @@
   "reactions": {
     "heading": "Community reactions",
     "hint": "One reaction per GitHub account; switch it any time",
+    "addReaction": "Add reaction",
     "loginRequired": "Sign in with GitHub to react. Your choice will be saved.",
     "loginAction": "Sign in with GitHub",
     "failed": "Your reaction wasn't saved. Try again later.",
