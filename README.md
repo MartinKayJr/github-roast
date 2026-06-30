@@ -62,7 +62,7 @@ browser ─▶ /api/scan ─▶ [Redis cache?] ─▶ lib/github.ts  (GitHub RES
 - **The base score is deterministic** — computed server-side by `lib/score.ts`.
 - The LLM runs in two separated passes: a factual judge may apply a bounded **±10** calibration, then a writer turns the fixed result into tags, the top roast line, and the report. The writer cannot change the score.
 - 6 dimensions (account maturity / original project quality / contribution quality / ecosystem impact / community influence / activity authenticity) + 10 farming red flags. Weights lean toward **hard-to-fake** signals (PRs merged into real repos, sustained activity) and discount **buyable** ones (stars, followers).
-- The site also includes arXiv paper roast/praise scoring, share cards, README badges, profile comments, and GitHub-authenticated profile reactions.
+- The site also includes share cards, README badges, profile comments, and GitHub-authenticated profile reactions.
 
 ## Local development
 
@@ -87,7 +87,7 @@ pnpm dev
 
 ## Environment variables
 
-See [`.env.example`](./.env.example). The minimum to run the GitHub roast flow is `GITHUB_TOKEN` + `LLM_API_KEY` (defaults to StepFun, OpenAI-compatible; swap in any OpenAI-compatible service). Cache, rate limiting, human verification, GitHub login, profile comments/reactions, the leaderboard, and arXiv citation bonuses **degrade silently** when unconfigured (fine for local). Configure everything for production.
+See [`.env.example`](./.env.example). The minimum to run the GitHub roast flow is `GITHUB_TOKEN` + `LLM_API_KEY` (defaults to StepFun, OpenAI-compatible; swap in any OpenAI-compatible service). Cache, rate limiting, human verification, GitHub login, profile comments/reactions, and the leaderboard **degrade silently** when unconfigured (fine for local). Configure everything for production.
 
 ## Leaderboard + percentile (Turso, optional)
 
@@ -108,11 +108,10 @@ TURSO_DATABASE_URL=file:./local.db
 1. Push to GitHub, import in Vercel.
 2. Configure environment variables (as above). `UPSTASH_*` can be provisioned in one click via Vercel's Upstash integration.
 3. Grab a Cloudflare Turnstile site/secret key pair; set `NEXT_PUBLIC_TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET_KEY`.
-4. (Optional) Turso: `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` to enable the leaderboard, archived reports, profile comments/reactions, and paper boards.
+4. (Optional) Turso: `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` to enable the leaderboard, archived reports, and profile comments/reactions.
 5. (Optional) GitHub OAuth: `AUTH_GITHUB_ID` + `AUTH_GITHUB_SECRET` + `AUTH_SECRET` to enable signed-in comments/reactions.
-6. (Optional) arXiv citation signals: `SEMANTIC_SCHOLAR_API_KEY`; `ADMIN_SECRET` enables the paper citation rescore endpoint.
-7. (Optional) set `PUBLIC_SITE_URL` when deploying under a custom domain so metadata, sitemap, cards, and LLM attribution use the right origin.
-8. Deploy.
+6. (Optional) set `PUBLIC_SITE_URL` when deploying under a custom domain so metadata, sitemap, cards, and LLM attribution use the right origin.
+7. Deploy.
 
 ## Bring your own model / API key
 

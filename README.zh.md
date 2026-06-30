@@ -62,7 +62,7 @@
 - **基础分是确定性的**,由 `lib/score.ts` 在服务端算出。
 - 大模型分两层:务实 judge 只做事实复核和**至多 ±10** 的受限校准;writer 只根据固定结果写标签、顶部毒舌和完整报告,不能改分。
 - 6 个维度(账号成熟度 / 原创项目质量 / 贡献质量 / 外部生态贡献 / 社区影响力 / 活跃真实性)+ 10 条刷量 red flag,权重向**难以造假**的信号(合并进真实仓库的 PR、持续活跃)倾斜,对**可购买**的信号(star、粉丝)压低权重。
-- 站点还包含 arXiv 论文锐评/夸夸、分享卡片、README 小徽章、个人页评论、GitHub 登录后的个人页反应。
+- 站点还包含分享卡片、README 小徽章、个人页评论、GitHub 登录后的个人页反应。
 
 ## 本地开发
 
@@ -87,7 +87,7 @@ pnpm dev
 
 ## 环境变量
 
-见 [`.env.example`](./.env.example)。GitHub 评分流程最小可跑只需 `GITHUB_TOKEN` + `LLM_API_KEY`(默认 StepFun 阶跃,OpenAI 兼容;可换任意 OpenAI 兼容服务);缓存、限流、人机校验、GitHub 登录、个人页评论/反应、排行榜、arXiv 引用加分在未配置时会**静默降级**(适合本地)。生产强烈建议全配齐。
+见 [`.env.example`](./.env.example)。GitHub 评分流程最小可跑只需 `GITHUB_TOKEN` + `LLM_API_KEY`(默认 StepFun 阶跃,OpenAI 兼容;可换任意 OpenAI 兼容服务);缓存、限流、人机校验、GitHub 登录、个人页评论/反应、排行榜在未配置时会**静默降级**(适合本地)。生产强烈建议全配齐。
 
 ## 排行榜 + 百分位(Turso,可选)
 
@@ -108,11 +108,10 @@ TURSO_DATABASE_URL=file:./local.db
 1. Push 到 GitHub,在 Vercel 导入。
 2. 配置环境变量(同上)。`UPSTASH_*` 用 Vercel 的 Upstash 集成一键开通。
 3. Cloudflare Turnstile 拿一对 site/secret key,配 `NEXT_PUBLIC_TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET_KEY`。
-4. (可选)Turso:`TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` 开排行榜、归档报告、个人页评论/反应和论文榜。
+4. (可选)Turso:`TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` 开排行榜、归档报告、个人页评论/反应。
 5. (可选)GitHub OAuth:`AUTH_GITHUB_ID` + `AUTH_GITHUB_SECRET` + `AUTH_SECRET` 开启登录评论/反应。
-6. (可选)arXiv 引用信号:`SEMANTIC_SCHOLAR_API_KEY`;`ADMIN_SECRET` 用于论文引用重算接口。
-7. (可选)自定义域名部署时设置 `PUBLIC_SITE_URL`,保证 metadata、sitemap、卡片和 LLM attribution 使用正确域名。
-8. Deploy。
+6. (可选)自定义域名部署时设置 `PUBLIC_SITE_URL`,保证 metadata、sitemap、卡片和 LLM attribution 使用正确域名。
+7. Deploy。
 
 ## 自带模型 / API Key
 

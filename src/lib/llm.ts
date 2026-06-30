@@ -278,7 +278,7 @@ export async function* chatStreamEventsWithFallback(
 /**
  * Content-only view of {@link chatStreamEvents}: yields just the answer text
  * deltas, dropping reasoning. Unchanged behaviour for all existing callers
- * (judge, danmaku, paper) that only care about the final text.
+ * (judge, danmaku) that only care about the final text.
  */
 export async function* chatStream(
   config: LlmConfig,
