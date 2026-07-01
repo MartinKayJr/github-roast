@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { extractFacets } from "../facets";
-import type { TopRepo } from "../types";
+import type { ImpactRepo, TopRepo } from "../types";
 
 function repo(partial: Partial<TopRepo>): TopRepo {
   return {
@@ -16,10 +16,16 @@ function repo(partial: Partial<TopRepo>): TopRepo {
   };
 }
 
+function impact(partial: Partial<ImpactRepo>): ImpactRepo {
+  return { repo: "owner/name", stars: 0, commits: 0, prs: 0, ...partial };
+}
+
 const langs = (facets: ReturnType<typeof extractFacets>) =>
   facets.filter((f) => f.type === "language").map((f) => f.value);
 const orgs = (facets: ReturnType<typeof extractFacets>) =>
   facets.filter((f) => f.type === "org").map((f) => f.value);
+const repos = (facets: ReturnType<typeof extractFacets>) =>
+  facets.filter((f) => f.type === "repo").map((f) => f.value);
 
 describe("extractFacets — languages", () => {
   it("ranks primary languages by byte share", () => {
@@ -118,9 +124,61 @@ describe("extractFacets — orgs", () => {
   });
 });
 
+describe("extractFacets — repos (projects)", () => {
+  it("maps contributed-to projects to repo facets, ranked by stars", () => {
+    const facets = extractFacets({
+      impact_repos: [
+        impact({ repo: "langgenius/dify", stars: 60000 }),
+        impact({ repo: "rust-lang/rust", stars: 90000 }),
+      ],
+    });
+    // Sorted by stars desc — the busier project first.
+    expect(repos(facets)).toEqual(["rust-lang/rust", "langgenius/dify"]);
+    expect(facets.find((f) => f.value === "rust-lang/rust")?.weight).toBe(90000);
+  });
+
+  it("drops projects below the star floor", () => {
+    const facets = extractFacets({
+      impact_repos: [
+        impact({ repo: "big/one", stars: 500 }),
+        impact({ repo: "tiny/one", stars: 499 }),
+      ],
+    });
+    expect(repos(facets)).toEqual(["big/one"]);
+  });
+
+  it("ignores malformed repo names (no owner/name slash)", () => {
+    const facets = extractFacets({
+      impact_repos: [impact({ repo: "not-a-full-name", stars: 9999 })],
+    });
+    expect(repos(facets)).toEqual([]);
+  });
+
+  it("dedupes the same project case-insensitively", () => {
+    const facets = extractFacets({
+      impact_repos: [
+        impact({ repo: "vercel/next.js", stars: 100000 }),
+        impact({ repo: "Vercel/Next.js", stars: 100000 }),
+      ],
+    });
+    expect(repos(facets)).toEqual(["vercel/next.js"]);
+  });
+
+  it("caps at six projects per developer", () => {
+    const facets = extractFacets({
+      impact_repos: Array.from({ length: 9 }, (_, i) =>
+        impact({ repo: `o/r${i}`, stars: 1000 + i }),
+      ),
+    });
+    expect(repos(facets)).toHaveLength(6);
+  });
+});
+
 describe("extractFacets — combined", () => {
   it("returns [] for an empty snapshot", () => {
     expect(extractFacets({})).toEqual([]);
-    expect(extractFacets({ top_repos: [], organizations: [] })).toEqual([]);
+    expect(
+      extractFacets({ top_repos: [], organizations: [], impact_repos: [] }),
+    ).toEqual([]);
   });
 });

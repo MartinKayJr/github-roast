@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 const CDN_CACHE = "public, s-maxage=300, stale-while-revalidate=1800";
 
 function parseFacetType(raw: string | null): FacetType | null {
-  return raw === "language" || raw === "org" ? raw : null;
+  return raw === "language" || raw === "org" || raw === "repo" ? raw : null;
 }
 
 /**

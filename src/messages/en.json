@@ -85,18 +85,20 @@
   },
   "developers": {
     "heading": "Discover developers",
-    "subtitle": "Find the top developers worth following, grouped by programming language and organization.",
+    "subtitle": "Find the top developers worth following, grouped by programming language, project, and organization.",
     "languagesTitle": "By language",
+    "projectsTitle": "By project",
     "orgsTitle": "By organization",
     "count": "{count}",
     "emptyCategories": "No categories to show yet — check back soon.",
     "languageBucketHeading": "Top {value} developers",
+    "repoBucketHeading": "{value} · contributors",
     "orgBucketHeading": "{value} · members",
     "bucketSubtitle": "Ranked by overall score, showing up to the top {limit}.",
     "empty": "No developers in this category yet.",
     "backToDirectory": "← Back to Discover",
     "metaTitle": "Discover developers",
-    "metaDescription": "Browse top GitHub developers by programming language and organization.",
+    "metaDescription": "Browse top GitHub developers by programming language, project, and organization.",
     "bucketMetaDescription": "The highest-scoring GitHub developers in {value}."
   },
   "detail": {

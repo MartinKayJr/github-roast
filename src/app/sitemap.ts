@@ -50,19 +50,25 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     entry("/developers", { changeFrequency: "daily", priority: 0.9 }),
   ];
 
-  // Directory buckets (top languages + orgs). Reads the same cached categories
-  // the /developers page uses — no extra DB load — behind the same timeout guard
-  // so a cold cache can never hang the sitemap.
+  // Directory buckets (top languages + projects + orgs). Reads the same cached
+  // categories the /developers page uses — no extra DB load — behind the same
+  // timeout guard so a cold cache can never hang the sitemap.
   const facetRoutes: MetadataRoute.Sitemap = (
     await Promise.all(
-      (["language", "org"] as FacetType[]).map((type) =>
+      (["language", "repo", "org"] as FacetType[]).map((type) =>
         withTimeout(getFacetCategoriesCached(type), PROFILE_QUERY_TIMEOUT_MS, []).then(
           (cats) =>
             cats.map((c) =>
-              entry(`/developers/${type}/${encodeURIComponent(c.value)}`, {
-                changeFrequency: "weekly",
-                priority: 0.6,
-              }),
+              // Encode each segment separately so a `repo` value ("owner/name")
+              // keeps its slash as a path separator (matches the catch-all route);
+              // language/org stay single-segment.
+              entry(
+                `/developers/${type}/${c.value
+                  .split("/")
+                  .map((seg) => encodeURIComponent(seg))
+                  .join("/")}`,
+                { changeFrequency: "weekly", priority: 0.6 },
+              ),
             ),
         ),
       ),

@@ -51,6 +51,7 @@ export async function POST(req: NextRequest) {
       const facets = extractFacets({
         top_repos: snapshot.top_repos,
         organizations: snapshot.organizations,
+        impact_repos: snapshot.impact_repos,
       });
       if (facets.length === 0) {
         empty++;

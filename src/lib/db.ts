@@ -537,7 +537,11 @@ export async function recordProfileSnapshot(scan: ScanResult): Promise<void> {
     // logged and swallowed just like the snapshot write).
     await recordDeveloperFacets(
       username,
-      extractFacets({ top_repos: scan.top_repos, organizations: scan.organizations }),
+      extractFacets({
+        top_repos: scan.top_repos,
+        organizations: scan.organizations,
+        impact_repos: scan.impact_repos,
+      }),
     );
   } catch (e) {
     console.error("recordProfileSnapshot failed:", e);

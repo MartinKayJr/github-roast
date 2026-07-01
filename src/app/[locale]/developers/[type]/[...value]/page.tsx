@@ -12,24 +12,40 @@ import type { FacetType } from "@/lib/facets";
 
 export const dynamic = "force-dynamic";
 
-const FACET_TYPES: FacetType[] = ["language", "org"];
+const FACET_TYPES: FacetType[] = ["language", "org", "repo"];
 
 function parseFacetType(raw: string): FacetType | null {
   return (FACET_TYPES as string[]).includes(raw) ? (raw as FacetType) : null;
 }
 
-function bucketHeadingKey(type: FacetType): "languageBucketHeading" | "orgBucketHeading" {
-  return type === "org" ? "orgBucketHeading" : "languageBucketHeading";
+/** Rebuild the facet value from the catch-all path segments. A `repo` value is
+ *  "owner/name" and so arrives as two segments (`/developers/repo/owner/name`) —
+ *  a single dynamic segment would have %2F normalized away by the host and 404.
+ *  language/org are single-segment. Each segment is decoded, then rejoined with
+ *  "/" so it matches the stored `facet_value` exactly. */
+function facetValueFromSegments(segments: string[] | undefined): string {
+  return (segments ?? []).map((s) => decodeURIComponent(s)).join("/");
+}
+
+type BucketHeadingKey =
+  | "languageBucketHeading"
+  | "orgBucketHeading"
+  | "repoBucketHeading";
+
+function bucketHeadingKey(type: FacetType): BucketHeadingKey {
+  if (type === "org") return "orgBucketHeading";
+  if (type === "repo") return "repoBucketHeading";
+  return "languageBucketHeading";
 }
 
 export async function generateMetadata({
   params,
 }: {
-  params: Promise<{ locale: string; type: string; value: string }>;
+  params: Promise<{ locale: string; type: string; value: string[] }>;
 }): Promise<Metadata> {
   const { locale, type: rawType, value: rawValue } = await params;
   const type = parseFacetType(rawType);
-  const value = decodeURIComponent(rawValue);
+  const value = facetValueFromSegments(rawValue);
   const t = await getTranslations({ locale, namespace: "developers" });
   const meta = await getTranslations({ locale, namespace: "meta" });
   if (!type) return { title: t("metaTitle") };
@@ -43,11 +59,11 @@ export async function generateMetadata({
 export default async function FacetBucketPage({
   params,
 }: {
-  params: Promise<{ locale: string; type: string; value: string }>;
+  params: Promise<{ locale: string; type: string; value: string[] }>;
 }) {
   const { locale, type: rawType, value: rawValue } = await params;
   const type = parseFacetType(rawType);
-  const value = decodeURIComponent(rawValue);
+  const value = facetValueFromSegments(rawValue);
   if (!type || !value) notFound();
 
   setRequestLocale(locale);

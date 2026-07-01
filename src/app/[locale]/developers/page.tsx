@@ -39,7 +39,14 @@ function CategoryGrid({
       {categories.map((c) => (
         <Link
           key={c.value}
-          href={`/developers/${type}/${encodeURIComponent(c.value)}`}
+          // Encode each path segment separately, then join with "/". For `repo`
+          // the value is "owner/name" → two segments (matches the catch-all
+          // bucket route); for language/org it stays a single segment (e.g. "C++"
+          // → "C%2B%2B"). Never percent-encode the separating slash itself.
+          href={`/developers/${type}/${c.value
+            .split("/")
+            .map((seg) => encodeURIComponent(seg))
+            .join("/")}`}
           className="group flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3.5 py-1.5 text-sm transition-colors hover:border-white/20 hover:bg-white/[0.07]"
         >
           <span className="font-semibold text-zinc-100">{c.value}</span>
@@ -61,12 +68,18 @@ export default async function DevelopersPage({
   setRequestLocale(locale);
   const t = await getTranslations("developers");
 
-  const [languages, orgs] = await Promise.all([
+  const [languages, orgs, projectsAll] = await Promise.all([
     getFacetCategoriesCached("language"),
     getFacetCategoriesCached("org"),
+    getFacetCategoriesCached("repo"),
   ]);
+  // The repo axis has far more buckets (one per notable project) than languages
+  // or orgs, and they're already ordered most-contributors-first — show only the
+  // busiest head so the grid stays scannable instead of a wall of 100 pills.
+  const projects = projectsAll.slice(0, 48);
   const countLabel = (count: number) => t("count", { count });
-  const isEmpty = languages.length === 0 && orgs.length === 0;
+  const isEmpty =
+    languages.length === 0 && orgs.length === 0 && projects.length === 0;
 
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-5 py-14 sm:py-20">
@@ -87,6 +100,14 @@ export default async function DevelopersPage({
                 {t("languagesTitle")}
               </h2>
               <CategoryGrid type="language" categories={languages} countLabel={countLabel} />
+            </section>
+          )}
+          {projects.length > 0 && (
+            <section>
+              <h2 className="mb-4 text-lg font-black text-zinc-200">
+                {t("projectsTitle")}
+              </h2>
+              <CategoryGrid type="repo" categories={projects} countLabel={countLabel} />
             </section>
           )}
           {orgs.length > 0 && (
