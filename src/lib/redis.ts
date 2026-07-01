@@ -15,7 +15,8 @@ import {
   ROAST_CACHE_VERSION,
   SCORE_CACHE_VERSION,
 } from "./cache-version";
-import type { LeaderboardEntry, LeaderboardWindow } from "./db";
+import type { FacetCategory, LeaderboardEntry, LeaderboardWindow } from "./db";
+import type { FacetType } from "./facets";
 import type { Lang } from "./lang";
 import type { ProfileReactionCounts } from "./reactions";
 import type { ScanResult } from "./types";
@@ -347,6 +348,70 @@ export async function clearCachedLeaderboards(): Promise<void> {
         LEADERBOARD_WINDOWS.map((window) => leaderboardKey(view, window)),
       ),
     );
+  } catch {
+    // best-effort
+  }
+}
+
+// /developers directory caches. Both reads (per-bucket dev list, category grid)
+// are slow-moving — a bucket's ranking only shifts when someone in it re-scans —
+// and the category grid runs an expensive GROUP BY, so a longer TTL than the
+// leaderboard (5 min) is warranted. Paired with the API route's CDN cache and an
+// in-process single-flight (lib/developers.ts), the DB query runs at most once
+// per key per TTL even under a burst.
+const FACET_TTL_SECONDS = 600; // 10 min
+
+// Bucket values are canonical (e.g. "Rust", "C++") and safe in a Redis key.
+const facetCategoriesKey = (type: FacetType) => `facets:cat:${type}`;
+const facetListKey = (type: FacetType, value: string) => `facets:list:${type}:${value}`;
+
+export async function getCachedFacetCategories(
+  type: FacetType,
+): Promise<FacetCategory[] | null> {
+  const r = getRedis();
+  if (!r) return null;
+  try {
+    return (await r.get<FacetCategory[]>(facetCategoriesKey(type))) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setCachedFacetCategories(
+  type: FacetType,
+  categories: FacetCategory[],
+): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  try {
+    await r.set(facetCategoriesKey(type), categories, { ex: FACET_TTL_SECONDS });
+  } catch {
+    // best-effort
+  }
+}
+
+export async function getCachedFacetDevelopers(
+  type: FacetType,
+  value: string,
+): Promise<LeaderboardEntry[] | null> {
+  const r = getRedis();
+  if (!r) return null;
+  try {
+    return (await r.get<LeaderboardEntry[]>(facetListKey(type, value))) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setCachedFacetDevelopers(
+  type: FacetType,
+  value: string,
+  entries: LeaderboardEntry[],
+): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  try {
+    await r.set(facetListKey(type, value), entries, { ex: FACET_TTL_SECONDS });
   } catch {
     // best-effort
   }

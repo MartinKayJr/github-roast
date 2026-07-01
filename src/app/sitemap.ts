@@ -1,5 +1,7 @@
 import type { MetadataRoute } from "next";
 import { getAllPublicUsernames } from "@/lib/db";
+import { getFacetCategoriesCached } from "@/lib/developers";
+import type { FacetType } from "@/lib/facets";
 import { PUBLIC_INDEX_MIN_SCORE, SITE_URL } from "@/lib/site";
 
 // Generate at request time, not at build: the profile query is a full scan of
@@ -45,7 +47,27 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticRoutes: MetadataRoute.Sitemap = [
     entry("/", { changeFrequency: "daily", priority: 1 }),
     entry("/leaderboard", { changeFrequency: "hourly", priority: 0.9 }),
+    entry("/developers", { changeFrequency: "daily", priority: 0.9 }),
   ];
+
+  // Directory buckets (top languages + orgs). Reads the same cached categories
+  // the /developers page uses — no extra DB load — behind the same timeout guard
+  // so a cold cache can never hang the sitemap.
+  const facetRoutes: MetadataRoute.Sitemap = (
+    await Promise.all(
+      (["language", "org"] as FacetType[]).map((type) =>
+        withTimeout(getFacetCategoriesCached(type), PROFILE_QUERY_TIMEOUT_MS, []).then(
+          (cats) =>
+            cats.map((c) =>
+              entry(`/developers/${type}/${encodeURIComponent(c.value)}`, {
+                changeFrequency: "weekly",
+                priority: 0.6,
+              }),
+            ),
+        ),
+      ),
+    )
+  ).flat();
 
   // Indexable profiles (non-hidden, score ≥ floor). Below-floor pages omitted.
   const profiles = await withTimeout(
@@ -61,5 +83,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }),
   );
 
-  return [...staticRoutes, ...profileRoutes];
+  return [...staticRoutes, ...facetRoutes, ...profileRoutes];
 }

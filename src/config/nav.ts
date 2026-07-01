@@ -27,5 +27,5 @@ export type NavItem = {
 export const NAV_ITEMS: NavItem[] = [
   { key: "roast", href: "/", exact: true },
   { key: "leaderboard", href: "/leaderboard" },
-  // P1 落地后加: { key: "developers", href: "/developers" },
+  { key: "developers", href: "/developers" },
 ];

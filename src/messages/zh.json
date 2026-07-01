@@ -11,6 +11,7 @@
     "brand": "ghfind",
     "roast": "锐评",
     "leaderboard": "榜单",
+    "developers": "发现",
     "openMenu": "打开菜单",
     "closeMenu": "关闭菜单"
   },
@@ -81,6 +82,22 @@
     "window7d": "7 天",
     "window30d": "30 天",
     "windowAll": "全部"
+  },
+  "developers": {
+    "heading": "发现开发者",
+    "subtitle": "按编程语言和组织，找到各领域值得关注的头部开发者。",
+    "languagesTitle": "按语言发现",
+    "orgsTitle": "按组织发现",
+    "count": "{count} 人",
+    "emptyCategories": "还没有可展示的分类，稍后再来看看。",
+    "languageBucketHeading": "{value} 头部开发者",
+    "orgBucketHeading": "{value} · 组织成员",
+    "bucketSubtitle": "按综合评分排名，最多展示前 {limit} 位。",
+    "empty": "这个分类还没有收录开发者。",
+    "backToDirectory": "← 返回发现页",
+    "metaTitle": "发现开发者",
+    "metaDescription": "按编程语言和组织浏览 GitHub 头部开发者榜单。",
+    "bucketMetaDescription": "{value} 方向评分最高的 GitHub 开发者榜单。"
   },
   "detail": {
     "back": "← 返回名人堂",

@@ -22,6 +22,7 @@ import {
   type ProfileCommentAuthor,
 } from "./comments";
 import { normalizeDanmakuLines, type DanmakuLine } from "./danmaku";
+import { extractFacets, type FacetType } from "./facets";
 import {
   emptyReactionCounts,
   isProfileReaction,
@@ -297,6 +298,25 @@ function ensureSchema(db: Client): Promise<void> {
            )`,
           `CREATE INDEX IF NOT EXISTS idx_profile_reactions_target_reaction
              ON profile_reactions(target_username, reaction)`,
+          // Discovery facets — the queryable classification layer for the
+          // /developers directory. Derived from profile_snapshots (the data moat)
+          // by lib/facets.ts: one row per (developer, facet). facet_type is
+          // 'language' | 'org'; facet_value is the bucket ("Rust", "huggingface").
+          // weight lets us pick a dev's primary language later. Rewritten wholesale
+          // per developer on each new scan, so it self-heals as scores refresh.
+          `CREATE TABLE IF NOT EXISTS developer_facets (
+             username    TEXT NOT NULL,
+             facet_type  TEXT NOT NULL,
+             facet_value TEXT NOT NULL,
+             weight      REAL NOT NULL DEFAULT 0,
+             PRIMARY KEY (username, facet_type, facet_value)
+           )`,
+          // Serves the two directory reads index-first: the per-bucket developer
+          // list (WHERE facet_type = ? AND facet_value = ?) seeks straight to a
+          // bucket, and the category counts (GROUP BY facet_value) scan one
+          // contiguous range per type.
+          `CREATE INDEX IF NOT EXISTS idx_developer_facets_lookup
+             ON developer_facets(facet_type, facet_value, username)`,
         ],
         "write",
       );
@@ -511,8 +531,64 @@ export async function recordProfileSnapshot(scan: ScanResult): Promise<void> {
         SCORE_CACHE_VERSION,
       ],
     });
+    // Derive + persist the discovery facets from the same scan, so every path
+    // that sediments a snapshot also refreshes the /developers directory. Kept
+    // inside the same best-effort try (independent statement — a facet failure is
+    // logged and swallowed just like the snapshot write).
+    await recordDeveloperFacets(
+      username,
+      extractFacets({ top_repos: scan.top_repos, organizations: scan.organizations }),
+    );
   } catch (e) {
     console.error("recordProfileSnapshot failed:", e);
+  }
+}
+
+/** Hard cap on how many developers any one directory bucket returns. The reader
+ *  only ever wants the head of a language/org, and a bounded LIMIT keeps the
+ *  query (and its cached payload) cheap no matter how large a bucket grows. */
+export const DEVELOPERS_PER_FACET_LIMIT = 250;
+/** Public floor for the directory — mirrors the leaderboard/sitemap index floor
+ *  so "top Rust developers" means the same calibre as the main boards. */
+const FACET_MIN_SCORE = 60;
+
+/**
+ * Replace a developer's facet rows wholesale (delete-then-insert in one
+ * transaction) so a re-scan can't leave stale buckets behind — e.g. a dev who
+ * dropped a language keeps no phantom row. No-op without Turso; best-effort like
+ * the rest of this module. Called from {@link recordProfileSnapshot} and the
+ * facet backfill.
+ */
+export async function recordDeveloperFacets(
+  username: string,
+  facets: { type: FacetType; value: string; weight: number }[],
+): Promise<void> {
+  const db = getClient();
+  if (!db) return;
+  try {
+    await ensureSchema(db);
+    const normalized = username.toLowerCase();
+    // One atomic round trip: batch() runs the delete + all inserts in a single
+    // implicit transaction. This replaces a multi-statement transaction() whose
+    // per-statement round trips made bulk backfill (and every scan's facet write)
+    // needlessly slow against a high-latency remote DB.
+    await db.batch(
+      [
+        {
+          sql: `DELETE FROM developer_facets WHERE username = ?`,
+          args: [normalized],
+        },
+        ...facets.map((f) => ({
+          sql: `INSERT OR REPLACE INTO developer_facets
+                  (username, facet_type, facet_value, weight)
+                VALUES (?, ?, ?, ?)`,
+          args: [normalized, f.type, f.value, f.weight] as (string | number)[],
+        })),
+      ],
+      "write",
+    );
+  } catch (e) {
+    console.error("recordDeveloperFacets failed:", e);
   }
 }
 
@@ -597,6 +673,33 @@ export async function getProfileSnapshot(
   } catch (e) {
     console.error("getProfileSnapshot failed:", e);
     return null;
+  }
+}
+
+/**
+ * Distinct usernames that have at least one profile snapshot, paginated for the
+ * facet backfill. `profile_snapshots` is append-only (many rows per user), so
+ * DISTINCT collapses to one per account; ordering by username keeps offset-based
+ * batches stable across calls. Returns [] without Turso.
+ */
+export async function listSnapshotUsernames(
+  limit = 500,
+  offset = 0,
+): Promise<string[]> {
+  const db = getClient();
+  if (!db) return [];
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT DISTINCT username FROM profile_snapshots
+            ORDER BY username
+            LIMIT ? OFFSET ?`,
+      args: [Math.max(1, Math.min(2000, limit)), Math.max(0, offset)],
+    });
+    return res.rows.map((r) => String(r.username));
+  } catch (e) {
+    console.error("listSnapshotUsernames failed:", e);
+    return [];
   }
 }
 
@@ -1006,6 +1109,90 @@ export async function getProgressLeaderboard(
     });
   } catch (e) {
     console.error("getProgressLeaderboard failed:", e);
+    return [];
+  }
+}
+
+/** One bucket in the /developers directory: a language/org and how many
+ *  qualifying (public, at/above the floor) developers it holds. */
+export interface FacetCategory {
+  value: string;
+  count: number;
+}
+
+/**
+ * Directory categories for a facet type ("language" | "org"), each with its
+ * qualifying-developer count, busiest bucket first. Powers the /developers
+ * landing grid. Counts join to `scores` so hidden/low-score accounts don't
+ * inflate a bucket. Read behind a long-TTL cache (the GROUP BY is the expensive
+ * part) — see lib/developers.ts.
+ */
+export async function getFacetCategories(
+  facetType: FacetType,
+  limit = 100,
+): Promise<FacetCategory[]> {
+  const db = getClient();
+  if (!db) return [];
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT f.facet_value AS value, COUNT(*) AS count
+            FROM developer_facets AS f
+            JOIN scores AS s ON s.username = f.username
+            WHERE f.facet_type = ?
+              AND s.hidden = 0
+              AND s.final_score >= ?
+            GROUP BY f.facet_value
+            ORDER BY count DESC, f.facet_value ASC
+            LIMIT ?`,
+      args: [facetType, FACET_MIN_SCORE, Math.max(1, Math.min(500, limit))],
+    });
+    return res.rows.map((r) => ({ value: String(r.value), count: Number(r.count) }));
+  } catch (e) {
+    console.error("getFacetCategories failed:", e);
+    return [];
+  }
+}
+
+/**
+ * The head of one directory bucket: public developers tagged with
+ * (facetType, facetValue), ranked by final_score. Returns the same
+ * {@link LeaderboardEntry} shape the boards use, so the directory reuses the
+ * leaderboard card renderer unchanged. All-time and score-sorted (no time
+ * window), and hard-capped at {@link DEVELOPERS_PER_FACET_LIMIT}. Every join is
+ * an index seek (facet index → scores PK → account_stats PK), so the query stays
+ * cheap regardless of bucket size; reads go through a cache (lib/developers.ts).
+ */
+export async function getDevelopersByFacet(
+  facetType: FacetType,
+  facetValue: string,
+  limit = DEVELOPERS_PER_FACET_LIMIT,
+): Promise<LeaderboardEntry[]> {
+  const db = getClient();
+  if (!db || !facetValue) return [];
+  try {
+    await ensureSchema(db);
+    const capped = Math.max(1, Math.min(DEVELOPERS_PER_FACET_LIMIT, limit));
+    const res = await db.execute({
+      sql: `SELECT s.username, s.display_name, s.avatar_url, s.profile_url,
+                   s.final_score, s.tier, s.tags,
+                   MAX(COALESCE(stats.lookup_count, 0), ${MIN_RECORDED_LOOKUP_COUNT}) AS lookup_count,
+                   stats.last_lookup_at AS last_lookup_at
+            FROM developer_facets AS f
+            JOIN scores AS s ON s.username = f.username
+            LEFT JOIN account_stats AS stats ON stats.username = s.username
+            WHERE f.facet_type = ?
+              AND f.facet_value = ?
+              AND s.hidden = 0
+              AND s.final_score >= ?
+            ORDER BY s.final_score DESC, s.scanned_at DESC
+            LIMIT ?`,
+      args: [facetType, facetValue, FACET_MIN_SCORE, capped],
+    });
+    const now = Date.now();
+    return res.rows.map((r) => toLeaderboardEntry(r as unknown as LeaderboardRow, now));
+  } catch (e) {
+    console.error("getDevelopersByFacet failed:", e);
     return [];
   }
 }
