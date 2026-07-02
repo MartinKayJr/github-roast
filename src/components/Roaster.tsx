@@ -21,7 +21,7 @@ import { ShareCard } from "./ShareCard";
 import { createShareCardBlob } from "./shareCardExport";
 import { TierAvatarFrame } from "./TierAvatarFrame";
 import { Turnstile, turnstileEnabled } from "./Turnstile";
-import { Input } from "@/components/ui/input";
+import { Omnibox } from "./Omnibox";
 
 const SITE_URL = "https://ghfind.com";
 
@@ -62,19 +62,15 @@ export function Roaster() {
   // streams). The card shows the side matching the current locale.
   const [metaRoast, setMetaRoast] = useState<RoastLine | null>(null);
   const reportRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
   const lastPrefillRef = useRef<string | null>(null);
 
+  // Deep-link prefill (?username=): seed the Omnibox; it renders the value and
+  // the user hits Enter to roast. (Focus/scroll now live inside the Omnibox.)
   useEffect(() => {
     const seededUsername = searchParams.get("username")?.trim();
     if (!seededUsername || seededUsername === lastPrefillRef.current) return;
     lastPrefillRef.current = seededUsername;
     setUsername(seededUsername);
-    requestAnimationFrame(() => {
-      inputRef.current?.focus();
-      inputRef.current?.setSelectionRange(seededUsername.length, seededUsername.length);
-      inputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    });
   }, [searchParams]);
 
   const runRoast = useCallback(
@@ -206,13 +202,16 @@ export function Roaster() {
   );
 
   const submit = useCallback(
-    async (e?: React.FormEvent) => {
-      e?.preventDefault();
+    // `overrideUser` lets the Omnibox roast a picked autocomplete handle without
+    // waiting for the controlled `username` state to flush.
+    async (overrideUser?: string) => {
       if (scanning || roasting) return;
-      if (!username.trim()) {
+      const uname = (overrideUser ?? username).trim();
+      if (!uname) {
         setError(t("errEmpty"));
         return;
       }
+      if (overrideUser && overrideUser !== username) setUsername(overrideUser);
       if (turnstileEnabled() && !token) {
         setError(t("errNeedTurnstile"));
         return;
@@ -230,7 +229,7 @@ export function Roaster() {
         const res = await fetch("/api/scan", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username: username.trim(), turnstileToken: token }),
+          body: JSON.stringify({ username: uname, turnstileToken: token }),
         });
         const data = await res.json();
         if (!res.ok) {
@@ -352,31 +351,18 @@ export function Roaster() {
 
   return (
     <div className="w-full max-w-6xl">
-      {/* Input */}
-      <form onSubmit={submit} className="mx-auto flex w-full max-w-5xl flex-col items-center gap-3">
-        <div className="flex w-full items-center gap-2 rounded-xl border border-white/10 bg-white/5 p-1.5 focus-within:border-orange-500/60">
-          <span className="pl-3 text-zinc-500">@</span>
-          <Input
-            ref={inputRef}
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder={t("inputPlaceholder")}
-            className="min-w-0 flex-1 border-0 bg-transparent px-1 py-2 text-base shadow-none focus-visible:ring-0"
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-          />
-          <Button
-            type="submit"
-            disabled={scanning || roasting}
-            className="shrink-0 whitespace-nowrap bg-orange-600 text-white hover:bg-orange-500"
-          >
-            {scanning ? t("judging") : t("judge")}
-          </Button>
-        </div>
+      {/* Omnibox: roast / PK / language / org / search in one input. A bare
+          handle still roasts in place (via onRoast); other intents navigate. */}
+      <div className="mx-auto flex w-full max-w-5xl flex-col items-center gap-3">
+        <Omnibox
+          value={username}
+          onChange={setUsername}
+          onRoast={(u) => void submit(u)}
+          busy={scanning || roasting}
+        />
         <Turnstile onToken={setToken} />
         {error && <p className="text-sm text-rose-400">{error}</p>}
-      </form>
+      </div>
 
       <div className="mt-3 flex flex-col items-center gap-3">
         <SponsorPill large />

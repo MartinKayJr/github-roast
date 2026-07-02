@@ -1,18 +1,13 @@
-import { readFile } from "node:fs/promises";
-import { ImageResponse } from "next/og";
-import QRCode from "qrcode";
 import { getAccountDetail, getPercentile, getProfileSnapshot } from "@/lib/db";
 import { BADGE_COLOR, TIER_EN, TIER_LABEL_EN } from "@/lib/badge";
 import { beatPercent } from "@/lib/percentile";
-import { SITE_URL } from "@/lib/site";
+import { USERNAME_RE } from "@/lib/username";
 import type { Tier } from "@/lib/types";
 import {
   Brand,
-  H,
   OgAvatarFrame,
   PALETTES,
   Shell,
-  W,
   parseQr,
   parseTheme,
   parseVariant,
@@ -20,85 +15,10 @@ import {
   variantHasData,
 } from "./cards";
 import type { Identity } from "./cards";
+import { avatarDataUrl, fonts, png, qrDataUrl, qrModuleColor } from "../shared";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const USERNAME_RE = /^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$/;
-
-// Long edge cache: GitHub README views are served by the CDN (and camo) — the
-// PNG is generated at most ~once per window per account. Keeps the bill flat.
-const CDN_CACHE = "public, max-age=0, s-maxage=21600, stale-while-revalidate=86400";
-
-// Module-cache the (tiny, ~30KB each) Latin fonts across warm invocations.
-let fontCache: { name: string; data: Buffer; weight: 400 | 800; style: "normal" }[] | null = null;
-async function fonts() {
-  if (fontCache) return fontCache;
-  const [regular, bold] = await Promise.all([
-    readFile(new URL("./fonts/Inter-Regular.woff", import.meta.url)),
-    readFile(new URL("./fonts/Inter-ExtraBold.woff", import.meta.url)),
-  ]);
-  fontCache = [
-    { name: "Inter", data: regular, weight: 400, style: "normal" },
-    { name: "Inter", data: bold, weight: 800, style: "normal" },
-  ];
-  return fontCache;
-}
-
-/** Pre-fetch the avatar to a data URL so a flaky fetch can't break rendering. */
-async function avatarDataUrl(url: string | null): Promise<string | null> {
-  if (!url) return null;
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const ct = res.headers.get("content-type") || "image/png";
-    const buf = Buffer.from(await res.arrayBuffer());
-    return `data:${ct};base64,${buf.toString("base64")}`;
-  } catch {
-    return null;
-  }
-}
-
-/** Tier-tinted QR module color that contrasts with the (transparent) card behind
- * it: blend the tier hue toward white on dark cards, toward black on light cards.
- * Keeps the rank's color while staying scannable on either theme. */
-function qrModuleColor(hex: string, mode: "dark" | "light"): string {
-  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex.trim());
-  if (!m) return mode === "dark" ? "#ffffff" : "#000000";
-  const n = parseInt(m[1], 16);
-  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-  const target = mode === "dark" ? 255 : 0;
-  const f = mode === "dark" ? 0.55 : 0.3;
-  const out = ch.map((c) => Math.round(c * (1 - f) + target * f));
-  return `#${((1 << 24) | (out[0] << 16) | (out[1] << 8) | out[2]).toString(16).slice(1)}`;
-}
-
-/** QR of the profile page as a PNG data URL, or null on failure. Transparent
- * background (`light: #00000000`) so the card shows through; `dark` is the
- * tier-tinted module color. "M" keeps the matrix small so modules stay chunky
- * and scannable at the card's corner size. */
-async function qrDataUrl(username: string, dark: string): Promise<string | null> {
-  try {
-    return await QRCode.toDataURL(`${SITE_URL}/u/${username}`, {
-      margin: 1,
-      width: 300,
-      errorCorrectionLevel: "M",
-      color: { dark, light: "#00000000" },
-    });
-  } catch {
-    return null;
-  }
-}
-
-function png(element: React.ReactElement, fontList: Awaited<ReturnType<typeof fonts>>) {
-  return new ImageResponse(element, {
-    width: W,
-    height: H,
-    fonts: fontList,
-    emoji: "twemoji",
-    headers: { "Cache-Control": CDN_CACHE },
-  });
-}
 
 export async function GET(req: Request, ctx: { params: Promise<{ username: string }> }) {
   const fontList = await fonts();
@@ -139,7 +59,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ username: strin
     detail.display_name && /^[\x20-\x7e]+$/.test(detail.display_name) ? detail.display_name : null;
   const tags = (detail.tags.en ?? []).slice(0, 4);
 
-  const qr = parseQr(req) ? await qrDataUrl(detail.username, qrModuleColor(color, theme)) : null;
+  const qr = parseQr(req)
+    ? await qrDataUrl(`/u/${detail.username}`, qrModuleColor(color, theme))
+    : null;
   const id: Identity = { username: detail.username, displayName, avatar, tier, color, palette, qr };
 
   // Specialty "brag cards" read the sedimented profile snapshot. If it's missing

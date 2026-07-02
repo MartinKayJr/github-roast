@@ -20,10 +20,10 @@ import { ProfileShare } from "@/components/ProfileShare";
 import { FloatingCommentBubbles } from "@/components/FloatingCommentBubbles";
 import { TierAvatarFrame } from "@/components/TierAvatarFrame";
 import { SUBSCORE_MAX, nextTier } from "@/lib/score";
+import { DIMENSIONS, barColor } from "@/lib/dimensions";
 import { beatPercent } from "@/lib/percentile";
 import { TIER_KEY, tierStyle } from "@/lib/tier";
 import { normLang } from "@/lib/lang";
-import type { SubScoreKey } from "@/lib/types";
 import { ProfileReactionsSection } from "@/components/ProfileReactionsSection";
 import { RescanButton } from "@/components/RescanButton";
 import { ProfileBackfill } from "@/components/ProfileBackfill";
@@ -35,21 +35,6 @@ export const dynamic = "force-dynamic";
 
 // Dedupe the DB read between generateMetadata() and the page render.
 const getDetail = cache((username: string) => getAccountDetail(username));
-
-const DIMENSIONS: SubScoreKey[] = [
-  "account_maturity",
-  "original_project_quality",
-  "contribution_quality",
-  "ecosystem_impact",
-  "community_influence",
-  "activity_authenticity",
-];
-
-function barColor(pct: number): string {
-  if (pct >= 0.75) return "bg-emerald-400";
-  if (pct >= 0.45) return "bg-amber-400";
-  return "bg-rose-400";
-}
 
 export async function generateMetadata({
   params,

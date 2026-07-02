@@ -1256,6 +1256,54 @@ export async function getScoreBrief(username: string): Promise<ScoreBrief | null
   }
 }
 
+/** A scored account surfaced by the Omnibox autocomplete (already in the DB). */
+export interface UserSuggestion {
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  final_score: number;
+  tier: Tier;
+}
+
+/**
+ * Prefix-search already-scored, non-hidden accounts for the Omnibox typeahead —
+ * so a handle we've already judged is offered directly (with its score) for both
+ * roast and PK. Prefix match on the lowercased `username` PK is index-friendly;
+ * ties break by score so the strongest match leads.
+ */
+export async function searchScoredUsers(
+  query: string,
+  limit = 6,
+): Promise<UserSuggestion[]> {
+  const db = getClient();
+  if (!db) return [];
+  const q = query.trim().replace(/^@/, "").toLowerCase();
+  if (!q) return [];
+  try {
+    await ensureSchema(db);
+    // Escape LIKE wildcards in user input so `_`/`%` are matched literally.
+    const like = `${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
+    const res = await db.execute({
+      sql: `SELECT username, display_name, avatar_url, final_score, tier
+            FROM scores
+            WHERE hidden = 0 AND username LIKE ? ESCAPE '\\'
+            ORDER BY final_score DESC
+            LIMIT ?`,
+      args: [like, limit],
+    });
+    return res.rows.map((r) => ({
+      username: String(r.username),
+      display_name: (r.display_name as string | null) ?? null,
+      avatar_url: (r.avatar_url as string | null) ?? null,
+      final_score: Number(r.final_score),
+      tier: String(r.tier) as Tier,
+    }));
+  } catch (e) {
+    console.error("searchScoredUsers failed:", e);
+    return [];
+  }
+}
+
 /** Full persisted record for one account's detail page (null if absent/hidden). */
 export async function getAccountDetail(username: string): Promise<AccountDetail | null> {
   const db = getClient();
