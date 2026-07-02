@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import ReactMarkdown from "react-markdown";
@@ -9,6 +9,7 @@ import { Link } from "@/i18n/navigation";
 import { splitReport } from "@/lib/report";
 import { consumeRoastStream } from "@/lib/roast-stream";
 import type { RoastLine, RoastMeta, ScanResult, Tags } from "@/lib/types";
+import { RoastResultModal } from "./RoastResultModal";
 
 /**
  * Streams a live roast on the profile page for a username that has been scanned
@@ -37,6 +38,23 @@ export function LiveRoast({
   const [report, setReport] = useState("");
   const [meta, setMeta] = useState<RoastMeta | null>(null);
   const [errorKey, setErrorKey] = useState<string | null>(null);
+  // The result popup only opens after a *fresh* LLM generation (the stream
+  // carried control frames); cached replays skip it. `modalMeta`/`modalReport`
+  // snapshot the values at completion so the popup stays stable while it's open.
+  const [modalMeta, setModalMeta] = useState<RoastMeta | null>(null);
+  const [modalReport, setModalReport] = useState("");
+
+  // Refresh the server page once (a one-shot guard prevents a refresh loop if the
+  // row still isn't visible afterward). For a fresh roast this is deferred until
+  // the popup closes — refreshing immediately would swap the shell for the full
+  // profile and unmount the popup mid-view.
+  const refreshOnce = useCallback(() => {
+    const key = `liveRoastRefreshed:${username.toLowerCase()}`;
+    if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem(key)) {
+      sessionStorage.setItem(key, "1");
+      router.refresh();
+    }
+  }, [username, router]);
 
   useEffect(() => {
     if (started.current) return; // guard against StrictMode double-invoke
@@ -59,27 +77,32 @@ export function LiveRoast({
           return;
         }
 
-        const { errored } = await consumeRoastStream(res, {
+        let latestMeta: RoastMeta | null = null;
+        const { report: finalReport, errored, fresh } = await consumeRoastStream(res, {
           onThinking: setThinking,
-          onMeta: setMeta,
+          onMeta: (m) => {
+            latestMeta = m;
+            setMeta(m);
+          },
           onReport: setReport,
           onError: (data) => setErrorKey(mapError(data?.error)),
         });
         if (errored) return;
 
-        // Refresh once so the now-persisted row renders the full profile. A
-        // one-shot guard prevents a refresh loop if the row still isn't visible
-        // afterward (e.g. a hidden row) — we just keep the streamed markdown.
-        const key = `liveRoastRefreshed:${username.toLowerCase()}`;
-        if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem(key)) {
-          sessionStorage.setItem(key, "1");
-          router.refresh();
+        // Fresh LLM generation → pop the result modal with a snapshot of the
+        // final meta/report, and hold the page refresh until the user closes it.
+        // Cached replay (no frames) → refresh straight into the full profile.
+        if (fresh && latestMeta) {
+          setModalMeta(latestMeta);
+          setModalReport(finalReport);
+        } else {
+          refreshOnce();
         }
       } catch {
         setErrorKey("liveError");
       }
     })();
-  }, [username, scan, locale, router]);
+  }, [username, scan, locale, refreshOnce]);
 
   if (errorKey) {
     return (
@@ -95,9 +118,25 @@ export function LiveRoast({
   const { body: reportBody, roast: inlineRoast } = splitReport(report);
   const line = pickLine(meta?.roast_line, locale) || inlineRoast;
   const tags = meta?.tags;
+  const { body: modalBody } = splitReport(modalReport);
 
   return (
     <>
+      {modalMeta && (
+        <RoastResultModal
+          open
+          onClose={() => {
+            setModalMeta(null);
+            refreshOnce();
+          }}
+          username={username}
+          name={scan?.metrics.name ?? null}
+          avatarUrl={scan?.metrics.avatar_url ?? `https://github.com/${username}.png`}
+          meta={modalMeta}
+          reportBody={modalBody}
+          subScores={scan?.scoring.sub_scores ?? null}
+        />
+      )}
       {line ? (
         <p className="mb-4 rounded-xl border border-orange-500/30 bg-orange-500/[0.08] p-4 text-[0.95rem] leading-relaxed text-zinc-100">
           🔥 {line}

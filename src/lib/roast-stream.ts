@@ -49,19 +49,23 @@ export interface RoastStreamCallbacks {
  * Read a successful /api/roast Response body to completion, invoking callbacks
  * as frames/markdown arrive. Reads the X-Roast-Meta header first (a deterministic
  * meta fallback sent before the body can know the AI-adjusted values). Returns
- * the full report text and whether an E-frame aborted it.
+ * the full report text, whether an E-frame aborted it, and `fresh` — true when
+ * the stream carried any T/M control frame, i.e. this was a real (uncached) LLM
+ * generation. Cached/archived/replayed roasts send pure markdown with no frames,
+ * so `fresh` stays false; callers use this to only surface the result popup when
+ * the model actually ran.
  */
 export async function consumeRoastStream(
   res: Response,
   cb: RoastStreamCallbacks,
-): Promise<{ report: string; errored: boolean }> {
+): Promise<{ report: string; errored: boolean; fresh: boolean }> {
   const metaHeader = res.headers.get("X-Roast-Meta");
   if (metaHeader) {
     const meta = decodeRoastMeta(metaHeader);
     if (meta) cb.onMeta?.(meta);
   }
 
-  if (!res.body) return { report: "", errored: false };
+  if (!res.body) return { report: "", errored: false, fresh: false };
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -69,6 +73,9 @@ export async function consumeRoastStream(
   let inReport = false;
   let acc = "";
   let aborted = false;
+  // Any T/M control frame means the leader ran the two-pass LLM live; replays
+  // (cache/archive/single-flight follower) are pure markdown with no frames.
+  let fresh = false;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -87,8 +94,10 @@ export async function consumeRoastStream(
       const payload = buf.slice(2, nl);
       buf = buf.slice(nl + 1);
       if (type === "T") {
+        fresh = true;
         cb.onThinking?.(payload);
       } else if (type === "M") {
+        fresh = true;
         const meta = decodeRoastMeta(payload);
         if (meta) cb.onMeta?.(meta);
         inReport = true;
@@ -110,5 +119,5 @@ export async function consumeRoastStream(
     }
   }
 
-  return { report: acc, errored: aborted };
+  return { report: acc, errored: aborted, fresh };
 }
