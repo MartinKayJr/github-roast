@@ -45,6 +45,7 @@ export function VsBattleBox() {
         @
       </span>
       <input
+        suppressHydrationWarning
         value={value}
         onChange={(e) => {
           setValue(e.target.value);

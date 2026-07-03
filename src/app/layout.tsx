@@ -51,7 +51,7 @@ export default function RootLayout({
       // so the server markup intentionally differs for saved theme and /en.
       suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col">
+      <body className="min-h-full flex flex-col" suppressHydrationWarning>
         <script
           id="theme-init"
           suppressHydrationWarning
