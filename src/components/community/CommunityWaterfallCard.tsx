@@ -9,7 +9,7 @@ interface CommunityWaterfallCardProps {
   entry: CommunityWaterfallEntry;
   lang: Lang;
   /** The VS winner's login (or best-effort fallback) — used as the challenge opponent. */
-  challengeOpponent: string;
+  challengeOpponent?: string;
 }
 
 export function CommunityWaterfallCard({
@@ -31,8 +31,10 @@ export function CommunityWaterfallCard({
     : null;
 
   // Canonical VS url — sort handles so the pair is always in one order.
-  const [hA, hB] = [entry.login, challengeOpponent].sort();
-  const challengeHref = `/vs/${hA}/${hB}`;
+  const challengeHref =
+    challengeOpponent && challengeOpponent.toLowerCase() !== entry.login.toLowerCase()
+      ? `/vs/${[entry.login, challengeOpponent].map((h) => h.toLowerCase()).sort().join("/")}`
+      : null;
 
   return (
     <div className="rounded-xl border border-emerald-300/15 bg-emerald-500/[0.04] p-4">
@@ -85,13 +87,15 @@ export function CommunityWaterfallCard({
         >
           {t("viewProfile")}
         </Link>
-        <Link
-          href={challengeHref}
-          prefetch={false}
-          className="flex-1 rounded-lg border border-orange-400/30 bg-orange-500/10 py-1.5 text-center text-xs font-medium text-orange-300 hover:bg-orange-500/20"
-        >
-          {t("challenge")}
-        </Link>
+        {challengeHref && (
+          <Link
+            href={challengeHref}
+            prefetch={false}
+            className="flex-1 rounded-lg border border-orange-400/30 bg-orange-500/10 py-1.5 text-center text-xs font-medium text-orange-300 hover:bg-orange-500/20"
+          >
+            {t("challenge")}
+          </Link>
+        )}
       </div>
     </div>
   );

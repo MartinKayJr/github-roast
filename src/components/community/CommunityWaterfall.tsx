@@ -6,23 +6,25 @@ import { CommunityWaterfallCard } from "./CommunityWaterfallCard";
 interface CommunityWaterfallProps {
   entries: CommunityWaterfallEntry[];
   lang: Lang;
-  vsA: string;
-  vsB: string;
-  /** Pre-resolved challenge opponent: winner, or the scored player, or vsA fallback. */
-  winner: string;
+  heading?: string;
+  sub?: string;
+  /** Pre-resolved challenge opponent: winner, or the scored player, or pair.a fallback. */
+  challengeOpponent?: string;
 }
 
 export async function CommunityWaterfall({
   entries,
   lang,
-  winner,
+  heading,
+  sub,
+  challengeOpponent,
 }: CommunityWaterfallProps) {
   const t = await getTranslations("communityWaterfall");
 
   return (
-    <section className="mt-6 rounded-2xl border border-emerald-300/15 bg-white/[0.02] p-5 sm:p-6">
-      <h2 className="mb-1 text-base font-bold text-emerald-200">{t("heading")}</h2>
-      <p className="mb-4 text-xs text-zinc-400">{t("sub")}</p>
+    <section className="rounded-2xl border border-emerald-300/15 bg-white/[0.02] p-5 sm:p-6">
+      <h2 className="mb-1 text-base font-bold text-emerald-200">{heading ?? t("heading")}</h2>
+      <p className="mb-4 text-xs text-zinc-400">{sub ?? t("sub")}</p>
       {entries.length === 0 ? (
         <p className="text-sm text-zinc-500">{t("empty")}</p>
       ) : (
@@ -32,7 +34,7 @@ export async function CommunityWaterfall({
               key={entry.login}
               entry={entry}
               lang={lang}
-              challengeOpponent={winner}
+              challengeOpponent={challengeOpponent}
             />
           ))}
         </div>

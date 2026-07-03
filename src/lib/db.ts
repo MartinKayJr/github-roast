@@ -2237,18 +2237,23 @@ export async function getCommunityWaterfall(
 
     // Step 1: fetch all facet types for both players.
     const facetRes = await db.execute({
-      sql: `SELECT facet_value FROM developer_facets
+      sql: `SELECT facet_type, facet_value FROM developer_facets
             WHERE username IN (?, ?) AND facet_type IN ('language', 'org', 'repo')`,
       args: [a, b],
     });
 
     if (facetRes.rows.length === 0) return [];
 
-    const facetValues = [
-      ...new Set(facetRes.rows.map((r) => String(r.facet_value).toLowerCase())),
+    // Key as "type:value" so "language:go" and "org:go" are distinct signals.
+    const facetPairs = [
+      ...new Set(
+        facetRes.rows.map(
+          (r) => `${String(r.facet_type)}:${String(r.facet_value).toLowerCase()}`,
+        ),
+      ),
     ];
 
-    const placeholders = facetValues.map(() => "?").join(", ");
+    const placeholders = facetPairs.map(() => "?").join(", ");
 
     // Step 2: count shared facets per community member, filter to > 0, then LIMIT.
     // The outer WHERE shared_facets > 0 runs after the correlated subquery so we
@@ -2264,18 +2269,22 @@ export async function getCommunityWaterfall(
                      cp.working_on,
                      cp.want_to_meet,
                      (
-                       SELECT GROUP_CONCAT(DISTINCT df.facet_value)
-                       FROM developer_facets AS df
-                       WHERE df.username    = cp.login
-                         AND df.facet_type IN ('language', 'org', 'repo')
-                         AND LOWER(df.facet_value) IN (${placeholders})
+                       SELECT GROUP_CONCAT(ordered.facet_value)
+                       FROM (
+                         SELECT DISTINCT df2.facet_value
+                         FROM developer_facets AS df2
+                         WHERE df2.username    = cp.login
+                           AND df2.facet_type IN ('language', 'org', 'repo')
+                           AND (df2.facet_type || ':' || LOWER(df2.facet_value)) IN (${placeholders})
+                         ORDER BY df2.facet_type, df2.facet_value
+                       ) AS ordered
                      ) AS matched_facet_list,
                      (
-                       SELECT COUNT(DISTINCT df.facet_value)
+                       SELECT COUNT(DISTINCT df.facet_type || ':' || LOWER(df.facet_value))
                        FROM developer_facets AS df
                        WHERE df.username    = cp.login
                          AND df.facet_type IN ('language', 'org', 'repo')
-                         AND LOWER(df.facet_value) IN (${placeholders})
+                         AND (df.facet_type || ':' || LOWER(df.facet_value)) IN (${placeholders})
                      ) AS shared_facets
               FROM community_profiles AS cp
               JOIN scores AS s ON s.username = cp.login
@@ -2288,8 +2297,8 @@ export async function getCommunityWaterfall(
             WHERE shared_facets > 0
             ORDER BY shared_facets DESC, final_score DESC
             LIMIT ?`,
-      // facetValues appears twice (matched_facet_list + shared_facets subqueries)
-      args: [...facetValues, ...facetValues, a, b, limit],
+      // facetPairs appears twice (matched_facet_list + shared_facets subqueries)
+      args: [...facetPairs, ...facetPairs, a, b, limit],
     });
 
     return res.rows.map((r) => {
@@ -2307,6 +2316,64 @@ export async function getCommunityWaterfall(
     });
   } catch (e) {
     console.error("getCommunityWaterfall failed:", e);
+    return [];
+  }
+}
+
+/**
+ * Fetch the public community feed for the standalone circle page.
+ *
+ * This intentionally does not call an LLM. It surfaces users who have opted in
+ * to the community, then lets profile content and developer facets provide the
+ * initial discovery hooks.
+ */
+export async function getCommunityFeed(limit = 30): Promise<CommunityWaterfallEntry[]> {
+  const db = getClient();
+  if (!db) return [];
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT cp.login,
+                   s.avatar_url,
+                   s.final_score,
+                   s.tier,
+                   cp.working_on,
+                   cp.want_to_meet,
+                   (
+                     SELECT GROUP_CONCAT(f.facet_value)
+                     FROM (
+                       SELECT DISTINCT df.facet_value
+                       FROM developer_facets AS df
+                       WHERE df.username = cp.login
+                         AND df.facet_type IN ('language', 'org', 'repo')
+                       ORDER BY df.weight DESC, df.facet_type, df.facet_value
+                       LIMIT 3
+                     ) AS f
+                   ) AS matched_facet_list
+            FROM community_profiles AS cp
+            JOIN scores AS s ON s.username = cp.login
+            WHERE cp.status = 'active'
+              AND cp.visibility = 'public'
+              AND s.hidden = 0
+            ORDER BY cp.updated_at DESC, s.final_score DESC
+            LIMIT ?`,
+      args: [limit],
+    });
+
+    return res.rows.map((r) => {
+      const raw = (r.matched_facet_list as string | null) ?? "";
+      return {
+        login: String(r.login),
+        avatar_url: (r.avatar_url as string | null) ?? null,
+        final_score: Number(r.final_score),
+        tier: String(r.tier) as Tier,
+        matched_facets: raw ? raw.split(",").filter(Boolean) : [],
+        working_on: parseBilingualField(r.working_on),
+        want_to_meet: parseBilingualField(r.want_to_meet),
+      };
+    });
+  } catch (e) {
+    console.error("getCommunityFeed failed:", e);
     return [];
   }
 }

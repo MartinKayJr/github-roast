@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Link, redirect } from "@/i18n/navigation";
-import { getAccountDetail, getMatchup, getCommunityWaterfall } from "@/lib/db";
+import { getAccountDetail, getMatchup } from "@/lib/db";
 import { SUBSCORE_MAX } from "@/lib/score";
 import { DIMENSIONS, barColor } from "@/lib/dimensions";
 import { TIER_KEY } from "@/lib/tier";
@@ -15,8 +15,6 @@ import { VsPlayerCard } from "@/components/VsPlayerCard";
 import { VsSummonButton } from "@/components/VsSummonButton";
 import { VsVerdictLive } from "@/components/VsVerdictLive";
 import { VsShare } from "@/components/VsShare";
-import { CommunityWaterfall } from "@/components/community/CommunityWaterfall";
-import { normLang } from "@/lib/lang";
 
 export const dynamic = "force-dynamic";
 
@@ -97,7 +95,6 @@ export default async function VsPage({
   const t = await getTranslations("vs");
   const tDim = await getTranslations("dimensions");
   const tTier = await getTranslations("tiers");
-  const lang = normLang(locale);
 
   const [da, db, matchup] = await Promise.all([
     getDetail(pair.a),
@@ -136,20 +133,6 @@ export default async function VsPage({
   // "换个对手" seeds the loser back into the Omnibox in half-state.
   const loser =
     !v.missing && v.winner !== "tie" ? v.slots.loser : da?.username ?? pair.a;
-
-  // Only fetch the waterfall when at least one player has a scored profile
-  // (= has developer_facets). Without context the results would be meaningless.
-  const waterfallEntries =
-    da || db ? await getCommunityWaterfall([pair.a, pair.b], 6) : [];
-
-  // Challenge opponent: prefer the winner (most interesting pairing); for ties
-  // or missing results prefer whichever player is actually scored; fallback pair.a.
-  const waterfallChallengeOpponent =
-    v.winner === "a"
-      ? pair.a
-      : v.winner === "b"
-        ? pair.b
-        : (da?.username ?? db?.username ?? pair.a);
 
   return (
     <main className="relative isolate flex w-full flex-1 justify-center px-5 py-14 sm:py-20">
@@ -291,17 +274,6 @@ export default async function VsPage({
               adviceLine={storedAdvice}
             />
           </div>
-        )}
-
-        {/* Community waterfall — developers related to this matchup */}
-        {waterfallEntries.length > 0 && (
-          <CommunityWaterfall
-            entries={waterfallEntries}
-            lang={lang}
-            vsA={pair.a}
-            vsB={pair.b}
-            winner={waterfallChallengeOpponent}
-          />
         )}
 
         {/* Keep the chain going */}

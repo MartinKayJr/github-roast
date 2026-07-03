@@ -12,6 +12,7 @@
     "roast": "锐评",
     "leaderboard": "榜单",
     "developers": "发现",
+    "community": "圈子",
     "versus": "对战",
     "openMenu": "打开菜单",
     "closeMenu": "关闭菜单"
@@ -499,5 +500,19 @@
     "viewProfile": "查看主页",
     "challenge": "发起对战",
     "empty": "暂无相关社区成员"
+  },
+  "communityPage": {
+    "heading": "圈子",
+    "subtitle": "找到正在做相近事情、想认识相似伙伴的 GitHub 开发者。",
+    "joinTitle": "加入圈子",
+    "joinDesc": "认领你的锐评身份，填写社区档案，也可以让 AI 根据你的 GitHub 锐评和公开项目一键生成草稿。",
+    "joinedDesc": "你已经加入圈子，可以继续更新社区档案，让更多合适的人找到你。",
+    "signInToJoin": "用 GitHub 登录加入",
+    "roastToJoin": "先完成锐评",
+    "joinButton": "填写并加入",
+    "editProfile": "编辑社区档案",
+    "authUnavailable": "登录未配置",
+    "feedHeading": "开发者圈子",
+    "feedSub": "公开加入社区的成员，会按最近更新和评分展示。"
   }
 }

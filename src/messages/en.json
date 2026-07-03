@@ -12,6 +12,7 @@
     "roast": "Roast",
     "leaderboard": "Leaderboard",
     "developers": "Discover",
+    "community": "Circle",
     "versus": "Versus",
     "openMenu": "Open menu",
     "closeMenu": "Close menu"
@@ -499,5 +500,19 @@
     "viewProfile": "View profile",
     "challenge": "Challenge",
     "empty": "No community members yet"
+  },
+  "communityPage": {
+    "heading": "Circle",
+    "subtitle": "Find GitHub developers working on related things and looking for similar people.",
+    "joinTitle": "Join the Circle",
+    "joinDesc": "Claim your roast identity, build a community profile, or let AI draft one from your GitHub roast and public projects.",
+    "joinedDesc": "You are already in the circle. Keep your community profile fresh so the right people can find you.",
+    "signInToJoin": "Sign in with GitHub",
+    "roastToJoin": "Get roasted first",
+    "joinButton": "Fill and join",
+    "editProfile": "Edit profile",
+    "authUnavailable": "Auth not configured",
+    "feedHeading": "Developer Circle",
+    "feedSub": "Public community members, ordered by recent profile updates and score."
   }
 }
