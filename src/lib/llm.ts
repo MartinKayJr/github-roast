@@ -17,6 +17,7 @@ export interface LlmConfig {
   baseURL: string;
   apiKey: string;
   model: string;
+  enableThinking?: boolean;
 }
 
 /** Error thrown when the provider rejects us for quota/auth reasons. */
@@ -47,6 +48,7 @@ export function defaultLlmConfig(): LlmConfig | null {
       baseURL: process.env.LLM_BASE_URL || STEPFUN_BASE_URL,
       apiKey: process.env.LLM_API_KEY,
       model: process.env.LLM_MODEL || STEPFUN_MODEL,
+      enableThinking: parseOptionalBool(process.env.LLM_ENABLE_THINKING),
     };
   }
   if (process.env.OPENROUTER_API_KEY) {
@@ -78,6 +80,11 @@ export function fallbackLlmConfig(): LlmConfig | null {
     apiKey: process.env.LLM_FALLBACK_API_KEY,
     model: process.env.LLM_FALLBACK_MODEL || "deepseek-v4-flash",
   };
+}
+
+function parseOptionalBool(value: string | undefined): boolean | undefined {
+  if (value === undefined || value.trim() === "") return undefined;
+  return /^(1|true|yes|on)$/i.test(value.trim());
 }
 
 /**
@@ -167,6 +174,9 @@ export async function* chatStreamEvents(
         messages,
         stream: true,
         temperature: opts?.temperature ?? 0.85,
+        ...(config.enableThinking !== undefined
+          ? { enable_thinking: config.enableThinking }
+          : {}),
       }),
       signal: ctrl.signal,
     });

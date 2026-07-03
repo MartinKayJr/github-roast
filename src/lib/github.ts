@@ -161,6 +161,13 @@ async function graphql<T>(
   return json.data;
 }
 
+function isFineGrainedPatOrgPolicyError(e: unknown): boolean {
+  return (
+    e instanceof GitHubDataUnavailableError &&
+    /organization forbids access via a fine-grained personal access tokens?/i.test(e.message)
+  );
+}
+
 async function fetchOrganizations(username: string): Promise<string[]> {
   const token = process.env.GITHUB_TOKEN;
   if (!token) return [];
@@ -1432,7 +1439,16 @@ export async function collect(username: string): Promise<{
   const pinnedRepos = (contrib.user.pinnedItems?.nodes ?? [])
     .map((n) => n?.nameWithOwner)
     .filter((s): s is string => typeof s === "string");
-  const contribRepos = await fetchContribReposByYear(login, contributionYears);
+  let contribRepos: ContribRepoAgg[] = [];
+  try {
+    contribRepos = (await fetchContribReposByYear(login, contributionYears)) ?? [];
+  } catch (e) {
+    if (!isFineGrainedPatOrgPolicyError(e)) throw e;
+    console.warn(
+      "GitHub contribution-repo graph skipped because an organization rejects this fine-grained PAT policy:",
+      e instanceof Error ? e.message : e,
+    );
+  }
   const organizations = await fetchOrganizations(login);
   const mergedPrCount = contrib.user.mergedPRs?.totalCount ?? 0;
   const totalPrCount = contrib.user.allPRs?.totalCount ?? 0;
