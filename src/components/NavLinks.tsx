@@ -62,6 +62,11 @@ export function NavLinks({
       <Link
         key={item.key}
         href={item.href ?? "/"}
+        // The navbar mounts on every page, so prefetching each destination on
+        // load is pure waste for the force-dynamic boards (/leaderboard,
+        // /developers each = a full function invocation per viewport prefetch).
+        // Keep prefetch only for the static home target.
+        prefetch={item.href === "/" ? undefined : false}
         onClick={onNavigate}
         aria-current={active ? "page" : undefined}
         className={`group relative flex items-center text-sm transition-colors ${vertical ? "" : "px-3 py-2"} ${baseClass}`}
@@ -120,6 +125,7 @@ export function NavLinks({
             <Link
               key={c.key}
               href={c.href ?? "/"}
+              prefetch={c.href === "/" ? undefined : false}
               onClick={onNavigate}
               aria-current={isActive(c) ? "page" : undefined}
               className={`flex items-center rounded-xl px-3 py-2 text-sm transition-colors ${

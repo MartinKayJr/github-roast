@@ -139,6 +139,7 @@ export function HomeLeaderboardClient({
         action={
           <Link
             href={fullBoardHref}
+            prefetch={false}
             className="rounded-full px-3 py-2 text-xs font-medium text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
           >
             {labels.openBoard}

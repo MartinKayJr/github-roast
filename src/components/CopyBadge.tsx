@@ -134,7 +134,11 @@ export function CopyBadge({
 
   const base = baseUrl.replace(/\/$/, "");
   const previewBase = (previewOrigin ?? base).replace(/\/$/, "");
-  const pageUrl = `${base}/u/${username}`;
+  // Tag the copyable badge/card link so README click-throughs are attributable
+  // (and trigger the badge-landing banner) independent of the Referer header,
+  // which GitHub camo strips down to a bare origin. The canonical <link> on the
+  // profile page still points at the clean /u/{username}, so no SEO duplicate.
+  const pageUrl = `${base}/u/${username}?ref=badge`;
   const badgeUrl = `${base}/api/badge/${username}`;
   const cardUrl = `${base}/api/card/${username}`;
   const badgePreviewUrl = `${previewBase}/api/badge/${username}`;

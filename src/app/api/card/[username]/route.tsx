@@ -60,7 +60,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ username: strin
   const tags = (detail.tags.en ?? []).slice(0, 4);
 
   const qr = parseQr(req)
-    ? await qrDataUrl(`/u/${detail.username}`, qrModuleColor(color, theme))
+    ? await qrDataUrl(`/u/${detail.username}?ref=badge`, qrModuleColor(color, theme))
     : null;
   const id: Identity = { username: detail.username, displayName, avatar, tier, color, palette, qr };
 

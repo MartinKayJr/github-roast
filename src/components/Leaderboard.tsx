@@ -31,6 +31,7 @@ export async function Leaderboard({
     scoreTitle: t("scoreTitle"),
     heatLabel: t("heatLabel"),
     heatTitle: t("heatTitle"),
+    vsButton: t("vsButton"),
   };
 
   // Route the initial paint through the same Redis cache-aside the /api route

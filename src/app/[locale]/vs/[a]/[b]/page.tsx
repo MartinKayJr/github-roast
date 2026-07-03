@@ -137,7 +137,7 @@ export default async function VsPage({
   return (
     <main className="relative isolate flex w-full flex-1 justify-center px-5 py-14 sm:py-20">
       <div className="flex w-full max-w-4xl flex-col">
-        <Link href="/leaderboard" className="text-sm text-zinc-400 hover:text-zinc-200">
+        <Link href="/leaderboard" prefetch={false} className="text-sm text-zinc-400 hover:text-zinc-200">
           {t("back")}
         </Link>
 

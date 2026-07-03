@@ -54,7 +54,7 @@ func TestClientRoastParsesMetaFrames(t *testing.T) {
 	defer server.Close()
 
 	client := Client{Host: server.URL, HTTP: server.Client()}
-	result, err := client.Roast(context.Background(), map[string]any{"metrics": map[string]any{"username": "DemoDev"}}, "zh")
+	result, err := client.Roast(context.Background(), map[string]any{"metrics": map[string]any{"username": "DemoDev"}}, "zh", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

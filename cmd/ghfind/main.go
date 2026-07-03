@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/hikariming/github-roast/internal/agentcli"
+	"github.com/hikariming/ghfind/internal/agentcli"
 )
 
 func main() {

@@ -20,6 +20,7 @@ export async function HomeLeaderboard({ pageSize = 10 }: { pageSize?: number }) 
     scoreTitle: tBoard("scoreTitle"),
     heatLabel: tBoard("heatLabel"),
     heatTitle: tBoard("heatTitle"),
+    vsButton: tBoard("vsButton"),
   };
   const labels: HomeLeaderboardLabels = {
     openBoard: tHome("openBoard"),

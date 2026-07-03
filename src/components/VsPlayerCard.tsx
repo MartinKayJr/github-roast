@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Link } from "@/i18n/navigation";
 import type { AccountDetail } from "@/lib/db";
 import { tierStyle } from "@/lib/tier";
 import { TierAvatarFrame } from "./TierAvatarFrame";
@@ -49,14 +50,12 @@ export function VsPlayerCard({
       className={`flex flex-1 flex-col items-center rounded-2xl border border-white/10 bg-white/[0.04] p-6 text-center ring-1 ${style.ring}`}
       style={{ boxShadow: `0 0 80px -20px ${style.glow}` }}
     >
-      <a
-        href={detail.profile_url ?? `https://github.com/${detail.username}`}
-        target="_blank"
-        rel="noopener noreferrer"
+      <Link
+        href={`/u/${detail.username}`}
         className={`max-w-full break-all rounded-full bg-black/35 px-4 py-1.5 text-lg font-black leading-tight ${style.text} ring-1 ${style.ring} hover:bg-black/45`}
       >
         @{detail.username}
-      </a>
+      </Link>
       <TierAvatarFrame
         username={detail.username}
         avatarUrl={detail.avatar_url}

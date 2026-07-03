@@ -92,6 +92,7 @@ export default async function FacetBucketPage({
     scoreTitle: tl("scoreTitle"),
     heatLabel: tl("heatLabel"),
     heatTitle: tl("heatTitle"),
+    vsButton: tl("vsButton"),
   };
 
   return (
