@@ -20,7 +20,8 @@
     "signIn": "用 GitHub 登录",
     "signOut": "登出",
     "myProfile": "我的主页",
-    "judgeSelf": "检测我自己"
+    "judgeSelf": "检测我自己",
+    "communityProfile": "社区档案"
   },
   "loginNudge": {
     "title": "🔥 登录解锁更多玩法",
@@ -375,6 +376,76 @@
       "5": "@{winner} 微弱领先，但 @{loser} 完全不虚。",
       "6": "平分秋色，@{winner} 也就赢在运气好了 {gap} 分。",
       "7": "半斤八两，@{winner} 与 @{loser} 谁也没占到便宜。"
+    }
+  },
+  "community": {
+    "joinCta": "加入社区",
+    "optInTitle": "认领你的开发者身份",
+    "optInIntro": "锐评可以是娱乐，但社区圈子代表真实的社交意图。在这里，你可以主动展示自己在做什么、想认识谁，让志同道合的开发者发现你。",
+    "noRoastYet": "还没有评分？先去检测一下",
+    "noRoastYetDesc": "加入社区需要先完成 GitHub 锐评检测，获得你的开发者评分。",
+    "goToRoast": "去检测",
+    "introStep": {
+      "title": "欢迎加入开发者社区",
+      "subtitle": "在这里认识志同道合的开发者",
+      "whatIsCommunity": "社区是什么？",
+      "communityDesc": "这是一个让优质开发者互相发现的地方。你可以填写自己的开发方向、寻找的合作者类型，并设置希望被谁发现。",
+      "privacy": "隐私优先",
+      "privacyDesc": "你完全掌控自己的信息。可以随时选择公开或私密，也可以随时退出社区。",
+      "continue": "继续"
+    },
+    "profileForm": {
+      "title": "填写你的社区档案",
+      "subtitle": "告诉大家你是谁，你在做什么",
+      "workingOn": "我在做什么",
+      "workingOnPlaceholder": "例如：开发开源 AI 工具 / 学习 Rust 系统编程 / 构建 Web3 应用",
+      "wantToMeet": "想认识谁",
+      "wantToMeetPlaceholder": "例如：对 AI 感兴趣的前端开发者 / Rust 爱好者 / 开源贡献者",
+      "contactMethod": "谁可以联系我",
+      "contactMethodPlaceholder": "例如：GitHub Issues / Twitter DM / Email（在个人资料）",
+      "chatTopics": "我擅长聊什么",
+      "chatTopicsPlaceholder": "例如：TypeScript 最佳实践 / AI 应用开发 / 开源项目运营",
+      "noRecommend": "不希望被推荐的场景",
+      "noRecommendPlaceholder": "例如：不接受商业合作 / 不找实习/工作 / 只接受开源项目交流",
+      "languageTab": "语言",
+      "chinese": "中文",
+      "english": "English",
+      "charLimit": "最多 {max} 字",
+      "back": "上一步",
+      "continue": "下一步"
+    },
+    "confirmStep": {
+      "title": "确认并加入",
+      "subtitle": "检查你的信息，选择隐私设置",
+      "preview": "预览你的社区档案",
+      "visibilityTitle": "谁可以看到你的档案？",
+      "visibilityPublic": "公开",
+      "visibilityPublicDesc": "所有人都可以在社区发现页看到你的档案",
+      "visibilityPrivate": "私密",
+      "visibilityPrivateDesc": "档案不会出现在推荐中，只有访问你主页的人能看到",
+      "confirmCheckbox": "我确认加入开发者社区，并同意公开展示以上信息",
+      "back": "返回修改",
+      "confirm": "确认加入"
+    },
+    "profileCard": {
+      "title": "社区档案",
+      "memberSince": "加入于 {date}",
+      "workingOn": "在做什么",
+      "wantToMeet": "想认识",
+      "contactMethod": "联系方式",
+      "chatTopics": "擅长话题",
+      "noRecommend": "不接受",
+      "edit": "编辑档案",
+      "viewInCommunity": "在社区查看",
+      "visibility": "可见性",
+      "public": "公开",
+      "private": "私密"
+    },
+    "errors": {
+      "unauthorized": "请先登录",
+      "noRoast": "请先完成 GitHub 锐评",
+      "updateFailed": "更新失败，请重试",
+      "optInFailed": "加入失败，请重试"
     }
   }
 }

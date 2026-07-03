@@ -20,7 +20,8 @@
     "signIn": "Sign in with GitHub",
     "signOut": "Sign out",
     "myProfile": "My profile",
-    "judgeSelf": "Judge myself"
+    "judgeSelf": "Judge myself",
+    "communityProfile": "Community Profile"
   },
   "loginNudge": {
     "title": "🔥 Sign in to unlock more",
@@ -375,6 +376,76 @@
       "5": "@{winner} leads by a hair, but @{loser} isn't fazed at all.",
       "6": "Split the difference — @{winner} just got {gap} points luckier.",
       "7": "Six of one, half a dozen of the other — @{winner} and @{loser} gained nothing on each other."
+    }
+  },
+  "community": {
+    "joinCta": "Join Community",
+    "optInTitle": "Claim Your Developer Identity",
+    "optInIntro": "Roasts are fun, but the community represents real connections. Here, you can actively showcase what you're working on and who you want to meet, so like-minded developers can discover you.",
+    "noRoastYet": "No roast yet? Get scored first",
+    "noRoastYetDesc": "To join the community, you need to complete your GitHub roast first and get your developer score.",
+    "goToRoast": "Get Roasted",
+    "introStep": {
+      "title": "Welcome to the Developer Community",
+      "subtitle": "Meet like-minded developers here",
+      "whatIsCommunity": "What is the community?",
+      "communityDesc": "A place for quality developers to discover each other. You can share your development focus, the type of collaborators you're looking for, and control who can find you.",
+      "privacy": "Privacy First",
+      "privacyDesc": "You're in full control. Choose public or private visibility, and opt out anytime.",
+      "continue": "Continue"
+    },
+    "profileForm": {
+      "title": "Build Your Community Profile",
+      "subtitle": "Tell everyone who you are and what you're working on",
+      "workingOn": "What I'm working on",
+      "workingOnPlaceholder": "e.g., Building open source AI tools / Learning Rust systems programming / Creating Web3 apps",
+      "wantToMeet": "Who I want to meet",
+      "wantToMeetPlaceholder": "e.g., Frontend devs interested in AI / Rust enthusiasts / Open source contributors",
+      "contactMethod": "Who can contact me",
+      "contactMethodPlaceholder": "e.g., GitHub Issues / Twitter DM / Email (in profile)",
+      "chatTopics": "What I'm good to chat about",
+      "chatTopicsPlaceholder": "e.g., TypeScript best practices / AI app development / Open source project operations",
+      "noRecommend": "Don't recommend me for",
+      "noRecommendPlaceholder": "e.g., No commercial partnerships / Not looking for internships/jobs / Open source discussions only",
+      "languageTab": "Language",
+      "chinese": "中文",
+      "english": "English",
+      "charLimit": "Max {max} chars",
+      "back": "Back",
+      "continue": "Continue"
+    },
+    "confirmStep": {
+      "title": "Confirm and Join",
+      "subtitle": "Review your info and choose privacy settings",
+      "preview": "Preview your community profile",
+      "visibilityTitle": "Who can see your profile?",
+      "visibilityPublic": "Public",
+      "visibilityPublicDesc": "Everyone can see your profile in the community discovery page",
+      "visibilityPrivate": "Private",
+      "visibilityPrivateDesc": "Your profile won't appear in recommendations, only visitors to your page can see it",
+      "confirmCheckbox": "I confirm joining the developer community and agree to publicly display the above information",
+      "back": "Back to edit",
+      "confirm": "Confirm & Join"
+    },
+    "profileCard": {
+      "title": "Community Profile",
+      "memberSince": "Member since {date}",
+      "workingOn": "Working on",
+      "wantToMeet": "Want to meet",
+      "contactMethod": "Contact",
+      "chatTopics": "Good to chat about",
+      "noRecommend": "Not accepting",
+      "edit": "Edit Profile",
+      "viewInCommunity": "View in Community",
+      "visibility": "Visibility",
+      "public": "Public",
+      "private": "Private"
+    },
+    "errors": {
+      "unauthorized": "Please sign in first",
+      "noRoast": "Please complete your GitHub roast first",
+      "updateFailed": "Update failed, please try again",
+      "optInFailed": "Failed to join, please try again"
     }
   }
 }
