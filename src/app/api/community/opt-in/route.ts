@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { upsertCommunityProfile, updateCommunityStatus } from "@/lib/db";
+import { upsertCommunityProfile, updateCommunityStatus, getScoreBrief } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +20,12 @@ export async function POST(req: NextRequest) {
 
     if (body.confirm !== true) {
       return NextResponse.json({ error: "Confirmation required" }, { status: 400 });
+    }
+
+    // Require an existing roast before joining the community
+    const brief = await getScoreBrief(session.user.login);
+    if (!brief) {
+      return NextResponse.json({ error: "A GitHub roast is required before joining the community" }, { status: 400 });
     }
 
     const visibility = body.visibility;

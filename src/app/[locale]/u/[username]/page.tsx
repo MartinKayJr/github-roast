@@ -12,7 +12,7 @@ import {
   getRank,
   getSimilarAccounts,
   getUserMatchups,
-  getCommunityProfile,
+  getCommunityProfileByLogin,
 } from "@/lib/db";
 import { aggregateLanguages, collectTopics } from "@/lib/profile-insights";
 import { JsonLd, profileJsonLd } from "@/components/JsonLd";
@@ -30,7 +30,7 @@ import { ProfileReactionsSection } from "@/components/ProfileReactionsSection";
 import { RescanButton } from "@/components/RescanButton";
 import { ProfileBackfill } from "@/components/ProfileBackfill";
 import { auth, authConfigured } from "@/lib/auth";
-import { CommunityProfileCard } from "@/components/community/CommunityProfileCard";
+import { CommunitySection } from "@/components/community/CommunitySection";
 
 // Profile comments must be fresh; score/roast data is still fetched from the DB
 // and remains cached at the persistence layer where applicable.
@@ -116,7 +116,7 @@ export default async function AccountPage({
     getRank(d.final_score),
     authConfigured() ? auth() : Promise.resolve(null),
     getUserMatchups(d.username),
-    getCommunityProfile(d.github_id),
+    getCommunityProfileByLogin(d.username),
   ]);
   // Inline re-detect is self-service: only the signed-in owner sees it on their
   // own profile. GitHub handles are case-insensitive, so compare normalized.
@@ -477,16 +477,16 @@ export default async function AccountPage({
         </section>
       )}
 
-      {/* Community Profile - displayed only if user has opted in */}
-      {communityProfile?.status === "active" && (
-        <div className="mt-6">
-          <CommunityProfileCard
-            profile={communityProfile}
-            isOwner={isOwner}
-            lang={lang}
-          />
-        </div>
-      )}
+      {/* Community Profile — join CTA for owner, card for active members */}
+      <div className="mt-6">
+        <CommunitySection
+          profile={communityProfile}
+          isOwner={isOwner}
+          hasRoast={true}
+          username={d.username}
+          lang={lang}
+        />
+      </div>
 
       {/* Similar developers — same profile shape, nearby score */}
       {similar.length > 0 && (

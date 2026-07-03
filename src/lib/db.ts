@@ -1918,6 +1918,31 @@ export async function getCommunityProfile(githubId: number): Promise<CommunityPr
 }
 
 /**
+ * Get a community profile by GitHub login (username). Useful when github_id is not available.
+ */
+export async function getCommunityProfileByLogin(login: string): Promise<CommunityProfile | null> {
+  const db = getClient();
+  if (!db) return null;
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT github_id, login, status, visibility, working_on, want_to_meet,
+                   contact_method, chat_topics, no_recommend_for, ai_card,
+                   ai_card_approved, joined_at, updated_at
+            FROM community_profiles
+            WHERE login = ?
+            LIMIT 1`,
+      args: [login.toLowerCase()],
+    });
+    if (res.rows.length === 0) return null;
+    return toCommunityProfile(res.rows[0] as Record<string, unknown>);
+  } catch (e) {
+    console.error("getCommunityProfileByLogin failed:", e);
+    return null;
+  }
+}
+
+/**
  * Upsert a community profile. Preserves existing fields if not provided.
  */
 export async function upsertCommunityProfile(

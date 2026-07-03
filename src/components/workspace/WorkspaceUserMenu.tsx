@@ -105,7 +105,7 @@ export function WorkspaceUserMenu({
 
         <DropdownMenuItem asChild>
           <Link
-            href={`/u/${login}`}
+            href={scored ? `/u/${login}#community` : `/?username=${encodeURIComponent(`https://github.com/${login}`)}`}
             className="flex items-center justify-between rounded-xl px-3 py-2.5"
           >
             <span className="flex items-center gap-2.5">
