@@ -16,7 +16,7 @@ import { GhFind, GhFindError } from "./client.js";
 import type { ByoKey, ScanResult } from "./types.js";
 import { catalog, DEFAULT_HOST } from "./catalog.js";
 
-const VERSION = "0.1.0";
+const VERSION = "0.1.1";
 const VALID_OUTPUTS = new Set(["json", "pretty", "markdown"]);
 const SUB_SCORE_ORDER = [
   "account_maturity",

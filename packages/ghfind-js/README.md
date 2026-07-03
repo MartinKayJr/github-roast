@@ -16,19 +16,23 @@ head-to-head battles, leaderboards, and developer discovery.
 - **Zero runtime dependencies.** Uses the global `fetch` (Node 18+, browsers, edge).
 
 ```bash
-npm install ghfind      # library
-npm install -g ghfind   # or global CLI
+npm install @hikariming/ghfind      # library
+npm install -g @hikariming/ghfind   # or global CLI (exposes the `ghfind` command)
 ```
+
+> Published as **`@hikariming/ghfind`** (the unscoped `ghfind` name is blocked by
+> npm for being too similar to `find`). The CLI command is still `ghfind`.
 
 ---
 
 ## CLI
 
 ```bash
-npx ghfind score torvalds          # deterministic score (no auth, cached)
-npx ghfind roast torvalds --lang en
-npx ghfind vs torvalds octocat
-npx ghfind badge torvalds --markdown   # a README badge that links back to ghfind
+# after `npm i -g @hikariming/ghfind`, or one-off via `npx @hikariming/ghfind <cmd>`
+ghfind score torvalds          # deterministic score (no auth, cached)
+ghfind roast torvalds --lang en
+ghfind vs torvalds octocat
+ghfind badge torvalds --markdown   # a README badge that links back to ghfind
 ```
 
 `score` hits the public **`GET /api/score`** endpoint: no auth, edge-cached and
@@ -86,7 +90,7 @@ plain `score`** (ghfind scores it for you). Output is identical.
 ## Library
 
 ```ts
-import { GhFind } from "ghfind";
+import { GhFind } from "@hikariming/ghfind";
 
 const gh = new GhFind(); // defaults to https://ghfind.com
 
@@ -109,19 +113,19 @@ const roast = await gh.roast({
 ```
 
 Every method is one atomic capability; introspect them at runtime via
-`import { catalog } from "ghfind"`.
+`import { catalog } from "@hikariming/ghfind"`.
 
 ### Local scoring (`ghfind/local`)
 
 ```ts
-import { collectAndScore } from "ghfind/local";
+import { collectAndScore } from "@hikariming/ghfind/local";
 const scan = await collectAndScore("torvalds", { token: process.env.GITHUB_TOKEN });
 console.log(scan.scoring.final_score);
 ```
 
 `ghfind/local` bundles the *actual* open-source scoring core from the website —
 not a copy — so results are byte-for-byte identical and can never drift. Import it
-only when you want local scoring; the main `ghfind` entry stays a tiny
+only when you want local scoring; the main `@hikariming/ghfind` entry stays a tiny
 dependency-free remote client and never pulls it in.
 
 ---

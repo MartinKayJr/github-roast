@@ -79,7 +79,7 @@ describe("byoKey", () => {
 describe("offline commands", () => {
   it("prints the version", async () => {
     const out = await captureStdout(() => run(["version"]));
-    expect(out.trim()).toBe("ghfind 0.1.0");
+    expect(out.trim()).toBe("ghfind 0.1.1");
   });
 
   it("badge --markdown emits a README-ready snippet linking to the profile", async () => {
