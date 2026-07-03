@@ -12,6 +12,7 @@ import {
   getRank,
   getSimilarAccounts,
   getUserMatchups,
+  getCommunityProfile,
 } from "@/lib/db";
 import { aggregateLanguages, collectTopics } from "@/lib/profile-insights";
 import { JsonLd, profileJsonLd } from "@/components/JsonLd";
@@ -29,6 +30,7 @@ import { ProfileReactionsSection } from "@/components/ProfileReactionsSection";
 import { RescanButton } from "@/components/RescanButton";
 import { ProfileBackfill } from "@/components/ProfileBackfill";
 import { auth, authConfigured } from "@/lib/auth";
+import { CommunityProfileCard } from "@/components/community/CommunityProfileCard";
 
 // Profile comments must be fresh; score/roast data is still fetched from the DB
 // and remains cached at the persistence layer where applicable.
@@ -107,13 +109,14 @@ export default async function AccountPage({
   // visitor's language even when the full report exists only in the other one.
   // Empty for legacy rows — those still carry the one-liner inline in `roast`.
   const roastLine = lang === "en" ? d.roast_line.en : d.roast_line.zh;
-  const [similar, comments, snap, rank, session, battles] = await Promise.all([
+  const [similar, comments, snap, rank, session, battles, communityProfile] = await Promise.all([
     getSimilarAccounts(d.username, d.final_score, d.sub_scores),
     getProfileComments(d.username),
     getProfileSnapshot(d.username),
     getRank(d.final_score),
     authConfigured() ? auth() : Promise.resolve(null),
     getUserMatchups(d.username),
+    getCommunityProfile(d.github_id),
   ]);
   // Inline re-detect is self-service: only the signed-in owner sees it on their
   // own profile. GitHub handles are case-insensitive, so compare normalized.
@@ -472,6 +475,17 @@ export default async function AccountPage({
             </div>
           )}
         </section>
+      )}
+
+      {/* Community Profile - displayed only if user has opted in */}
+      {communityProfile?.status === "active" && (
+        <div className="mt-6">
+          <CommunityProfileCard
+            profile={communityProfile}
+            isOwner={isOwner}
+            lang={lang}
+          />
+        </div>
       )}
 
       {/* Similar developers — same profile shape, nearby score */}
