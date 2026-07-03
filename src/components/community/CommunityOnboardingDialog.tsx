@@ -40,6 +40,25 @@ interface FormData {
   no_recommend_for: BilingualField;
 }
 
+const PROFILE_FIELDS = [
+  "working_on",
+  "want_to_meet",
+  "contact_method",
+  "chat_topics",
+  "no_recommend_for",
+] as const;
+
+const FIELD_LABEL_KEYS: Record<
+  (typeof PROFILE_FIELDS)[number],
+  { label: string; placeholder: string }
+> = {
+  working_on: { label: "workingOn", placeholder: "workingOnPlaceholder" },
+  want_to_meet: { label: "wantToMeet", placeholder: "wantToMeetPlaceholder" },
+  contact_method: { label: "contactMethod", placeholder: "contactMethodPlaceholder" },
+  chat_topics: { label: "chatTopics", placeholder: "chatTopicsPlaceholder" },
+  no_recommend_for: { label: "noRecommend", placeholder: "noRecommendPlaceholder" },
+};
+
 function profileToFormData(profile: CommunityProfile | null | undefined): FormData {
   return {
     working_on: profile?.working_on ?? { zh: "", en: "" },
@@ -246,11 +265,11 @@ export function CommunityOnboardingDialog({
                 </button>
               </div>
 
-              {(["working_on", "want_to_meet", "contact_method", "chat_topics", "no_recommend_for"] as const).map(
+              {PROFILE_FIELDS.map(
                 (field) => (
                   <div key={field} className="space-y-1">
                     <Label htmlFor={`${field}-${currentLang}`}>
-                      {t(`profileForm.${field}`)}
+                      {t(`profileForm.${FIELD_LABEL_KEYS[field].label}`)}
                       {(field === "working_on" || field === "want_to_meet") && (
                         <span className="text-orange-400 ml-1">*</span>
                       )}
@@ -259,7 +278,7 @@ export function CommunityOnboardingDialog({
                       id={`${field}-${currentLang}`}
                       value={formData[field][currentLang]}
                       onChange={(e) => updateField(field, currentLang, e.target.value)}
-                      placeholder={t(`profileForm.${field}Placeholder`)}
+                      placeholder={t(`profileForm.${FIELD_LABEL_KEYS[field].placeholder}`)}
                       maxLength={500}
                       className="border-white/15 bg-white/5 focus:border-emerald-400/60"
                     />
