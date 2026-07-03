@@ -18,7 +18,11 @@ import { WorkspaceUserMenu } from "@/components/workspace/WorkspaceUserMenu";
  * state); most visitors are signed out, and the button/avatar slots in once the
  * single fetch resolves.
  */
-type Me = { user: { login: string; image: string | null } | null; scored: boolean };
+type Me = {
+  user: { login: string; image: string | null } | null;
+  scored: boolean;
+  hasCommunityProfile: boolean;
+};
 
 export function NavAuth({
   configured,
@@ -43,7 +47,7 @@ export function NavAuth({
         if (alive) setMe(d);
       })
       .catch(() => {
-        if (alive) setMe({ user: null, scored: false });
+        if (alive) setMe({ user: null, scored: false, hasCommunityProfile: false });
       });
     return () => {
       alive = false;
@@ -65,6 +69,7 @@ export function NavAuth({
         image={user.image}
         login={user.login}
         scored={me.scored}
+        hasCommunityProfile={me.hasCommunityProfile}
         repoHref={repoHref}
         repoLabel={repoLabel}
         repoTitle={repoTitle}

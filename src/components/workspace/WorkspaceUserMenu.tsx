@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight, Languages, LogOut, Palette, UserRound } from "lucide-react";
+import { ArrowUpRight, Languages, LogOut, Palette, UserRound, Users } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { signOut } from "next-auth/react";
 import { Link } from "@/i18n/navigation";
@@ -18,6 +18,7 @@ type WorkspaceUserMenuProps = {
   image: string | null;
   login: string;
   scored: boolean;
+  hasCommunityProfile?: boolean;
   repoHref: string;
   repoLabel: string;
   repoTitle: string;
@@ -39,6 +40,7 @@ export function WorkspaceUserMenu({
   image,
   login,
   scored,
+  hasCommunityProfile = false,
   repoHref,
   repoLabel,
   repoTitle,
@@ -97,6 +99,22 @@ export function WorkspaceUserMenu({
               <UserRound className="h-4 w-4 text-zinc-300" />
               <span>{scored ? tHeader("myProfile") : tHeader("judgeSelf")}</span>
             </span>
+            <ArrowUpRight className="h-4 w-4 text-zinc-500" />
+          </Link>
+        </DropdownMenuItem>
+
+        <DropdownMenuItem asChild>
+          <Link
+            href={`/u/${login}`}
+            className="flex items-center justify-between rounded-xl px-3 py-2.5"
+          >
+            <span className="flex items-center gap-2.5">
+              <Users className="h-4 w-4 text-zinc-300" />
+              <span>{tHeader("communityProfile")}</span>
+            </span>
+            {hasCommunityProfile && (
+              <span className="h-2 w-2 rounded-full bg-emerald-400" />
+            )}
             <ArrowUpRight className="h-4 w-4 text-zinc-500" />
           </Link>
         </DropdownMenuItem>
