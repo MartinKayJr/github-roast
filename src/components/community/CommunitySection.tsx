@@ -18,6 +18,7 @@ interface CommunitySectionProps {
 /**
  * Client island for the community section on a profile page.
  * Owns dialog open/edit state so the surrounding server component stays static.
+ * Both active and pre-join states share id="community" so the navbar anchor works.
  */
 export function CommunitySection({
   profile,
@@ -33,7 +34,7 @@ export function CommunitySection({
 
   if (isActive) {
     return (
-      <>
+      <div id="community">
         <CommunityProfileCard
           profile={profile!}
           isOwner={isOwner}
@@ -46,20 +47,18 @@ export function CommunitySection({
             onOpenChange={setDialogOpen}
             username={username}
             hasRoast={hasRoast}
+            initialProfile={profile}
           />
         )}
-      </>
+      </div>
     );
   }
 
   if (!isOwner) return null;
 
   return (
-    <>
-      <div
-        id="community"
-        className="rounded-2xl border border-emerald-300/20 bg-emerald-500/[0.04] p-5 sm:p-6"
-      >
+    <div id="community">
+      <div className="rounded-2xl border border-emerald-300/20 bg-emerald-500/[0.04] p-5 sm:p-6">
         <div className="mb-3">
           <h2 className="text-base font-bold text-emerald-200">{t("joinCta")}</h2>
           <p className="mt-1 text-sm text-zinc-400">{t("introStep.communityDesc")}</p>
@@ -77,6 +76,6 @@ export function CommunitySection({
         username={username}
         hasRoast={hasRoast}
       />
-    </>
+    </div>
   );
 }

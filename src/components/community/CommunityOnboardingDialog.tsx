@@ -15,12 +15,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import type { CommunityProfile } from "@/lib/db";
 
 interface CommunityOnboardingDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   username: string;
   hasRoast: boolean;
+  initialProfile?: CommunityProfile | null;
 }
 
 type Step = "intro" | "form" | "confirm";
@@ -38,28 +40,36 @@ interface FormData {
   no_recommend_for: BilingualField;
 }
 
+function profileToFormData(profile: CommunityProfile | null | undefined): FormData {
+  return {
+    working_on: profile?.working_on ?? { zh: "", en: "" },
+    want_to_meet: profile?.want_to_meet ?? { zh: "", en: "" },
+    contact_method: profile?.contact_method ?? { zh: "", en: "" },
+    chat_topics: profile?.chat_topics ?? { zh: "", en: "" },
+    no_recommend_for: profile?.no_recommend_for ?? { zh: "", en: "" },
+  };
+}
+
 export function CommunityOnboardingDialog({
   open,
   onOpenChange,
   username,
   hasRoast,
+  initialProfile,
 }: CommunityOnboardingDialogProps) {
   const t = useTranslations("community");
   const router = useRouter();
-  const [step, setStep] = useState<Step>("intro");
+  const isEdit = initialProfile?.status === "active";
+  const [step, setStep] = useState<Step>(isEdit ? "form" : "intro");
   const [currentLang, setCurrentLang] = useState<"zh" | "en">("zh");
-  const [visibility, setVisibility] = useState<"public" | "private">("public");
+  const [visibility, setVisibility] = useState<"public" | "private">(
+    initialProfile?.visibility ?? "public",
+  );
   const [confirmed, setConfirmed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [formData, setFormData] = useState<FormData>({
-    working_on: { zh: "", en: "" },
-    want_to_meet: { zh: "", en: "" },
-    contact_method: { zh: "", en: "" },
-    chat_topics: { zh: "", en: "" },
-    no_recommend_for: { zh: "", en: "" },
-  });
+  const [formData, setFormData] = useState<FormData>(() => profileToFormData(initialProfile));
 
   const updateField = (field: keyof FormData, lang: "zh" | "en", value: string) => {
     setFormData((prev) => ({
@@ -154,7 +164,7 @@ export function CommunityOnboardingDialog({
           <>
             <DialogHeader>
               <DialogTitle className="text-2xl">{t("introStep.title")}</DialogTitle>
-              <DialogDescription>{t("introStep.subtitle")}</DialogDescription>
+              <DialogDescription>@{username} · {t("introStep.subtitle")}</DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4 py-4">

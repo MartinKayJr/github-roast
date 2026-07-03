@@ -23,6 +23,7 @@ export function CommunityProfileCard({
     return new Date(timestamp).toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US", {
       year: "numeric",
       month: "long",
+      timeZone: "UTC",
     });
   };
 
