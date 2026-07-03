@@ -40,7 +40,7 @@ export interface DevelopersDiscoveryLabels {
   aiUnavailable: string;
   aiSummaryTitle: string;
   aiDevelopersTitle: string;
-  aiTokenEstimate: (values: { min: number; max: number }) => string;
+  aiTokenEstimate: string;
   aiUseOwnKey: string;
   aiRunSearch: string;
   aiServerMode: string;
@@ -89,6 +89,12 @@ interface DevelopersDiscoveryProps {
 }
 
 const TYPE_ORDER: FacetType[] = ["language", "repo", "org"];
+
+function formatTokenEstimate(template: string, values: { min: number; max: number }): string {
+  return template
+    .replace("{min}", String(values.min))
+    .replace("{max}", String(values.max));
+}
 
 function normalize(value: string): string {
   return value.trim().toLowerCase();
@@ -318,7 +324,7 @@ export function DevelopersDiscovery({
         {terms.length > 0 && (
           <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.03] p-3">
             <p className="text-xs leading-relaxed text-zinc-500">
-              {labels.aiTokenEstimate(tokenEstimate)}
+              {formatTokenEstimate(labels.aiTokenEstimate, tokenEstimate)}
               {aiSearchMode === "server" ? ` ${labels.aiServerMode}` : ""}
             </p>
             <button

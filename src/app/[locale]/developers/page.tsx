@@ -107,7 +107,7 @@ export default async function DevelopersPage({
           aiUnavailable: t("aiUnavailable"),
           aiSummaryTitle: t("aiSummaryTitle"),
           aiDevelopersTitle: t("aiDevelopersTitle"),
-          aiTokenEstimate: ({ min, max }) => t("aiTokenEstimate", { min, max }),
+          aiTokenEstimate: t("aiTokenEstimate", { min: "{min}", max: "{max}" }),
           aiUseOwnKey: t("aiUseOwnKey"),
           aiRunSearch: t("aiRunSearch"),
           aiServerMode: t("aiServerMode"),
