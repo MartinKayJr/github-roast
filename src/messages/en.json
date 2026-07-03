@@ -490,5 +490,14 @@
       "updateFailed": "Update failed, please try again",
       "optInFailed": "Failed to join, please try again"
     }
+  },
+  "communityWaterfall": {
+    "heading": "Related Circle",
+    "sub": "Developers connected to this matchup",
+    "workingOn": "Working on",
+    "wantToMeet": "Want to meet",
+    "viewProfile": "View profile",
+    "challenge": "Challenge",
+    "empty": "No community members yet"
   }
 }

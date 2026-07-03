@@ -490,5 +490,14 @@
       "updateFailed": "更新失败，请重试",
       "optInFailed": "加入失败，请重试"
     }
+  },
+  "communityWaterfall": {
+    "heading": "相关圈子",
+    "sub": "和这次对战相关的开发者",
+    "workingOn": "在做",
+    "wantToMeet": "想认识",
+    "viewProfile": "查看主页",
+    "challenge": "发起对战",
+    "empty": "暂无相关社区成员"
   }
 }

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Link, redirect } from "@/i18n/navigation";
-import { getAccountDetail, getMatchup } from "@/lib/db";
+import { getAccountDetail, getMatchup, getCommunityWaterfall } from "@/lib/db";
 import { SUBSCORE_MAX } from "@/lib/score";
 import { DIMENSIONS, barColor } from "@/lib/dimensions";
 import { TIER_KEY } from "@/lib/tier";
@@ -15,6 +15,8 @@ import { VsPlayerCard } from "@/components/VsPlayerCard";
 import { VsSummonButton } from "@/components/VsSummonButton";
 import { VsVerdictLive } from "@/components/VsVerdictLive";
 import { VsShare } from "@/components/VsShare";
+import { CommunityWaterfall } from "@/components/community/CommunityWaterfall";
+import { normLang } from "@/lib/lang";
 
 export const dynamic = "force-dynamic";
 
@@ -95,6 +97,7 @@ export default async function VsPage({
   const t = await getTranslations("vs");
   const tDim = await getTranslations("dimensions");
   const tTier = await getTranslations("tiers");
+  const lang = normLang(locale);
 
   const [da, db, matchup] = await Promise.all([
     getDetail(pair.a),
@@ -133,6 +136,15 @@ export default async function VsPage({
   // "换个对手" seeds the loser back into the Omnibox in half-state.
   const loser =
     !v.missing && v.winner !== "tie" ? v.slots.loser : da?.username ?? pair.a;
+
+  // Collect all tags from both players for the waterfall relevance ranking.
+  const combinedTags = [
+    ...(da?.tags.zh ?? []),
+    ...(da?.tags.en ?? []),
+    ...(db?.tags.zh ?? []),
+    ...(db?.tags.en ?? []),
+  ];
+  const waterfallEntries = await getCommunityWaterfall([pair.a, pair.b], combinedTags, 6);
 
   return (
     <main className="relative isolate flex w-full flex-1 justify-center px-5 py-14 sm:py-20">
@@ -274,6 +286,17 @@ export default async function VsPage({
               adviceLine={storedAdvice}
             />
           </div>
+        )}
+
+        {/* Community waterfall — developers related to this matchup */}
+        {waterfallEntries.length > 0 && (
+          <CommunityWaterfall
+            entries={waterfallEntries}
+            lang={lang}
+            vsA={pair.a}
+            vsB={pair.b}
+            locale={locale}
+          />
         )}
 
         {/* Keep the chain going */}

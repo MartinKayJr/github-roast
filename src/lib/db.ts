@@ -2199,6 +2199,77 @@ export async function updateCommunityStatus(
   }
 }
 
+export interface CommunityWaterfallEntry {
+  login: string;
+  avatar_url: string | null;
+  final_score: number;
+  tier: Tier;
+  tags: Tags;
+  working_on: { zh: string; en: string } | null;
+  want_to_meet: { zh: string; en: string } | null;
+}
+
+/**
+ * Fetch active, public community profiles relevant to a VS matchup.
+ * Pool order: users sharing tags with either player → general active pool.
+ * Excludes the two players themselves. De-duplicates by login.
+ */
+export async function getCommunityWaterfall(
+  playerLogins: [string, string],
+  playerTags: string[],
+  limit = 8,
+): Promise<CommunityWaterfallEntry[]> {
+  const db = getClient();
+  if (!db) return [];
+  try {
+    await ensureSchema(db);
+    const [a, b] = playerLogins.map((l) => l.toLowerCase());
+
+    // Fetch active+public profiles joined with scores for avatar/tier/tags.
+    // We pull more than needed so we can rank client-side without extra queries.
+    const res = await db.execute({
+      sql: `SELECT cp.login, s.avatar_url, s.final_score, s.tier, s.tags,
+                   cp.working_on, cp.want_to_meet
+            FROM community_profiles AS cp
+            JOIN scores AS s ON s.username = cp.login
+            WHERE cp.status  = 'active'
+              AND cp.visibility = 'public'
+              AND cp.login != ?
+              AND cp.login != ?
+              AND s.hidden = 0
+            ORDER BY s.final_score DESC
+            LIMIT 40`,
+      args: [a, b],
+    });
+
+    const tagSet = new Set(playerTags.map((t) => t.toLowerCase()));
+
+    const scored = res.rows.map((r) => {
+      const rowTags = parseTags(r.tags);
+      const allTags = [...rowTags.zh, ...rowTags.en].map((t) => t.toLowerCase());
+      const shared = allTags.filter((t) => tagSet.has(t)).length;
+      return {
+        login: String(r.login),
+        avatar_url: (r.avatar_url as string | null) ?? null,
+        final_score: Number(r.final_score),
+        tier: String(r.tier) as Tier,
+        tags: rowTags,
+        working_on: parseBilingualField(r.working_on),
+        want_to_meet: parseBilingualField(r.want_to_meet),
+        _shared: shared,
+      };
+    });
+
+    // Sort: shared-tag matches first, then by score descending.
+    scored.sort((x, y) => y._shared - x._shared || y.final_score - x.final_score);
+
+    return scored.slice(0, limit).map(({ _shared: _s, ...entry }) => entry);
+  } catch (e) {
+    console.error("getCommunityWaterfall failed:", e);
+    return [];
+  }
+}
+
 interface CreateProfileCommentInput {
   targetUsername: string;
   text: string;
