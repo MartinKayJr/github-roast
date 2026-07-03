@@ -52,7 +52,7 @@ export function NavGuestMenu({
       >
         <div className="rounded-xl bg-white/[0.03] px-3 py-3">
           <div className="text-sm font-semibold text-zinc-100">{triggerLabel}</div>
-          <div className="mt-1 text-xs text-zinc-500">ghfind</div>
+          <div className="mt-1 text-xs text-zinc-500">ghsphere</div>
         </div>
 
         <DropdownMenuSeparator className="mx-1 bg-white/10" />
