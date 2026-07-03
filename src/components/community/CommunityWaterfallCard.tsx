@@ -1,22 +1,21 @@
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { TierAvatarFrame } from "@/components/TierAvatarFrame";
-import { tierStyle, TIER_KEY } from "@/lib/tier";
+import { tierStyle } from "@/lib/tier";
 import type { CommunityWaterfallEntry } from "@/lib/db";
 import type { Lang } from "@/lib/lang";
 
 interface CommunityWaterfallCardProps {
   entry: CommunityWaterfallEntry;
   lang: Lang;
-  vsA?: string;
-  vsB?: string;
+  /** The VS winner's login, or a fallback player — used as the challenge opponent. */
+  challengeOpponent: string;
 }
 
 export function CommunityWaterfallCard({
   entry,
   lang,
-  vsA,
-  vsB,
+  challengeOpponent,
 }: CommunityWaterfallCardProps) {
   const t = useTranslations("communityWaterfall");
   const style = tierStyle(entry.tier);
@@ -32,10 +31,9 @@ export function CommunityWaterfallCard({
       : entry.want_to_meet.zh
     : null;
 
-  const challengeOpponent = vsA === entry.login ? vsB : vsA;
-  const challengeHref = challengeOpponent
-    ? `/vs/${entry.login}/${challengeOpponent}`
-    : `/vs/${entry.login}/`;
+  // Canonical VS url — sort handles so the pair is always in one order.
+  const [hA, hB] = [entry.login, challengeOpponent].sort();
+  const challengeHref = `/vs/${hA}/${hB}`;
 
   return (
     <div className="rounded-xl border border-emerald-300/15 bg-emerald-500/[0.04] p-4">

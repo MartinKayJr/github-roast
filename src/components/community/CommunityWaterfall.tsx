@@ -8,7 +8,8 @@ interface CommunityWaterfallProps {
   lang: Lang;
   vsA: string;
   vsB: string;
-  locale: string;
+  /** Login of the winner, or null for a tie. Used as the default challenge opponent. */
+  winner: string | null;
 }
 
 export async function CommunityWaterfall({
@@ -16,8 +17,11 @@ export async function CommunityWaterfall({
   lang,
   vsA,
   vsB,
+  winner,
 }: CommunityWaterfallProps) {
   const t = await getTranslations("communityWaterfall");
+  // Challenge against the winner — most interesting pairing. Fall back to vsA.
+  const challengeOpponent = winner ?? vsA;
 
   return (
     <section className="mt-6 rounded-2xl border border-emerald-300/15 bg-white/[0.02] p-5 sm:p-6">
@@ -32,8 +36,7 @@ export async function CommunityWaterfall({
               key={entry.login}
               entry={entry}
               lang={lang}
-              vsA={vsA}
-              vsB={vsB}
+              challengeOpponent={challengeOpponent}
             />
           ))}
         </div>

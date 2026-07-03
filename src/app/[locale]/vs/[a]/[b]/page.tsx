@@ -137,14 +137,10 @@ export default async function VsPage({
   const loser =
     !v.missing && v.winner !== "tie" ? v.slots.loser : da?.username ?? pair.a;
 
-  // Collect all tags from both players for the waterfall relevance ranking.
-  const combinedTags = [
-    ...(da?.tags.zh ?? []),
-    ...(da?.tags.en ?? []),
-    ...(db?.tags.zh ?? []),
-    ...(db?.tags.en ?? []),
-  ];
-  const waterfallEntries = await getCommunityWaterfall([pair.a, pair.b], combinedTags, 6);
+  // Only fetch the waterfall when at least one player has a scored profile
+  // (= has developer_facets). Without context the results would be meaningless.
+  const waterfallEntries =
+    da || db ? await getCommunityWaterfall([pair.a, pair.b], 6) : [];
 
   return (
     <main className="relative isolate flex w-full flex-1 justify-center px-5 py-14 sm:py-20">
@@ -295,7 +291,7 @@ export default async function VsPage({
             lang={lang}
             vsA={pair.a}
             vsB={pair.b}
-            locale={locale}
+            winner={v.winner === "a" ? pair.a : v.winner === "b" ? pair.b : null}
           />
         )}
 

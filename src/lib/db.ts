@@ -2211,12 +2211,20 @@ export interface CommunityWaterfallEntry {
 
 /**
  * Fetch active, public community profiles relevant to a VS matchup.
- * Pool order: users sharing tags with either player → general active pool.
- * Excludes the two players themselves. De-duplicates by login.
+ *
+ * Relevance is based on developer_facets (language + org overlap) — not
+ * scores.tags (which are entertainment labels, not technical signals).
+ *
+ * Strategy:
+ * 1. Pull the language+org facets for both players in a single batch call.
+ * 2. For each community member, count how many of those facet values they share
+ *    via a subquery join — done in SQL so score-order never caps the relevant pool.
+ * 3. Sort: shared-facet count DESC, then final_score DESC.
+ *
+ * Returns empty when neither player has any facets (no context to match on).
  */
 export async function getCommunityWaterfall(
   playerLogins: [string, string],
-  playerTags: string[],
   limit = 8,
 ): Promise<CommunityWaterfallEntry[]> {
   const db = getClient();
@@ -2225,45 +2233,61 @@ export async function getCommunityWaterfall(
     await ensureSchema(db);
     const [a, b] = playerLogins.map((l) => l.toLowerCase());
 
-    // Fetch active+public profiles joined with scores for avatar/tier/tags.
-    // We pull more than needed so we can rank client-side without extra queries.
-    const res = await db.execute({
-      sql: `SELECT cp.login, s.avatar_url, s.final_score, s.tier, s.tags,
-                   cp.working_on, cp.want_to_meet
-            FROM community_profiles AS cp
-            JOIN scores AS s ON s.username = cp.login
-            WHERE cp.status  = 'active'
-              AND cp.visibility = 'public'
-              AND cp.login != ?
-              AND cp.login != ?
-              AND s.hidden = 0
-            ORDER BY s.final_score DESC
-            LIMIT 40`,
+    // Step 1: fetch facets for both players (language + org only).
+    const facetRes = await db.execute({
+      sql: `SELECT facet_value FROM developer_facets
+            WHERE username IN (?, ?) AND facet_type IN ('language', 'org')`,
       args: [a, b],
     });
 
-    const tagSet = new Set(playerTags.map((t) => t.toLowerCase()));
+    // If neither player has any facets there is no context to match on — bail.
+    if (facetRes.rows.length === 0) return [];
 
-    const scored = res.rows.map((r) => {
-      const rowTags = parseTags(r.tags);
-      const allTags = [...rowTags.zh, ...rowTags.en].map((t) => t.toLowerCase());
-      const shared = allTags.filter((t) => tagSet.has(t)).length;
-      return {
-        login: String(r.login),
-        avatar_url: (r.avatar_url as string | null) ?? null,
-        final_score: Number(r.final_score),
-        tier: String(r.tier) as Tier,
-        tags: rowTags,
-        working_on: parseBilingualField(r.working_on),
-        want_to_meet: parseBilingualField(r.want_to_meet),
-        _shared: shared,
-      };
+    const facetValues = [
+      ...new Set(facetRes.rows.map((r) => String(r.facet_value).toLowerCase())),
+    ];
+
+    // Step 2: for each active community member, count shared facets in SQL.
+    // We use a VALUES list so we avoid a second round trip.
+    // SQLite doesn't support arrays, so we build a parameterised IN clause.
+    const placeholders = facetValues.map(() => "?").join(", ");
+
+    const res = await db.execute({
+      sql: `SELECT cp.login,
+                   s.avatar_url,
+                   s.final_score,
+                   s.tier,
+                   s.tags,
+                   cp.working_on,
+                   cp.want_to_meet,
+                   (
+                     SELECT COUNT(DISTINCT df.facet_value)
+                     FROM developer_facets AS df
+                     WHERE df.username     = cp.login
+                       AND df.facet_type  IN ('language', 'org')
+                       AND LOWER(df.facet_value) IN (${placeholders})
+                   ) AS shared_facets
+            FROM community_profiles AS cp
+            JOIN scores AS s ON s.username = cp.login
+            WHERE cp.status      = 'active'
+              AND cp.visibility  = 'public'
+              AND cp.login      != ?
+              AND cp.login      != ?
+              AND s.hidden       = 0
+            ORDER BY shared_facets DESC, s.final_score DESC
+            LIMIT ?`,
+      args: [...facetValues, a, b, limit],
     });
 
-    // Sort: shared-tag matches first, then by score descending.
-    scored.sort((x, y) => y._shared - x._shared || y.final_score - x.final_score);
-
-    return scored.slice(0, limit).map(({ _shared: _s, ...entry }) => entry);
+    return res.rows.map((r) => ({
+      login: String(r.login),
+      avatar_url: (r.avatar_url as string | null) ?? null,
+      final_score: Number(r.final_score),
+      tier: String(r.tier) as Tier,
+      tags: parseTags(r.tags),
+      working_on: parseBilingualField(r.working_on),
+      want_to_meet: parseBilingualField(r.want_to_meet),
+    }));
   } catch (e) {
     console.error("getCommunityWaterfall failed:", e);
     return [];
