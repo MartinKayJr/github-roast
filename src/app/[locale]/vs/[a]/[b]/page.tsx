@@ -142,6 +142,15 @@ export default async function VsPage({
   const waterfallEntries =
     da || db ? await getCommunityWaterfall([pair.a, pair.b], 6) : [];
 
+  // Challenge opponent: prefer the winner (most interesting pairing); for ties
+  // or missing results prefer whichever player is actually scored; fallback pair.a.
+  const waterfallChallengeOpponent =
+    v.winner === "a"
+      ? pair.a
+      : v.winner === "b"
+        ? pair.b
+        : (da?.username ?? db?.username ?? pair.a);
+
   return (
     <main className="relative isolate flex w-full flex-1 justify-center px-5 py-14 sm:py-20">
       <div className="flex w-full max-w-4xl flex-col">
@@ -291,7 +300,7 @@ export default async function VsPage({
             lang={lang}
             vsA={pair.a}
             vsB={pair.b}
-            winner={v.winner === "a" ? pair.a : v.winner === "b" ? pair.b : null}
+            winner={waterfallChallengeOpponent}
           />
         )}
 

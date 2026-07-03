@@ -8,7 +8,7 @@ import type { Lang } from "@/lib/lang";
 interface CommunityWaterfallCardProps {
   entry: CommunityWaterfallEntry;
   lang: Lang;
-  /** The VS winner's login, or a fallback player — used as the challenge opponent. */
+  /** The VS winner's login (or best-effort fallback) — used as the challenge opponent. */
   challengeOpponent: string;
 }
 
@@ -19,7 +19,6 @@ export function CommunityWaterfallCard({
 }: CommunityWaterfallCardProps) {
   const t = useTranslations("communityWaterfall");
   const style = tierStyle(entry.tier);
-  const tags = lang === "en" ? entry.tags.en : entry.tags.zh;
   const workingOn = entry.working_on
     ? lang === "en"
       ? entry.working_on.en
@@ -52,14 +51,15 @@ export function CommunityWaterfallCard({
               {entry.final_score.toFixed(0)}
             </span>
           </div>
-          {tags.length > 0 && (
+          {/* Show matched facets (language/org/repo) — the actual match signal */}
+          {entry.matched_facets.length > 0 && (
             <div className="mt-1 flex flex-wrap gap-1">
-              {tags.slice(0, 3).map((tag) => (
+              {entry.matched_facets.slice(0, 3).map((facet) => (
                 <span
-                  key={tag}
-                  className="rounded-full bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-400"
+                  key={facet}
+                  className="rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300/80"
                 >
-                  #{tag}
+                  {facet}
                 </span>
               ))}
             </div>
