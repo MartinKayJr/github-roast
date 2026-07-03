@@ -145,4 +145,4 @@ except GhFindError as e:
 Machine-readable API spec: <https://ghfind.com/openapi.json> · Agent notes:
 <https://ghfind.com/llms.txt>
 
-JS/TS SDK/CLI: [`ghfind` on npm](https://www.npmjs.com/package/ghfind). License: AGPL-3.0-or-later.
+JS/TS SDK/CLI: [`@hikariming/ghfind` on npm](https://www.npmjs.com/package/@hikariming/ghfind). License: AGPL-3.0-or-later.

@@ -79,7 +79,7 @@ describe("byoKey", () => {
 describe("offline commands", () => {
   it("prints the version", async () => {
     const out = await captureStdout(() => run(["version"]));
-    expect(out.trim()).toBe("ghfind 0.1.0");
+    expect(out.trim()).toBe("ghfind 0.1.1");
   });
 
   it("badge --markdown emits a README-ready snippet linking to the profile", async () => {
@@ -105,5 +105,32 @@ describe("offline commands", () => {
     const out = await captureStdout(() => run(["--help"]));
     expect(out).toContain("--local");
     expect(out).toContain("--byo-base-url");
+  });
+
+  it("update check reports available releases", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ tag_name: "v0.2.0", html_url: "https://example.test/v0.2.0" }),
+      })),
+    );
+
+    const out = await captureStdout(() => run(["update", "check", "--release-url", "https://example.test/latest", "-o", "json"]));
+    const payload = JSON.parse(out);
+
+    expect(payload.name).toBe("ghfind");
+    expect(payload.update_available).toBe(true);
+    expect(payload.latest_version).toBe("v0.2.0");
+  });
+
+  it("update npm dry-run reports scoped package command", async () => {
+    const out = await captureStdout(() => run(["update", "npm", "--dry-run", "-o", "json"]));
+    const payload = JSON.parse(out);
+
+    expect(payload.method).toBe("npm");
+    expect(payload.status).toBe("dry_run");
+    expect(payload.command).toEqual(["npm", "install", "-g", "@hikariming/ghfind@latest"]);
   });
 });
