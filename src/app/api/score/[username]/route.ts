@@ -4,7 +4,7 @@ import { normalizeUsername } from "@/lib/username";
 import { beatPercent } from "@/lib/percentile";
 import { TIER_KEY } from "@/lib/tier";
 import { SITE_URL } from "@/lib/site";
-import { checkRateLimit, coalesceScan, getCachedScan } from "@/lib/redis";
+import { checkRateLimit, coalesceScan, getCachedScan, rateLimitHeaders } from "@/lib/redis";
 import { buildScanResult, scanErrorResponse } from "@/lib/scan-core";
 import type { ScanResult, Tier } from "@/lib/types";
 
@@ -23,12 +23,18 @@ function clientIp(req: NextRequest): string {
   return fwd?.split(",")[0]?.trim() || "0.0.0.0";
 }
 
-function json(body: unknown, status: number, cache: string): Response {
+function json(
+  body: unknown,
+  status: number,
+  cache: string,
+  extra?: Record<string, string>,
+): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       "Cache-Control": cache,
+      ...(extra ?? {}),
     },
   });
 }
@@ -63,7 +69,11 @@ export async function GET(
   const handle = normalizeUsername(decodeURIComponent(username ?? ""));
   if (!handle) {
     return json(
-      { error: "invalid_username", hint: "username must be a valid GitHub login" },
+      {
+        error: "invalid_username",
+        message: "username must be a valid GitHub login",
+        hint: "pass a login like /api/score/octocat",
+      },
       400,
       MISS_CACHE,
     );
@@ -96,10 +106,17 @@ export async function GET(
 
   // 2) Not indexed → score it live, deterministically (NO LLM).
   const cached = await getCachedScan(handle);
+  let rlHeaders: Record<string, string> = {};
   if (!cached) {
-    const { success } = await checkRateLimit(clientIp(req));
-    if (!success) {
-      return json({ error: "rate_limited" }, 429, MISS_CACHE);
+    const limit = await checkRateLimit(clientIp(req));
+    rlHeaders = rateLimitHeaders(limit);
+    if (!limit.success) {
+      return json(
+        { error: "rate_limited", message: "too many requests", hint: "retry after the Retry-After interval" },
+        429,
+        MISS_CACHE,
+        rlHeaders,
+      );
     }
   }
 
@@ -109,7 +126,12 @@ export async function GET(
   } catch (e) {
     const { error, status, retry_after } = scanErrorResponse(e);
     // account_not_found stays a 404 — the GitHub user genuinely doesn't exist.
-    return json(retry_after ? { error, retry_after } : { error }, status, MISS_CACHE);
+    return json(
+      { error, message: error.replace(/_/g, " "), ...(retry_after ? { retry_after } : {}) },
+      status,
+      MISS_CACHE,
+      { ...rlHeaders, ...(retry_after ? { "Retry-After": String(retry_after) } : {}) },
+    );
   }
 
   if (!cached) {
@@ -142,5 +164,6 @@ export async function GET(
     },
     200,
     LIVE_CACHE,
+    rlHeaders,
   );
 }

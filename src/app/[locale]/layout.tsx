@@ -6,9 +6,14 @@ import { routing } from "@/i18n/routing";
 import { authConfigured } from "@/lib/auth";
 import { Navbar } from "@/components/Navbar";
 import { LoginNudge } from "@/components/LoginNudge";
-import { PoweredByLobeHub } from "@/components/Sponsor";
+import { SiteFooter } from "@/components/SiteFooter";
 import { HtmlLangSync } from "@/components/HtmlLangSync";
-import { JsonLd, websiteJsonLd } from "@/components/JsonLd";
+import {
+  JsonLd,
+  websiteJsonLd,
+  organizationJsonLd,
+  softwareApplicationJsonLd,
+} from "@/components/JsonLd";
 import { SITE_URL, localeAlternates } from "@/lib/site";
 
 export function generateStaticParams() {
@@ -26,18 +31,28 @@ export async function generateMetadata({
     metadataBase: new URL(SITE_URL),
     title: t("title"),
     description: t("description"),
-    alternates: localeAlternates(locale, "/"),
+    alternates: {
+      ...localeAlternates(locale, "/"),
+      // Advertise the machine-readable representations so agents can content-
+      // negotiate from the homepage (markdown twin + OpenAPI spec).
+      types: {
+        "text/markdown": "/index.md",
+        "application/openapi+json": "/openapi.json",
+      },
+    },
     openGraph: {
       title: t("ogTitle"),
       description: t("ogDescription"),
       url: locale === "en" ? "/en" : "/",
       siteName: t("siteName"),
       type: "website",
+      images: [{ url: "/api/og/home", width: 1200, height: 630, alt: t("siteName") }],
     },
     twitter: {
       card: "summary_large_image",
       title: t("title"),
       description: t("twDescription"),
+      images: ["/api/og/home"],
     },
   };
 }
@@ -64,13 +79,18 @@ export default async function LocaleLayout({
   return (
     <>
       <JsonLd data={websiteJsonLd({ name: tMeta("siteName"), description: tMeta("description") })} />
+      <JsonLd data={organizationJsonLd(tMeta("siteName"))} />
+      <JsonLd
+        data={softwareApplicationJsonLd({
+          name: tMeta("siteName"),
+          description: tMeta("description"),
+        })}
+      />
       <NextIntlClientProvider>
         <HtmlLangSync locale={locale} />
         <Navbar />
         {children}
-        <footer className="flex w-full justify-center py-6">
-          <PoweredByLobeHub />
-        </footer>
+        <SiteFooter />
         <LoginNudge configured={oauthConfigured} />
       </NextIntlClientProvider>
     </>

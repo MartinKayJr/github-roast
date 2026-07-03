@@ -3,6 +3,8 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 import { DeveloperCount } from "@/components/DeveloperCount";
 import { HomeLeaderboard } from "@/components/HomeLeaderboard";
 import { Roaster } from "@/components/Roaster";
+import { HomeFaq, getFaqItems } from "@/components/HomeFaq";
+import { JsonLd, faqJsonLd } from "@/components/JsonLd";
 import type { TierKey } from "@/lib/tier";
 
 // ISR: the homepage shell is fully static (the scan form, tier pills and copy are
@@ -32,9 +34,11 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
   setRequestLocale(locale);
   const t = await getTranslations("home");
   const tt = await getTranslations("tiers");
+  const faqItems = await getFaqItems();
 
   return (
     <main className="flex flex-1 flex-col items-center px-5 py-14 sm:px-6 sm:py-20">
+      <JsonLd data={faqJsonLd(faqItems)} />
       <header className="mb-10 flex w-full max-w-4xl flex-col items-center text-center">
         <p className="mb-3 text-sm font-bold tracking-wide text-zinc-400">
           {t("brand")} <span className="text-orange-500">GitHub</span>
@@ -69,6 +73,8 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
       >
         <HomeLeaderboard pageSize={10} />
       </Suspense>
+
+      <HomeFaq items={faqItems} />
 
       <footer className="mt-20 max-w-xl text-center text-xs leading-relaxed text-zinc-600">
         <p>{t.rich("disclaimer1", { b: (c) => <strong>{c}</strong> })}</p>

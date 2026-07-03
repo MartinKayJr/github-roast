@@ -38,8 +38,42 @@ function ensureCookie(res: NextResponse, locale: string) {
   });
 }
 
+/** Preserve any existing Vary value while adding Accept (markdown negotiation). */
+function appendVaryAccept(res: NextResponse) {
+  const existing = res.headers.get("Vary");
+  if (!existing) {
+    res.headers.set("Vary", "Accept");
+  } else if (!/\baccept\b/i.test(existing)) {
+    res.headers.set("Vary", `${existing}, Accept`);
+  }
+}
+
 export default function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  // Cold-arrival agent negotiation. An AI agent that lands on the homepage from
+  // web search either appends `?mode=agent` or sends `Accept: text/markdown`.
+  // Serve the canonical markdown twin (/index.md) instead of the ~800KB React
+  // homepage. Only the home routes negotiate here — deep pages have their own
+  // `.md` twins (e.g. /blog/{slug}.md). `/index.md` contains a dot, so the
+  // rewrite target is excluded from this middleware (no rewrite loop).
+  const isHome = pathname === "/" || pathname === "/en";
+  if (isHome) {
+    const accept = req.headers.get("accept") ?? "";
+    const wantsMarkdown =
+      req.nextUrl.searchParams.get("mode") === "agent" ||
+      accept.includes("text/markdown");
+    if (wantsMarkdown) {
+      const url = req.nextUrl.clone();
+      url.pathname = "/index.md";
+      url.search = "";
+      const res = NextResponse.rewrite(url);
+      // Let the CDN key the markdown variant separately from the HTML one.
+      res.headers.set("Vary", "Accept");
+      return res;
+    }
+  }
+
   const isEnPath = pathname === "/en" || pathname.startsWith("/en/");
 
   // Already on an English path: render it and remember the choice so a later
@@ -47,6 +81,7 @@ export default function proxy(req: NextRequest) {
   if (isEnPath) {
     const res = handleI18n(req);
     ensureCookie(res, "en");
+    if (isHome) appendVaryAccept(res);
     return res;
   }
 
@@ -70,12 +105,15 @@ export default function proxy(req: NextRequest) {
 
   const res = handleI18n(req);
   ensureCookie(res, "zh");
+  if (isHome) appendVaryAccept(res);
   return res;
 }
 
 export const config = {
-  // Run on everything EXCEPT API routes, Next internals, and static files (any
-  // path containing a dot). This keeps `/api/badge`, `/api/card`, etc. — the
-  // README-embedded endpoints — prefix-free and untouched.
-  matcher: ["/((?!api|_next|_vercel|.*\\..*).*)"],
+  // Run on everything EXCEPT API routes, the MCP transport, Next internals, and
+  // static files (any path containing a dot). This keeps `/api/badge`, `/api/card`,
+  // etc. — the README-embedded endpoints — prefix-free and untouched. `mcp` is
+  // excluded so the `/mcp` → `/api/mcp` rewrite in next.config isn't first
+  // captured and rewritten to `/zh/mcp` by next-intl.
+  matcher: ["/((?!api|mcp|_next|_vercel|.*\\..*).*)"],
 };

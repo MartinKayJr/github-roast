@@ -10,6 +10,7 @@ import { getDevelopersByFacetCached } from "@/lib/developers";
 import { DEVELOPERS_PER_FACET_LIMIT } from "@/lib/db";
 import type { FacetType } from "@/lib/facets";
 import { localeAlternates } from "@/lib/site";
+import { JsonLd, breadcrumbJsonLd } from "@/components/JsonLd";
 
 export const dynamic = "force-dynamic";
 
@@ -77,6 +78,16 @@ export default async function FacetBucketPage({
 
   const entries = await getDevelopersByFacetCached(type, value);
 
+  const localePrefix = locale === "en" ? "/en" : "";
+  const encodedPath = value.split("/").map(encodeURIComponent).join("/");
+  const breadcrumb = breadcrumbJsonLd([
+    { name: t("heading"), path: `${localePrefix}/developers` },
+    {
+      name: t(bucketHeadingKey(type), { value }),
+      path: `${localePrefix}/developers/${type}/${encodedPath}`,
+    },
+  ]);
+
   // Reuse the leaderboard card renderer verbatim (score view) — same entry shape,
   // same labels namespace — so the directory bucket looks like a board.
   const labels: LeaderboardLabels = {
@@ -97,6 +108,7 @@ export default async function FacetBucketPage({
 
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-5 py-14 sm:py-20">
+      <JsonLd data={breadcrumb} />
       <header className="mb-8">
         <Link
           href="/developers"

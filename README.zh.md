@@ -1,32 +1,32 @@
 <div align="center">
 
-# 毒舌 GitHub 评分 🔥
+# ghfind 🔥
 
-### 看穿账号成色，发现同路高手，晒出开发者身份。
+### 发现最佳开发者，也成为其中之一。
 
-一个基于真实公开数据的 GitHub 开发者测评、发现与展示平台。
+一个基于真实公开数据的平台：**发现**优秀开发者、**看清**自己的位置、并从这里**成长**。
 
-把任意公开 GitHub 账号变成 **0–100 分价值与信任评分**、一份不留情面的锐评和一张可分享的开发者卡片；也可以在社区里发现值得关注的开发者、同领域伙伴，以及值得较量的「对家」。
+先来一发扎在公开数据上的 **0–100 分价值与信任评分**：看清差距、知道往哪努力；再逛发现榜找到同技术栈的高手、值得较量的「对家」，也让世界发现你自己的作品。
 
 [English](./README.md) · **中文**
 
-[**🔥 测测 GitHub 成色**](https://ghfind.com) · [**🏆 发现更多开发者**](https://ghfind.com/leaderboard) · [**⭐ 查看源码**](https://github.com/hikariming/ghfind)
+[**🔍 测测 GitHub 成色**](https://ghfind.com) · [**🏆 发现最佳开发者**](https://ghfind.com/leaderboard) · [**⭐ 查看源码**](https://github.com/hikariming/ghfind)
 
 </div>
 
-[![GitHub Roast 中文开发者主页预览](./show_img/usercard_cn.png)](https://ghfind.com/u/hikariming)
+[![ghfind 中文开发者主页预览](./show_img/usercard_cn.png)](https://ghfind.com/u/hikariming)
 
-## 测评、发现、展示，一站完成
+## 看清、成长、发现
 
-### 🔥 30 秒看清一个 GitHub 账号
+### 📊 30 秒看清自己的位置
 
-输入 GitHub 用户名，即可得到 **0–100 分**的价值与信任评分、五档等级（🏆 夯 / 🥇 顶级 / 💪 人上人 / 🫥 NPC / 💩 拉完了），外加一句扎在公开数据上的毒舌点评。六大评分维度与十类刷量信号，专治刷星号、AI 机器人、收藏夹开发者，以及自产自销自审自合的 PR farmer。
+输入 GitHub 用户名，即可得到 **0–100 分**的价值与信任评分、五档等级（🏆 夯 / 🥇 顶级 / 💪 人上人 / 🫥 NPC / 💩 拉完了），外加一句扎在公开数据上的毒舌点评。六大评分维度与十类刷量信号，专治刷星号、AI 机器人、收藏夹开发者，以及自产自销自审自合的 PR farmer——让分数告诉你哪些是真本事、下一步往哪走。
 
 ### 🧭 发现值得认识的开发者
 
-这里不只负责打分。你可以通过排行榜和公开开发者主页，找到真正活跃的开源贡献者、同技术栈伙伴、潜在合作者，也能看看那些与你旗鼓相当、值得较量的「对家」。
+ghfind 不只负责打分，更是一台开发者发现引擎。你可以通过排行榜和公开开发者主页，找到真正活跃的开源贡献者、同技术栈伙伴、潜在合作者，也能看看那些与你旗鼓相当、值得较量的「对家」——同时让对的人发现你。
 
-[![GitHub Roast 开发者排行榜](./show_img/leaderboard.png)](https://ghfind.com/leaderboard)
+[![ghfind 开发者排行榜](./show_img/leaderboard.png)](https://ghfind.com/leaderboard)
 
 ### 🪪 把开发经历变成可炫耀的身份卡
 
@@ -34,13 +34,13 @@
 
 <div align="center">
 
-[![GitHub Roast 评分徽章](https://ghfind.com/api/badge/hikariming)](https://ghfind.com/u/hikariming)
+[![ghfind 评分徽章](https://ghfind.com/api/badge/hikariming)](https://ghfind.com/u/hikariming)
 
 <a href="https://ghfind.com/u/hikariming">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://ghfind.com/api/card/hikariming?theme=dark">
     <source media="(prefers-color-scheme: light)" srcset="https://ghfind.com/api/card/hikariming?theme=light">
-    <img alt="hikariming 的 GitHub Roast 开发者卡片" src="https://ghfind.com/api/card/hikariming?theme=light" width="720">
+    <img alt="hikariming 的 ghfind 开发者卡片" src="https://ghfind.com/api/card/hikariming?theme=light" width="720">
   </picture>
 </a>
 
@@ -224,7 +224,7 @@ TURSO_DATABASE_URL=file:./local.db
 - **若你修改本项目并以网络服务形式对外提供**(SaaS / 在线服务),AGPL 要求你**同样以 AGPL 开源你的修改版**(包括通过网络交互的用户也有权获取源码)。
 - 评分核心移植自开源 Claude 技能 `github-account-value`,保持单一事实来源。
 
-> **商标声明:** 「GitHub Roast / 毒舌 GitHub 评分」名称、Logo 及域名**不在本开源协议授权范围内**,版权保留。你可以基于本代码自部署,但请勿使用本项目的名称/品牌冒充官方或制造混淆。
+> **商标声明:** 「ghfind / 毒舌 GitHub 评分」名称、Logo 及域名**不在本开源协议授权范围内**,版权保留。你可以基于本代码自部署,但请勿使用本项目的名称/品牌冒充官方或制造混淆。
 
 ## 星标历史
 

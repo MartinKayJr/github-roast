@@ -14,6 +14,7 @@
     "developers": "发现",
     "community": "圈子",
     "versus": "对战",
+    "blog": "研究",
     "openMenu": "打开菜单",
     "closeMenu": "关闭菜单"
   },
@@ -349,6 +350,129 @@
     "suggestOrg": "{value} · 组织成员榜",
     "pkHalfHint": "再输一个对手，回车开战",
     "lockedRemove": "移除"
+  },
+  "blog": {
+    "heading": "研究",
+    "subtitle": "来自大规模真实贡献评分的数据笔记。",
+    "readingTime": "阅读约 {minutes} 分钟",
+    "notTranslated": "这篇文章还没有中文版，以下为英文原文。",
+    "backToList": "全部研究",
+    "empty": "还没有文章。"
+  },
+  "footer": {
+    "tagline": "GitHub 开发者含金量与可信度评分。",
+    "about": "关于",
+    "contact": "联系",
+    "privacy": "隐私",
+    "methodology": "评分方法",
+    "blog": "研究",
+    "source": "GitHub 源码",
+    "sectionProduct": "产品",
+    "sectionResources": "资源",
+    "sectionCompany": "关于"
+  },
+  "faq": {
+    "heading": "常见问题",
+    "items": [
+      {
+        "q": "ghfind 是什么？",
+        "a": "ghfind 是一个面向 GitHub 的开发者评分与发现工具。它用一套完全确定性的开源引擎，为任意账号打出 0–100 的真实贡献含金量与可信度评分，并在此之上提供 AI 吐槽、开发者对战和排行榜。"
+      },
+      {
+        "q": "分数是怎么算出来的？",
+        "a": "引擎对六个加权维度（账号成熟度、原创项目质量、贡献质量、生态影响力、社区影响力、活动真实性）打分，满分 100，再对刷 PR、刷 star 等风险行为扣分。全部只基于公开的 GitHub 数据。"
+      },
+      {
+        "q": "分数是确定性、可复现的吗？",
+        "a": "是。分数本身不经过任何大模型：相同输入永远得到相同结果。评分内核以 github-account-value skill 的形式按 AGPL 开源，任何人都能复现或审计。只有可选的吐槽文案才由 LLM 生成。"
+      },
+      {
+        "q": "可以通过 API / CLI / MCP 使用吗？",
+        "a": "可以。有公开的 REST API（见 /openapi.json）、官方 npm 与 PyPI 包及命令行工具，以及位于 /mcp 的 Model Context Protocol 服务器，暴露 score_user、scan_user、compare_users、get_leaderboard、search_users 等工具。评分接口无需鉴权。"
+      },
+      {
+        "q": "ghfind 能识别机器人和刷出来的账号吗？",
+        "a": "能。它专门识别刷量与真实贡献之间的差异——高度雷同的模板化 PR 标题、贡献集中在自己并不拥有的仓库、以及可疑的 star / 关注者膨胀。在 18,947 个被评分账号的数据集中，命中最高风险信号的不到 1%——罕见，但一旦出现就很极端。"
+      },
+      {
+        "q": "我的私有工作会被计入吗？",
+        "a": "不会。评分只用公开信号，私有组织内的贡献对引擎不可见，因此活跃于私有仓库的成员可能被低估。低分不是对某个人的事实判断——它描述的是一个账号的公开足迹。"
+      },
+      {
+        "q": "如何把我的主页从 ghfind 移除？",
+        "a": "只有 60 分及以上的账号才会被索引和收录。若想从榜单移除，可使用排行榜底部的移除链接，或在 GitHub 仓库提 issue，主页即会被下架。"
+      }
+    ]
+  },
+  "about": {
+    "metaTitle": "关于 ghfind",
+    "metaDescription": "ghfind 用开源、确定性的引擎为任意 GitHub 账号打出 0–100 的真实贡献含金量与可信度评分，并帮助你发现顶尖开发者。",
+    "heading": "关于 ghfind",
+    "paragraphs": [
+      "ghfind 是一个面向 GitHub 的开发者评分与发现工具。它为任意账号打出 0–100 的真实贡献含金量与可信度评分，使用一套只基于公开 GitHub 数据的完全确定性引擎。相同输入永远得到相同分数——分数本身不涉及任何大语言模型——因此结果可复现、可审计，而非黑箱。",
+      "分数由六个加权维度构成，合计 100 分：账号成熟度、原创项目质量、贡献质量、生态影响力、社区影响力、活动真实性。在这一事实内核之上，ghfind 还提供可选的 AI 吐槽、开发者对战、按语言 / 组织 / 项目划分的排行榜，以及可嵌入自己主页的 README 评分徽章。",
+      "评分引擎以 github-account-value skill 的形式按 AGPL 开源，网站、官方 npm 与 PyPI 包、命令行工具、Model Context Protocol 服务器都跑在同一套代码路径上。ghfind 的目标是让 GitHub 贡献变得可读：奖励真实的开源工作，让值得关注的开发者浮出水面，并通过看模式而非看原始数量，让刷出来的账号一眼可辨。"
+    ]
+  },
+  "contact": {
+    "metaTitle": "联系 ghfind",
+    "metaDescription": "如何联系 ghfind 团队：报告问题、申请从排行榜移除，或咨询 API、CLI 与 MCP 服务器。",
+    "heading": "联系",
+    "paragraphs": [
+      "ghfind 是一个开源项目。联系团队、报告问题、申请从排行榜移除，或咨询 API、CLI、MCP 服务器，最快的方式是在公开的 GitHub 仓库提 issue。所有 issue 都会在那里被阅读和处理，公开讨论也能帮到遇到同样问题的其他用户。",
+      "关于集成：机器可读的 API 契约在 /openapi.json，面向 agent 的文档索引在 /llms.txt，鉴权说明在 /auth.md。如果你需要为高并发的服务端批量评分提升限流额度，请在 GitHub issue 中说明用途。"
+    ],
+    "issuesLabel": "在 GitHub 上提 issue",
+    "issuesUrl": "https://github.com/hikariming/ghfind/issues",
+    "resourcesLabel": "开发者资源",
+    "apiLabel": "API 参考（OpenAPI）",
+    "llmsLabel": "Agent 文档（llms.txt）",
+    "authLabel": "鉴权（auth.md）"
+  },
+  "privacy": {
+    "metaTitle": "隐私 — ghfind",
+    "metaDescription": "ghfind 如何处理数据：只对公开 GitHub 数据评分，不出售个人数据，并支持对已收录主页的移除请求。",
+    "heading": "隐私",
+    "sections": [
+      {
+        "h": "ghfind 使用哪些数据",
+        "p": "ghfind 只用公开的 GitHub 数据计算分数——也就是任何人在主页及其公开仓库、PR、活动中都能看到的信息。它不访问私有仓库、私有贡献、邮件内容，或任何尚未在 GitHub 上公开的数据。因此，分数描述的是一个账号的公开足迹，并非对其背后的人的事实判断。"
+      },
+      {
+        "h": "我们存储什么",
+        "p": "对于被评分的账号，我们会缓存计算出的分数、段位和派生指标，以便分享的报告快速加载、排行榜保持流畅。只有 60 分及以上的账号会被索引并公开收录；更低分的页面可通过直链访问，但不进入搜索引擎。我们使用尊重隐私的聚合分析来了解流量，且不出售个人数据。"
+      },
+      {
+        "h": "自带 Key 的吐槽",
+        "p": "可选的吐槽功能可以使用你自己的模型服务商 Key。当你提供时，它只留在你的浏览器中，并仅经我们的服务器中转一次以调用模型——绝不存储、绝不记录，请求完成后即丢弃。"
+      },
+      {
+        "h": "移除与控制",
+        "p": "如果你希望下架自己的主页，可使用排行榜底部的移除链接，或在 GitHub 仓库提 issue，我们会将其从榜单和索引中移除。由于 ghfind 只反映公开的 GitHub 数据，更新或将你的 GitHub 活动设为私有，也会在下一次扫描时改变或移除 ghfind 能看到的内容。"
+      }
+    ]
+  },
+  "methodology": {
+    "metaTitle": "评分方法 — ghfind 如何为 GitHub 账号打分",
+    "metaDescription": "ghfind 的确定性引擎如何在六个加权维度上为 GitHub 账号打分、施加风险信号扣分，并在完全不使用 LLM 的情况下保持可复现。",
+    "heading": "ghfind 如何为 GitHub 账号打分",
+    "lead": "ghfind 的分数由一套确定性评分规则产生，而非模型。引擎读取公开 GitHub 数据，对合计 100 分的六个维度打分，扣除风险信号惩罚，对相同输入每次返回相同数字。内核按 AGPL 开源，任何结果都可复现、可审计。",
+    "dimensionsHeading": "六个维度",
+    "dimensionsIntro": "每个维度都贡献于 100 分的基础分。它们合在一起，奖励持续、原创、被广泛使用的开源工作，而非原始活动数量。",
+    "dimensionDetails": {
+      "account_maturity": "账号随时间的稳固与一致程度——账号年龄、持续活跃度，以及一条抗一夜膨胀的可信度曲线。",
+      "original_project_quality": "账号真正拥有并原创的仓库的质量与口碑，而非 fork 或无关紧要的项目。",
+      "contribution_quality": "对他人项目贡献的实质——被合并的、有意义的 PR，而非模板灌水。",
+      "ecosystem_impact": "账号的工作在更广生态中被依赖和维护的程度。",
+      "community_influence": "在社区中真实的影响力与地位，经过归一化，使原始关注者或 star 数量无法主导。",
+      "activity_authenticity": "活动模式看起来是自然的还是被制造出来的——把诚实工作与刷量区分开的维度。"
+    },
+    "penaltiesHeading": "风险信号惩罚",
+    "penaltiesBody": "在六个维度之上，引擎会对那些无实际价值却抬高主页的模式扣分：高度雷同的模板化 PR 标题、贡献集中在账号并不拥有的仓库、以及 star 或关注者膨胀。每个单独事件都可能看起来合理；惩罚针对的是模式——这正是刷量能与诚实工作区分开来的原因。",
+    "determinismHeading": "确定性与可复现",
+    "determinismBody": "分数不经过任何大语言模型。评分内核就是开源的 github-account-value skill（AGPL），网站、npm 与 PyPI 包、CLI、MCP 服务器都跑在同一套代码路径上。给定相同的公开输入，各处得出的分数完全一致，因此可被独立复现。可选的吐槽文案是唯一由 LLM 生成的部分，绝不改变分数。",
+    "dataHeading": "规模化验证",
+    "dataBody": "在一个 18,947 个被评分账号（其中 3,444 个有完整原始指标快照）的公开数据集上，刷出来的贡献比舆论想象的更罕见（命中最高风险信号的账号不到 1%），但一旦出现就极端得多。完整分析见研究栏目。"
   },
   "vs": {
     "metaTitle": "{a} vs {b} · 谁更强？| ghfind",

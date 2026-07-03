@@ -18,11 +18,99 @@ export function JsonLd({ data }: { data: Record<string, unknown> }) {
   );
 }
 
+/**
+ * Third-party identifiers that let AI disambiguate the ghfind brand from
+ * similarly-named entities. Add the Wikidata entity URL here once it exists
+ * (see planning/agent-readiness-orank.md) to complete the entity-linking loop.
+ */
+export const GHFIND_SAME_AS = [
+  "https://github.com/hikariming/ghfind",
+  "https://www.npmjs.com/package/@hikariming/ghfind",
+  "https://pypi.org/project/ghfind/",
+];
+
+/** The Organization node, reused as publisher/creator across schemas. */
+export function organizationNode(name = "ghfind") {
+  return {
+    "@type": "Organization",
+    "@id": `${SITE_URL}/#organization`,
+    name,
+    url: `${SITE_URL}/`,
+    logo: `${SITE_URL}/icon.svg`,
+    sameAs: GHFIND_SAME_AS,
+    contactPoint: {
+      "@type": "ContactPoint",
+      contactType: "customer support",
+      url: `${SITE_URL}/contact`,
+    },
+  };
+}
+
+/** Standalone Organization JSON-LD (business-legitimacy signals for agents). */
+export function organizationJsonLd(name = "ghfind") {
+  return { "@context": "https://schema.org", ...organizationNode(name) };
+}
+
+/** WebApplication identity so agents can parse ghfind as a product/tool. */
+export function softwareApplicationJsonLd(opts: { name: string; description: string }) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "@id": `${SITE_URL}/#software`,
+    name: opts.name,
+    description: opts.description,
+    url: `${SITE_URL}/`,
+    applicationCategory: "DeveloperApplication",
+    operatingSystem: "Web",
+    inLanguage: ["zh-CN", "en"],
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    featureList: [
+      "Deterministic 0-100 GitHub value & trust score",
+      "Six-dimension score breakdown",
+      "Bot / farmed-contribution detection",
+      "Developer head-to-head battles",
+      "Leaderboards by language, org, and project",
+      "Public REST API, npm/PyPI SDKs, CLI, and MCP server",
+    ],
+    softwareHelp: `${SITE_URL}/llms.txt`,
+    isAccessibleForFree: true,
+    publisher: organizationNode(opts.name),
+  };
+}
+
+/** FAQPage from the same Q&A array the homepage renders. */
+export function faqJsonLd(items: Array<{ q: string; a: string }>) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: items.map((item) => ({
+      "@type": "Question",
+      name: item.q,
+      acceptedAnswer: { "@type": "Answer", text: item.a },
+    })),
+  };
+}
+
+/** BreadcrumbList for nested directory / profile pages. */
+export function breadcrumbJsonLd(items: Array<{ name: string; path: string }>) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: items.map((item, i) => ({
+      "@type": "ListItem",
+      position: i + 1,
+      name: item.name,
+      item: `${SITE_URL}${item.path}`,
+    })),
+  };
+}
+
 /** Site-wide identity + a SearchAction so Google can offer a username lookup box. */
 export function websiteJsonLd(opts: { name: string; description: string }) {
   return {
     "@context": "https://schema.org",
     "@type": "WebSite",
+    "@id": `${SITE_URL}/#website`,
     name: opts.name,
     description: opts.description,
     url: `${SITE_URL}/`,
@@ -35,10 +123,11 @@ export function websiteJsonLd(opts: { name: string; description: string }) {
       },
       "query-input": "required name=search_term_string",
     },
-    publisher: {
-      "@type": "Organization",
-      name: opts.name,
-      url: `${SITE_URL}/`,
+    publisher: organizationNode(opts.name),
+    // Tell AI TTS which parts are worth reading aloud.
+    speakable: {
+      "@type": "SpeakableSpecification",
+      cssSelector: ["h1", ".home-faq"],
     },
   };
 }
@@ -87,6 +176,69 @@ export function profileJsonLd(opts: {
       ? { dateModified: new Date(opts.scannedAt).toISOString() }
       : {}),
     mainEntity: personNode(opts),
+  };
+}
+
+/** A research/blog article. `date`/`updated` are ISO dates from the post frontmatter. */
+export function articleJsonLd(opts: {
+  slug: string;
+  locale: string;
+  title: string;
+  description: string;
+  date: string;
+  updated?: string;
+  tags: string[];
+}) {
+  const path = opts.locale === "en" ? `/en/blog/${opts.slug}` : `/blog/${opts.slug}`;
+  return {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: opts.title,
+    description: opts.description,
+    datePublished: opts.date,
+    ...(opts.updated ? { dateModified: opts.updated } : {}),
+    inLanguage: opts.locale === "en" ? "en" : "zh-CN",
+    ...(opts.tags.length ? { keywords: opts.tags.join(", ") } : {}),
+    image: [`${SITE_URL}/api/og/blog/${opts.slug}`],
+    mainEntityOfPage: { "@type": "WebPage", "@id": `${SITE_URL}${path}` },
+    // Named author (E-E-A-T) with an identity link, plus the org publisher.
+    author: {
+      "@type": "Person",
+      name: "hikariming",
+      url: "https://github.com/hikariming",
+      sameAs: ["https://github.com/hikariming"],
+    },
+    publisher: organizationNode("ghfind"),
+    speakable: { "@type": "SpeakableSpecification", cssSelector: ["h1"] },
+  };
+}
+
+/**
+ * Dataset JSON-LD for data-driven research posts — establishes ghfind as the
+ * originating source of GitHub-account scoring data (a citable primary source).
+ */
+export function datasetJsonLd(opts: {
+  slug: string;
+  locale: string;
+  name: string;
+  description: string;
+  date: string;
+  updated?: string;
+}) {
+  const path = opts.locale === "en" ? `/en/blog/${opts.slug}` : `/blog/${opts.slug}`;
+  return {
+    "@context": "https://schema.org",
+    "@type": "Dataset",
+    name: opts.name,
+    description: opts.description,
+    url: `${SITE_URL}${path}`,
+    datePublished: opts.date,
+    ...(opts.updated ? { dateModified: opts.updated } : {}),
+    license: "https://www.gnu.org/licenses/agpl-3.0.html",
+    isAccessibleForFree: true,
+    creator: organizationNode("ghfind"),
+    publisher: organizationNode("ghfind"),
+    keywords: ["GitHub", "developer scoring", "open source", "anti-abuse"],
   };
 }
 

@@ -1,32 +1,32 @@
 <div align="center">
 
-# GitHub Roast 🔥
+# ghfind 🔥
 
-### Roast the profile. Read the signal. Find the builders.
+### Discover the best developers — and become one.
 
-An evidence-based GitHub developer assessment, discovery, and showcase platform.
+An evidence-based platform to **find** great developers, **measure** where you stand, and **grow** from there.
 
-Turn any public GitHub profile into a **0–100 value & trust score**, an honest roast, and a shareable developer card — then explore noteworthy builders, like-minded peers, and worthy rivals across the community.
+Start with a brutally honest **0–100 value & trust score** on any public GitHub profile — see your gaps, learn where to go, then explore the strongest builders in your ecosystem, find worthy peers and rivals, and let your own work get discovered.
 
 **English** · [中文](./README.zh.md)
 
-[**🔥 Roast a GitHub profile**](https://ghfind.com/en) · [**🏆 Explore developers**](https://ghfind.com/en/leaderboard) · [**⭐ View source**](https://github.com/hikariming/ghfind)
+[**🔍 Score a GitHub profile**](https://ghfind.com/en) · [**🏆 Discover top developers**](https://ghfind.com/en/leaderboard) · [**⭐ View source**](https://github.com/hikariming/ghfind)
 
 </div>
 
-[![GitHub Roast developer profile preview](./show_img/usercard.png)](https://ghfind.com/en/u/hikariming)
+[![ghfind developer profile preview](./show_img/usercard.png)](https://ghfind.com/en/u/hikariming)
 
-## Assess. Discover. Show off.
+## Measure. Grow. Discover.
 
-### 🔥 Get a developer signal in 30 seconds
+### 📊 Know exactly where you stand in 30 seconds
 
-Enter a GitHub handle to get a **0–100 value & trust score**, a five-tier verdict (🏆 GOD / 🥇 ELITE / 💪 SOLID / 🫥 NPC / 💩 TRASH), and a brutally honest roast grounded in public data. Six scoring dimensions and ten farming red flags help separate sustained engineering work from star farming, fork hoarding, bots, and self-merged PRs.
+Enter a GitHub handle to get a **0–100 value & trust score**, a five-tier verdict (🏆 GOD / 🥇 ELITE / 💪 SOLID / 🫥 NPC / 💩 TRASH), and a brutally honest read grounded in public data. Six scoring dimensions and ten farming red flags separate sustained engineering work from star farming, fork hoarding, bots, and self-merged PRs — so the score tells you what's real and where to improve.
 
-### 🧭 Discover developers worth knowing
+### 🧭 Discover the developers worth knowing
 
-GitHub Roast is more than a scoring tool. Use the leaderboard and public profiles to find strong open-source contributors, builders in your ecosystem, potential collaborators, and the developers you want to measure yourself against.
+ghfind is a discovery engine, not just a scorer. Use the leaderboard and public profiles to find strong open-source contributors, builders in your ecosystem, potential collaborators, and the developers you want to measure yourself against — and let the right people find you.
 
-[![GitHub Roast developer leaderboard](./show_img/leaderboard.png)](https://ghfind.com/en/leaderboard)
+[![ghfind developer leaderboard](./show_img/leaderboard.png)](https://ghfind.com/en/leaderboard)
 
 ### 🪪 Turn your GitHub work into a shareable identity
 
@@ -34,13 +34,13 @@ Every assessment can generate a live badge and light/dark developer card for you
 
 <div align="center">
 
-[![GitHub Roast score badge](https://ghfind.com/api/badge/hikariming)](https://ghfind.com/en/u/hikariming)
+[![ghfind score badge](https://ghfind.com/api/badge/hikariming)](https://ghfind.com/en/u/hikariming)
 
 <a href="https://ghfind.com/en/u/hikariming">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://ghfind.com/api/card/hikariming?theme=dark">
     <source media="(prefers-color-scheme: light)" srcset="https://ghfind.com/api/card/hikariming?theme=light">
-    <img alt="GitHub Roast card for hikariming" src="https://ghfind.com/api/card/hikariming?theme=light" width="720">
+    <img alt="ghfind card for hikariming" src="https://ghfind.com/api/card/hikariming?theme=light" width="720">
   </picture>
 </a>
 
@@ -227,7 +227,7 @@ Licensed under **[GNU AGPL-3.0](./LICENSE)**.
 - **If you modify it and offer it as a network service** (SaaS / hosted), AGPL requires you to **release your modifications under AGPL as well** (users interacting over the network are entitled to the source).
 - The scoring core is ported from the open-source Claude skill `github-account-value`, kept as the single source of truth.
 
-> **Trademark:** the "GitHub Roast / 毒舌 GitHub 评分" name, logo, and domain are **not covered** by the open-source license; all rights reserved. You may self-host from this code, but please do not use the project's name/brand to impersonate the official site or cause confusion.
+> **Trademark:** the "ghfind / 毒舌 GitHub 评分" name, logo, and domain are **not covered** by the open-source license; all rights reserved. You may self-host from this code, but please do not use the project's name/brand to impersonate the official site or cause confusion.
 
 ## Star History
 

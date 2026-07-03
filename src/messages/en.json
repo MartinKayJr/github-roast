@@ -14,6 +14,7 @@
     "developers": "Discover",
     "community": "Circle",
     "versus": "Versus",
+    "blog": "Research",
     "openMenu": "Open menu",
     "closeMenu": "Close menu"
   },
@@ -349,6 +350,129 @@
     "suggestOrg": "{value} · org members",
     "pkHalfHint": "Type an opponent, then hit Enter to fight",
     "lockedRemove": "Remove"
+  },
+  "blog": {
+    "heading": "Research",
+    "subtitle": "Data notes from scoring real GitHub contribution at scale.",
+    "readingTime": "{minutes} min read",
+    "notTranslated": "This article hasn't been translated yet — showing the English original.",
+    "backToList": "All research",
+    "empty": "No articles yet."
+  },
+  "footer": {
+    "tagline": "GitHub developer value & trust scoring.",
+    "about": "About",
+    "contact": "Contact",
+    "privacy": "Privacy",
+    "methodology": "Methodology",
+    "blog": "Research",
+    "source": "Source on GitHub",
+    "sectionProduct": "Product",
+    "sectionResources": "Resources",
+    "sectionCompany": "Company"
+  },
+  "faq": {
+    "heading": "Frequently asked questions",
+    "items": [
+      {
+        "q": "What is ghfind?",
+        "a": "ghfind is a developer-scoring and discovery tool for GitHub. It rates any account from 0 to 100 for real contribution value and trustworthiness using a fully deterministic, open-source engine, then adds an optional AI-written roast, head-to-head battles, and a ranked developer directory."
+      },
+      {
+        "q": "How is the score calculated?",
+        "a": "The engine scores six weighted dimensions that sum to 100 — account maturity, original project quality, contribution quality, ecosystem impact, community influence, and activity authenticity — and subtracts penalties for red flags such as PR farming or star inflation. It runs only on public GitHub data."
+      },
+      {
+        "q": "Is the score deterministic and reproducible?",
+        "a": "Yes. No LLM touches the number: the same inputs always produce the same score. The scoring core is open-sourced as the github-account-value skill (AGPL), so anyone can reproduce or audit a result. Only the optional roast text is LLM-written."
+      },
+      {
+        "q": "Can I use ghfind via API, CLI, or MCP?",
+        "a": "Yes. There is a public REST API (see /openapi.json), official npm and PyPI packages plus a CLI, and a Model Context Protocol server at /mcp exposing score_user, scan_user, compare_users, get_leaderboard, and search_users tools. The score endpoint needs no authentication."
+      },
+      {
+        "q": "Does ghfind detect bots and AI-farmed accounts?",
+        "a": "It flags the patterns that separate farmed activity from honest work — near-identical template PR titles, contributions concentrated on repos the account doesn't own, and suspicious star or follower inflation. In a dataset of 18,947 scored accounts, fewer than 1% tripped the strongest red flags — rare, but extreme when present."
+      },
+      {
+        "q": "Is my private work counted?",
+        "a": "No. Scores use public signals only, so private-organization contributions are invisible to the engine. An active member of private repos may be underrated. A low score is not a factual claim about a person — it describes an account's public footprint."
+      },
+      {
+        "q": "How do I remove my profile from ghfind?",
+        "a": "Only accounts scoring 60+ are indexed and listed. To be removed from the board, use the removal link on the leaderboard footer or open an issue on the GitHub repository, and the profile will be delisted."
+      }
+    ]
+  },
+  "about": {
+    "metaTitle": "About ghfind",
+    "metaDescription": "ghfind scores any GitHub account 0-100 for real contribution value and trust with an open-source, deterministic engine, and helps you discover top developers.",
+    "heading": "About ghfind",
+    "paragraphs": [
+      "ghfind is a developer-scoring and discovery tool for GitHub. It rates any account from 0 to 100 for real contribution value and trustworthiness, using a fully deterministic engine that runs only on public GitHub data. The same inputs always produce the same score — no large language model is involved in the number itself — so results are reproducible and auditable rather than opaque.",
+      "The score is built from six weighted dimensions that sum to 100: account maturity, original project quality, contribution quality, ecosystem impact, community influence, and activity authenticity. On top of that factual core, ghfind adds an optional AI-written roast, developer-versus-developer battles, leaderboards by programming language, organization, and project, and README score badges you can embed on your own profile.",
+      "The scoring engine is open source under the AGPL license as the github-account-value skill, and the same code paths power the website, the official npm and PyPI packages, the command-line tool, and the Model Context Protocol server. ghfind exists to make GitHub contribution legible: to reward genuine open-source work, surface developers worth following, and make farmed or faked activity easy to spot by looking at patterns instead of raw counts."
+    ]
+  },
+  "contact": {
+    "metaTitle": "Contact ghfind",
+    "metaDescription": "How to reach the ghfind team: report an issue, request removal from the leaderboard, or ask about the API, CLI, and MCP server.",
+    "heading": "Contact",
+    "paragraphs": [
+      "ghfind is an open-source project. The fastest way to reach the team, report a problem, request removal from the leaderboard, or ask about the API, CLI, or MCP server is to open an issue on the public GitHub repository. Issues are read and triaged there, and keeping the conversation in the open helps other users who hit the same question.",
+      "For integration questions, the machine-readable API contract lives at /openapi.json, the agent-facing documentation index at /llms.txt, and the authentication walkthrough at /auth.md. If you need an elevated rate limit for high-volume server-to-server scanning, mention your use case in a GitHub issue."
+    ],
+    "issuesLabel": "Open an issue on GitHub",
+    "issuesUrl": "https://github.com/hikariming/ghfind/issues",
+    "resourcesLabel": "Developer resources",
+    "apiLabel": "API reference (OpenAPI)",
+    "llmsLabel": "Agent docs (llms.txt)",
+    "authLabel": "Authentication (auth.md)"
+  },
+  "privacy": {
+    "metaTitle": "Privacy — ghfind",
+    "metaDescription": "How ghfind handles data: it scores only public GitHub data, does not sell personal data, and honors removal requests for indexed profiles.",
+    "heading": "Privacy",
+    "sections": [
+      {
+        "h": "What data ghfind uses",
+        "p": "ghfind computes scores from public GitHub data only — the same information anyone can see on a profile and its public repositories, pull requests, and activity. It does not access private repositories, private contributions, email contents, or any data that is not already public on GitHub. Because of this, scores describe an account's public footprint and are not a factual claim about the person behind it."
+      },
+      {
+        "h": "What we store",
+        "p": "For accounts that are scored, we cache the computed score, tier, and derived metrics so shared reports load quickly and the leaderboard stays fast. Only accounts scoring 60 or above are indexed and listed publicly; lower-scoring pages are reachable by direct link but kept out of search engines. We use privacy-respecting, aggregate analytics to understand traffic and do not sell personal data."
+      },
+      {
+        "h": "Bring-your-own-key roasts",
+        "p": "The optional roast feature can use your own model provider key. When you supply one, it stays in your browser and is relayed once through our server to call the model — it is never stored and never logged, and is discarded after the request completes."
+      },
+      {
+        "h": "Removal and control",
+        "p": "If you would like your profile delisted, use the removal link on the leaderboard footer or open an issue on the GitHub repository, and we will remove it from the board and index. Because ghfind only reflects public GitHub data, updating or making your GitHub activity private will also change or remove what ghfind can see on the next scan."
+      }
+    ]
+  },
+  "methodology": {
+    "metaTitle": "Methodology — how ghfind scores GitHub accounts",
+    "metaDescription": "How ghfind's deterministic engine scores GitHub accounts across six weighted dimensions, applies red-flag penalties, and stays fully reproducible without any LLM.",
+    "heading": "How ghfind scores GitHub accounts",
+    "lead": "ghfind's score is produced by a deterministic rubric, not a model. The engine reads public GitHub data, scores six dimensions that sum to 100, subtracts penalties for red flags, and returns the same number every time for the same inputs. The core is open source under the AGPL license, so any result can be reproduced and audited.",
+    "dimensionsHeading": "The six dimensions",
+    "dimensionsIntro": "Each dimension contributes to the 100-point base score. Together they reward sustained, original, widely-used open-source work over raw activity counts.",
+    "dimensionDetails": {
+      "account_maturity": "How established and consistent the account is over time — age, sustained activity, and a credibility curve that resists overnight inflation.",
+      "original_project_quality": "The quality and reception of repositories the account actually owns and authored, not forks or trivial projects.",
+      "contribution_quality": "The substance of contributions to other projects — merged, meaningful pull requests versus template spam.",
+      "ecosystem_impact": "How much the account's work is depended on and maintained across the wider ecosystem.",
+      "community_influence": "Genuine reach and standing in the community, normalized so raw follower or star counts cannot dominate.",
+      "activity_authenticity": "Whether activity patterns look organic or engineered — the dimension that separates honest work from farming."
+    },
+    "penaltiesHeading": "Red-flag penalties",
+    "penaltiesBody": "On top of the six dimensions, the engine subtracts penalties for patterns that inflate a profile without real value: near-identical template pull-request titles, contributions concentrated on repositories the account does not own, and star or follower inflation. Every individual event can look plausible; the penalties fire on the pattern, which is what makes farmed activity separable from honest work.",
+    "determinismHeading": "Determinism and reproducibility",
+    "determinismBody": "No large language model touches the score. The scoring core is the open-source github-account-value skill (AGPL), and the same code paths power the website, the npm and PyPI packages, the CLI, and the MCP server. Given the same public inputs, the score is identical across all of them, which is why it can be independently reproduced. The optional roast text is the only LLM-written part and never changes the number.",
+    "dataHeading": "At scale",
+    "dataBody": "Applied to a public dataset of 18,947 scored accounts — 3,444 with full raw-metric snapshots — faked or farmed contribution turned out to be rarer than the discourse suggests (under 1% of accounts tripped the strongest red flags) but far more extreme when it appeared. The full analysis is in the research section."
   },
   "vs": {
     "metaTitle": "{a} vs {b} · Who wins? | ghfind",

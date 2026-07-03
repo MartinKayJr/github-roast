@@ -17,13 +17,26 @@ export function GET() {
     openapi: "3.1.0",
     info: {
       title: "ghfind API",
-      version: "1.0.0",
+      version: "1.1.0",
       description:
         "Score any GitHub account 0-100 for value and trustworthiness with a deterministic engine, " +
         "plus roasts, head-to-head battles, leaderboards, and developer discovery. " +
-        "Official SDKs: `ghfind` on npm and PyPI.",
-      contact: { url: SITE_URL },
-      license: { name: "AGPL-3.0-or-later" },
+        "Official SDKs: `@hikariming/ghfind` on npm and `ghfind` on PyPI.\n\n" +
+        "## Errors\n" +
+        "All errors return `application/json` shaped as `{ error, message, hint }` — `error` is a " +
+        "stable machine code, `message`/`hint` are human-readable. See the `Error` schema.\n\n" +
+        "## Rate limits\n" +
+        "Responses carry `RateLimit-Limit`, `RateLimit-Remaining`, and `RateLimit-Reset` headers; a " +
+        "`429` also carries `Retry-After`. Write calls accept an `Idempotency-Key` request header " +
+        "(scans are idempotent per username).\n\n" +
+        "## Versioning & stability\n" +
+        "The API is unversioned (`/api/*`) and evolves additively: new fields may be added, but " +
+        "existing fields are not removed or repurposed without notice. Any breaking change is " +
+        "announced at least 90 days in advance via the /blog and signalled with `Deprecation` and " +
+        "`Sunset` response headers on affected endpoints.",
+      termsOfService: `${SITE_URL}/privacy`,
+      contact: { name: "ghfind", url: `${SITE_URL}/contact` },
+      license: { name: "AGPL-3.0-or-later", url: "https://www.gnu.org/licenses/agpl-3.0.html" },
     },
     servers: [{ url: SITE_URL }],
     externalDocs: { description: "llms.txt", url: `${SITE_URL}/llms.txt` },
@@ -58,12 +71,21 @@ export function GET() {
           responses: {
             "200": {
               description: "Score payload (indexed or live-scored)",
+              headers: {
+                "RateLimit-Limit": { $ref: "#/components/headers/RateLimit-Limit" },
+                "RateLimit-Remaining": { $ref: "#/components/headers/RateLimit-Remaining" },
+                "RateLimit-Reset": { $ref: "#/components/headers/RateLimit-Reset" },
+              },
               content: { "application/json": { schema: { $ref: "#/components/schemas/ScorePayload" } } },
             },
-            "400": { description: "Invalid username" },
-            "404": { description: "GitHub account does not exist" },
-            "429": { description: "Rate limited (live scoring path)" },
-            "503": { description: "GitHub temporarily unavailable" },
+            "400": { description: "Invalid username", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+            "404": { description: "GitHub account does not exist", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+            "429": {
+              description: "Rate limited (live scoring path)",
+              headers: { "Retry-After": { $ref: "#/components/headers/Retry-After" } },
+              content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+            },
+            "503": { description: "GitHub temporarily unavailable", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
           },
         },
       },
@@ -77,6 +99,7 @@ export function GET() {
             "final_score. Deterministic — no LLM. In production, machine callers send " +
             "`Authorization: Bearer <api-key>`; browser callers pass a Cloudflare Turnstile token.",
           security: [{ bearerAuth: [] }, {}],
+          parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }],
           requestBody: {
             required: true,
             content: {
@@ -95,13 +118,27 @@ export function GET() {
           responses: {
             "200": {
               description: "Full scan result",
+              headers: {
+                "RateLimit-Limit": { $ref: "#/components/headers/RateLimit-Limit" },
+                "RateLimit-Remaining": { $ref: "#/components/headers/RateLimit-Remaining" },
+                "RateLimit-Reset": { $ref: "#/components/headers/RateLimit-Reset" },
+              },
               content: { "application/json": { schema: { $ref: "#/components/schemas/ScanResult" } } },
             },
-            "400": { description: "Invalid body or username" },
-            "403": { description: "Turnstile verification failed" },
-            "404": { description: "GitHub account not found" },
-            "429": { description: "Rate limited" },
-            "503": { description: "GitHub temporarily unavailable" },
+            "400": { description: "Invalid body or username", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+            "401": {
+              description: "Invalid API key",
+              headers: { "WWW-Authenticate": { description: "Bearer challenge pointing at protected-resource metadata", schema: { type: "string" } } },
+              content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+            },
+            "403": { description: "Turnstile verification failed", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+            "404": { description: "GitHub account not found", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+            "429": {
+              description: "Rate limited",
+              headers: { "Retry-After": { $ref: "#/components/headers/Retry-After" } },
+              content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+            },
+            "503": { description: "GitHub temporarily unavailable", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
           },
         },
       },
@@ -143,8 +180,12 @@ export function GET() {
           },
           responses: {
             "200": { description: "Streamed roast report", content: { "text/plain": { schema: { type: "string" } } } },
-            "400": { description: "Missing scan / no LLM configured" },
-            "429": { description: "Rate limited" },
+            "400": { description: "Missing scan / no LLM configured", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+            "429": {
+              description: "Rate limited",
+              headers: { "Retry-After": { $ref: "#/components/headers/Retry-After" } },
+              content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+            },
           },
         },
       },
@@ -170,9 +211,18 @@ export function GET() {
             },
           },
           responses: {
-            "200": { description: "Verdict (verdict may be null when below the LLM floor or cached)" },
-            "400": { description: "Invalid pair" },
-            "404": { description: "One or both accounts not scored" },
+            "200": {
+              description: "Verdict (verdict may be null when below the LLM floor or cached)",
+              content: { "application/json": { schema: { $ref: "#/components/schemas/VsVerdictResponse" } } },
+            },
+            "400": {
+              description: "Invalid pair",
+              content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+            },
+            "404": {
+              description: "One or both accounts not scored",
+              content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+            },
           },
         },
       },
@@ -185,7 +235,12 @@ export function GET() {
             { name: "view", in: "query", schema: { type: "string", enum: ["trending", "score", "heat", "progress"] } },
             { name: "window", in: "query", schema: { type: "string", enum: ["all", "24h", "7d", "30d"] } },
           ],
-          responses: { "200": { description: "Ranked entries" } },
+          responses: {
+            "200": {
+              description: "Ranked entries",
+              content: { "application/json": { schema: { $ref: "#/components/schemas/LeaderboardResponse" } } },
+            },
+          },
         },
       },
       "/api/developers": {
@@ -197,7 +252,16 @@ export function GET() {
             { name: "type", in: "query", required: true, schema: { type: "string", enum: ["language", "org", "repo"] } },
             { name: "value", in: "query", schema: { type: "string" }, description: "Facet value; omit to list categories" },
           ],
-          responses: { "200": { description: "Facet categories or entries" }, "400": { description: "Invalid type" } },
+          responses: {
+            "200": {
+              description: "Facet categories or entries",
+              content: { "application/json": { schema: { $ref: "#/components/schemas/DevelopersResponse" } } },
+            },
+            "400": {
+              description: "Invalid type",
+              content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+            },
+          },
         },
       },
       "/api/search-users": {
@@ -206,7 +270,12 @@ export function GET() {
           operationId: "searchUsers",
           summary: "Prefix autocomplete over scored accounts",
           parameters: [{ name: "q", in: "query", schema: { type: "string" } }],
-          responses: { "200": { description: "Up to 6 matching users" } },
+          responses: {
+            "200": {
+              description: "Up to 6 matching users",
+              content: { "application/json": { schema: { $ref: "#/components/schemas/SearchResponse" } } },
+            },
+          },
         },
       },
       "/api/stats": {
@@ -214,7 +283,12 @@ export function GET() {
           tags: ["discovery"],
           operationId: "stats",
           summary: "Platform totals (number of scored accounts)",
-          responses: { "200": { description: "Aggregate counts" } },
+          responses: {
+            "200": {
+              description: "Aggregate counts",
+              content: { "application/json": { schema: { $ref: "#/components/schemas/StatsResponse" } } },
+            },
+          },
         },
       },
       "/api/badge/{username}": {
@@ -243,7 +317,119 @@ export function GET() {
       securitySchemes: {
         bearerAuth: { type: "http", scheme: "bearer", description: "Machine API key (GITHUB_ROAST_CLI_API_KEY)" },
       },
+      parameters: {
+        IdempotencyKey: {
+          name: "Idempotency-Key",
+          in: "header",
+          required: false,
+          description: "Client-supplied key echoed back on the response; scans are idempotent per username, so a retried request is safe.",
+          schema: { type: "string" },
+        },
+      },
+      headers: {
+        "RateLimit-Limit": { description: "Request quota for the window", schema: { type: "integer" } },
+        "RateLimit-Remaining": { description: "Requests remaining in the window", schema: { type: "integer" } },
+        "RateLimit-Reset": { description: "Seconds until the window resets", schema: { type: "integer" } },
+        "Retry-After": { description: "Seconds to wait before retrying (on 429)", schema: { type: "integer" } },
+      },
       schemas: {
+        Error: {
+          type: "object",
+          required: ["error"],
+          description: "Structured error. `error` is a stable machine code; `message`/`hint` are human-readable.",
+          properties: {
+            error: {
+              type: "string",
+              description: "Machine-readable error code",
+              enum: [
+                "invalid_body",
+                "invalid_username",
+                "turnstile_failed",
+                "rate_limited",
+                "account_not_found",
+                "github_rate_limited",
+                "github_unavailable",
+                "scan_failed",
+                "not_scored",
+                "unauthorized",
+                "invalid_type",
+              ],
+            },
+            message: { type: "string" },
+            hint: { type: "string" },
+            retry_after: { type: "integer", description: "Present on some 429/503 responses" },
+          },
+        },
+        LeaderboardEntry: {
+          type: "object",
+          properties: {
+            username: { type: "string" },
+            display_name: { type: "string", nullable: true },
+            avatar_url: { type: "string", nullable: true },
+            profile_url: { type: "string", nullable: true },
+            final_score: { type: "number" },
+            tier: { type: "string" },
+          },
+        },
+        LeaderboardResponse: {
+          type: "object",
+          properties: {
+            entries: { type: "array", items: { $ref: "#/components/schemas/LeaderboardEntry" } },
+            cached: { type: "boolean" },
+            view: { type: "string", enum: ["trending", "score", "heat", "progress"] },
+            window: { type: "string", enum: ["all", "24h", "7d", "30d"] },
+          },
+        },
+        DevelopersResponse: {
+          type: "object",
+          properties: {
+            type: { type: "string", enum: ["language", "org", "repo"] },
+            value: { type: "string", nullable: true },
+            entries: { type: "array", items: { $ref: "#/components/schemas/LeaderboardEntry" } },
+            categories: {
+              type: "array",
+              items: { type: "object", properties: { value: { type: "string" }, count: { type: "integer" } } },
+            },
+          },
+        },
+        SearchResponse: {
+          type: "object",
+          properties: {
+            users: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  username: { type: "string" },
+                  display_name: { type: "string", nullable: true },
+                  avatar_url: { type: "string", nullable: true },
+                  final_score: { type: "number" },
+                },
+              },
+            },
+          },
+        },
+        StatsResponse: {
+          type: "object",
+          properties: {
+            total: { type: "integer", nullable: true, description: "Number of scored accounts" },
+            cached: { type: "boolean" },
+          },
+        },
+        VsVerdictResponse: {
+          type: "object",
+          properties: {
+            a: { type: "string" },
+            b: { type: "string" },
+            winner: { type: "string", nullable: true },
+            bucket: { type: "string" },
+            verdict: {
+              type: "object",
+              nullable: true,
+              properties: { zh: { type: "string" }, en: { type: "string" } },
+            },
+          },
+        },
         ScorePayload: {
           type: "object",
           properties: {

@@ -24,6 +24,7 @@ import type { RoastJudgeResult, RoastLine, ScanResult } from "./types";
 
 let redis: Redis | null = null;
 let scanLimiter: Ratelimit | null = null;
+let mcpLimiter: Ratelimit | null = null;
 let roastMinuteLimiter: Ratelimit | null = null;
 let roastDayLimiter: Ratelimit | null = null;
 let verdictMinuteLimiter: Ratelimit | null = null;
@@ -117,8 +118,34 @@ export async function coalesceScan(
   return producer(); // fallback: produce ourselves rather than starve.
 }
 
+/** Rate-limit outcome. `limit`/`remaining`/`reset` are present when Redis is
+ *  configured (reset is epoch ms) so callers can emit RFC RateLimit headers. */
+export interface RateLimitResult {
+  success: boolean;
+  limit?: number;
+  remaining?: number;
+  reset?: number;
+}
+
+/**
+ * Build standard RateLimit response headers from a limiter result, plus
+ * Retry-After (seconds) when the request was blocked. Returns {} when the
+ * limiter no-op'd (no Redis), so it's safe to always spread into headers.
+ */
+export function rateLimitHeaders(result: RateLimitResult): Record<string, string> {
+  if (result.limit === undefined || result.reset === undefined) return {};
+  const resetSeconds = Math.max(0, Math.ceil((result.reset - Date.now()) / 1000));
+  const headers: Record<string, string> = {
+    "RateLimit-Limit": String(result.limit),
+    "RateLimit-Remaining": String(Math.max(0, result.remaining ?? 0)),
+    "RateLimit-Reset": String(resetSeconds),
+  };
+  if (!result.success) headers["Retry-After"] = String(resetSeconds || 1);
+  return headers;
+}
+
 /** Per-IP sliding-window limiter for scans. No-ops when Redis is unconfigured. */
-export async function checkRateLimit(ip: string): Promise<{ success: boolean }> {
+export async function checkRateLimit(ip: string): Promise<RateLimitResult> {
   const r = getRedis();
   if (!r) return { success: true };
   if (!scanLimiter) {
@@ -130,7 +157,31 @@ export async function checkRateLimit(ip: string): Promise<{ success: boolean }> 
     });
   }
   try {
-    const { success } = await scanLimiter.limit(ip);
+    const { success, limit, remaining, reset } = await scanLimiter.limit(ip);
+    return { success, limit, remaining, reset };
+  } catch {
+    return { success: true };
+  }
+}
+
+/**
+ * Per-IP limiter for the MCP server. Tighter than the web scan limiter — the
+ * tools are unauthenticated and callable in a loop by an autonomous agent, so we
+ * cap harder to protect the GitHub token and DB. No-ops when Redis is absent.
+ */
+export async function checkMcpRateLimit(ip: string): Promise<{ success: boolean }> {
+  const r = getRedis();
+  if (!r) return { success: true };
+  if (!mcpLimiter) {
+    mcpLimiter = new Ratelimit({
+      redis: r,
+      limiter: Ratelimit.slidingWindow(15, "60 s"),
+      prefix: "rl:mcp",
+      analytics: false,
+    });
+  }
+  try {
+    const { success } = await mcpLimiter.limit(ip);
     return { success };
   } catch {
     return { success: true };

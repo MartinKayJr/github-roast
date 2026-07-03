@@ -4,7 +4,9 @@ import {
   checkRateLimit,
   coalesceScan,
   getCachedScan,
+  rateLimitHeaders,
 } from "@/lib/redis";
+import { apiError } from "@/lib/api-error";
 import { buildScanResult, scanErrorResponse } from "@/lib/scan-core";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { normalizeUsername } from "@/lib/username";
@@ -17,12 +19,22 @@ function clientIp(req: NextRequest): string {
   return fwd?.split(",")[0]?.trim() || "0.0.0.0";
 }
 
-function hasMachineAuth(req: NextRequest): boolean {
-  const expected = process.env.GITHUB_ROAST_CLI_API_KEY;
-  if (!expected) return false;
+/** Presence + validity of the Authorization header, kept separate so an invalid
+ *  key returns a spec-shaped 401 (with WWW-Authenticate) instead of falling
+ *  through to the browser Turnstile path. */
+function machineAuth(req: NextRequest): "valid" | "invalid" | "absent" {
   const value = req.headers.get("authorization") ?? "";
+  if (!value) return "absent";
+  const expected = process.env.GITHUB_ROAST_CLI_API_KEY;
   const token = value.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
-  return token === expected;
+  return expected && token === expected ? "valid" : "invalid";
+}
+
+/** Echo the client's Idempotency-Key so retries are correlatable. Scans are
+ *  idempotent per username (shared cache + single-flight), so no storage needed. */
+function idempotencyHeaders(req: NextRequest): Record<string, string> {
+  const key = req.headers.get("idempotency-key");
+  return key ? { "Idempotency-Key": key } : {};
 }
 
 async function recordSuccessfulLookup(username: string, ip: string): Promise<void> {
@@ -37,24 +49,32 @@ async function recordSuccessfulLookup(username: string, ip: string): Promise<voi
 }
 
 export async function POST(req: NextRequest) {
+  const idem = idempotencyHeaders(req);
+
   let body: { username?: string; turnstileToken?: string };
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "invalid_body" }, { status: 400 });
+    return apiError("invalid_body", { status: 400, headers: idem });
   }
 
   const username = normalizeUsername(body.username ?? "");
   if (!username) {
-    return NextResponse.json({ error: "invalid_username" }, { status: 400 });
+    return apiError("invalid_username", { status: 400, headers: idem });
   }
 
   const ip = clientIp(req);
 
-  if (!hasMachineAuth(req)) {
+  const auth = machineAuth(req);
+  if (auth === "invalid") {
+    // An Authorization header was sent but the key is wrong — tell agents how to
+    // authenticate (spec-shaped WWW-Authenticate is added by apiError on 401).
+    return apiError("unauthorized", { status: 401, headers: idem });
+  }
+  if (auth === "absent") {
     const human = await verifyTurnstile(body.turnstileToken ?? null, ip);
     if (!human) {
-      return NextResponse.json({ error: "turnstile_failed" }, { status: 403 });
+      return apiError("turnstile_failed", { status: 403, headers: idem });
     }
   }
 
@@ -64,25 +84,31 @@ export async function POST(req: NextRequest) {
   const cached = await getCachedScan(username);
   if (cached) {
     await recordSuccessfulLookup(cached.metrics.username, ip);
-    return NextResponse.json({ ...cached, cached: true });
+    return NextResponse.json({ ...cached, cached: true }, { headers: idem });
   }
 
-  const { success } = await checkRateLimit(ip);
-  if (!success) {
-    return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+  const limit = await checkRateLimit(ip);
+  const rlHeaders = rateLimitHeaders(limit);
+  if (!limit.success) {
+    return apiError("rate_limited", { status: 429, headers: { ...idem, ...rlHeaders } });
   }
 
   try {
     const result = await coalesceScan(username, () => buildScanResult(username));
     await recordSuccessfulLookup(result.metrics.username, ip);
-    return NextResponse.json({ ...result, cached: false });
+    return NextResponse.json(
+      { ...result, cached: false },
+      { headers: { ...idem, ...rlHeaders } },
+    );
   } catch (e) {
     const { error, status, retry_after } = scanErrorResponse(e);
-    return NextResponse.json(
-      retry_after ? { error, retry_after } : { error },
-      retry_after
-        ? { status, headers: { "Retry-After": String(retry_after) } }
-        : { status },
-    );
+    return apiError(error as Parameters<typeof apiError>[0], {
+      status,
+      headers: {
+        ...idem,
+        ...rlHeaders,
+        ...(retry_after ? { "Retry-After": String(retry_after) } : {}),
+      },
+    });
   }
 }
