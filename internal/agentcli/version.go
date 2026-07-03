@@ -6,6 +6,10 @@ var (
 	Date    = "unknown"
 )
 
+const (
+	DefaultReleaseURL = "https://api.github.com/repos/hikariming/ghfind/releases/latest"
+)
+
 func VersionString() string {
-	return "github-roast " + Version + " (" + Commit + ", " + Date + ")"
+	return "ghfind " + Version + " (" + Commit + ", " + Date + ")"
 }

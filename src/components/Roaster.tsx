@@ -5,9 +5,12 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Link, useRouter } from "@/i18n/navigation";
+import { DIMENSIONS } from "@/lib/dimensions";
 import { splitReport } from "@/lib/report";
+import { consumeRoastStream, pendingScanKey } from "@/lib/roast-stream";
 import { TIER_KEY, tierStyle } from "@/lib/tier";
-import type { RoastLine, RoastMeta, ScanResult, Tags, Tier } from "@/lib/types";
+import type { RoastLine, RoastMeta, ScanResult, SubScoreKey, Tags, Tier } from "@/lib/types";
 import {
   ByoKeyConfig,
   ByoKeyModal,
@@ -23,8 +26,8 @@ import { createShareCardBlob } from "./shareCardExport";
 import { TierAvatarFrame } from "./TierAvatarFrame";
 import { Turnstile, turnstileEnabled } from "./Turnstile";
 import { Omnibox } from "./Omnibox";
-
-const SITE_URL = "https://ghfind.com";
+import { DimensionStarChart } from "./DimensionStarChart";
+import { SITE_URL } from "@/lib/site";
 
 interface Display {
   score: number;
@@ -37,8 +40,11 @@ export function Roaster() {
   const t = useTranslations("roaster");
   const tScan = useTranslations("scanErrors");
   const tTier = useTranslations("tiers");
+  const tDetail = useTranslations("detail");
+  const tDim = useTranslations("dimensions");
   const locale = useLocale();
   const searchParams = useSearchParams();
+  const router = useRouter();
 
   const [username, setUsername] = useState("");
   const [token, setToken] = useState("");
@@ -81,27 +87,19 @@ export function Roaster() {
       setMetaRoast(null);
       setThinking("");
 
-      // Decode a base64 RoastMeta (header fast path or in-band M-frame) into the
+      // Apply a decoded RoastMeta (header fast path or in-band M-frame) to the
       // score card / tags / one-liner.
-      const applyMeta = (b64: string) => {
-        try {
-          const json = new TextDecoder().decode(
-            Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)),
-          );
-          const meta = JSON.parse(json) as RoastMeta;
-          setDisplay({
-            score: meta.final_score,
-            tier: meta.tier,
-            tierLabel: meta.tier_label,
-            delta: meta.delta,
-          });
-          setPercentile(meta.percentile);
-          if (meta.tags && (meta.tags.zh.length || meta.tags.en.length)) setTags(meta.tags);
-          if (meta.roast_line && (meta.roast_line.zh || meta.roast_line.en))
-            setMetaRoast(meta.roast_line);
-        } catch {
-          /* malformed meta — keep the deterministic display */
-        }
+      const applyMeta = (meta: RoastMeta) => {
+        setDisplay({
+          score: meta.final_score,
+          tier: meta.tier,
+          tierLabel: meta.tier_label,
+          delta: meta.delta,
+        });
+        setPercentile(meta.percentile);
+        if (meta.tags && (meta.tags.zh.length || meta.tags.en.length)) setTags(meta.tags);
+        if (meta.roast_line && (meta.roast_line.zh || meta.roast_line.en))
+          setMetaRoast(meta.roast_line);
       };
       // Map a server error (preflight JSON or in-band E-frame) to the BYO modal /
       // inline error, then stop. Returns true if it was an error.
@@ -140,59 +138,16 @@ export function Roaster() {
           return;
         }
 
-        // The header carries a deterministic meta fallback (sent before the body
-        // can know the AI-adjusted values); the real meta arrives as an M-frame.
-        const metaHeader = res.headers.get("X-Roast-Meta");
-        if (metaHeader) applyMeta(metaHeader);
-
-        // The streamed body is plain report markdown EXCEPT for leading control
-        // frames (see the server's FRAME protocol): \x1f-prefixed lines carrying
-        // progress (T), the adjusted meta (M, ends the control phase), or an
-        // error (E). The cached fast path sends pure markdown with no frames.
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buf = "";
-        let inReport = false;
-        let acc = "";
-        let aborted = false;
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += decoder.decode(value, { stream: true });
-
-          while (!inReport && buf.length > 0) {
-            // Anything not starting with the frame separator is report content.
-            if (buf[0] !== "\x1f") {
-              inReport = true;
-              break;
-            }
-            const nl = buf.indexOf("\n");
-            if (nl === -1) break; // partial control line — wait for more bytes
-            const type = buf[1];
-            const payload = buf.slice(2, nl);
-            buf = buf.slice(nl + 1);
-            if (type === "T") {
-              setThinking(payload);
-            } else if (type === "M") {
-              applyMeta(payload);
-              inReport = true;
-            } else if (type === "E") {
-              try {
-                handleError(JSON.parse(payload));
-              } catch {
-                setError(t("errRoastFailed"));
-              }
-              aborted = true;
-              break;
-            }
-          }
-          if (aborted) break;
-          if (inReport && buf) {
-            acc += buf;
-            buf = "";
-            setReport(acc);
-          }
-        }
+        // Shared decoder: reads the X-Roast-Meta header fallback, then the frame
+        // protocol (T progress / M meta / E error) followed by report markdown.
+        await consumeRoastStream(res, {
+          onThinking: setThinking,
+          onMeta: applyMeta,
+          onReport: setReport,
+          onError: (data) => {
+            if (!handleError(data)) setError(t("errRoastFailed"));
+          },
+        });
       } catch {
         setError(t("errNetworkRoast"));
       } finally {
@@ -239,6 +194,22 @@ export function Roaster() {
           return;
         }
         const result = data as ScanResult;
+        // Hand off to the profile page: stash the fresh scan so the inner page
+        // can render its evidence and stream the roast in place (drives internal
+        // traffic; the user reads their repos/score while the LLM works). Passing
+        // the scan through sessionStorage means the handoff works with or without
+        // a server-side cache. BYO keys stay inline — they persist nothing for
+        // the profile page to show and use the user's own credit.
+        if (!loadByoKey()) {
+          try {
+            sessionStorage.setItem(pendingScanKey(result.metrics.username), JSON.stringify(result));
+          } catch {
+            /* storage unavailable (private mode / quota) — profile page falls
+               back to the server-side cached scan, else shows a home link */
+          }
+          router.push(`/u/${result.metrics.username}?roasting=1`);
+          return; // keep `scanning` true so the skeleton persists until navigation
+        }
         setScan(result);
         // Show the deterministic score immediately; the roast's META line then
         // updates it to the AI-adjusted final.
@@ -259,7 +230,7 @@ export function Roaster() {
         setScanning(false);
       }
     },
-    [username, token, scanning, roasting, runRoast, t, tScan],
+    [username, token, scanning, roasting, runRoast, router, t, tScan],
   );
 
   const beatValue = percentile?.beat == null ? null : percentile.beat.toFixed(1);
@@ -280,6 +251,9 @@ export function Roaster() {
   // the inline 🔥 marker; either way the body renders without that line.
   const { body: reportBody, roast: inlineRoast } = splitReport(report);
   const roastLine = (metaRoast ? (locale === "en" ? metaRoast.en : metaRoast.zh) : "") || inlineRoast;
+  const dimensionLabels = Object.fromEntries(
+    DIMENSIONS.map((key) => [key, tDim(key)]),
+  ) as Record<SubScoreKey, string>;
   const cardRef = useRef<HTMLDivElement>(null);
   const badgeRef = useRef<HTMLDivElement>(null);
   const [savingImg, setSavingImg] = useState(false);
@@ -300,7 +274,7 @@ export function Roaster() {
     badgeRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  const fileName = () => `github-roast-${scan?.metrics.username ?? "score"}.png`;
+  const fileName = () => `ghfind-${scan?.metrics.username ?? "score"}.png`;
 
   const genCardBlob = async (): Promise<Blob | null> => {
     if (!cardRef.current) return null;
@@ -392,18 +366,16 @@ export function Roaster() {
       {scan && display && style && (
         <div ref={reportRef} className="mt-10">
           <div
-            className={`animate-pop mx-auto flex max-w-md flex-col items-center rounded-2xl border border-white/10 bg-white/[0.03] p-6 text-center ring-1 ${style.ring}`}
+            className={`animate-pop mx-auto flex max-w-3xl flex-col items-center rounded-2xl border border-white/10 bg-white/[0.03] p-6 text-center ring-1 ${style.ring}`}
             style={{ boxShadow: `0 0 80px -20px ${style.glow}` }}
           >
-            <a
-              href={scan.metrics.profile_url ?? "#"}
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              href={`/u/${scan.metrics.username}`}
               className={`max-w-full break-all rounded-full bg-black/35 px-4 py-1.5 text-xl font-black leading-tight ${style.text} ring-1 ${style.ring} hover:bg-black/45`}
               style={{ boxShadow: `0 0 28px -10px ${style.glow}` }}
             >
               @{scan.metrics.username}
-            </a>
+            </Link>
             <TierAvatarFrame
               username={scan.metrics.username}
               avatarUrl={scan.metrics.avatar_url}
@@ -455,6 +427,17 @@ export function Roaster() {
                   ))}
                 </div>
               )}
+            </div>
+
+            <div className="mt-4 w-full rounded-xl border border-white/10 bg-white/[0.02] p-4 text-left sm:p-5">
+              <div className="mb-4 text-base font-bold text-zinc-200">
+                {tDetail("dimensionsHeading")}
+              </div>
+              <DimensionStarChart
+                scores={scan.scoring.sub_scores}
+                labels={dimensionLabels}
+                tier={display.tier}
+              />
             </div>
 
             {percentile &&

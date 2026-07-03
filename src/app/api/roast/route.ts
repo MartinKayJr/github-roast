@@ -33,11 +33,14 @@ export const dynamic = "force-dynamic";
 // Two sequential LLM calls (judge → roast) plus the streamed report. The default
 // model is a reasoning model that spends 10–25s on chain-of-thought before any
 // visible content, and a heavy account's two passes legitimately run ~60–120s.
-// We cap the function at 120s (fail-fast: a genuinely stuck roast releases its
-// slot quickly instead of hogging it) and bound the LLM passes a touch under
-// that (`llmDeadlineMs`) so we fail gracefully here (roast_failed) instead of the
-// platform 504'ing. Keep the two in sync: the inner budget MUST stay below this.
-export const maxDuration = 120;
+// The ceiling is 240s (well under Vercel's 300s max) so a stalled primary can
+// fail over to DeepSeek and STILL have a fresh budget to finish — the old 120s
+// cap physically couldn't fit primary + fallback (a healthy writer alone runs to
+// ~82s), so the fallback got ~0s and timed out. Fluid Compute bills active CPU,
+// not the idle wait on the model, so the higher ceiling costs ~nothing. The LLM
+// work is bounded a touch under this (`llmDeadlineMs`) so we fail gracefully here
+// (roast_failed) instead of the platform 504'ing. Keep the inner budget below it.
+export const maxDuration = 240;
 
 /** Response header carrying the AI-adjusted score (base64'd JSON; it contains CJK). */
 export const ROAST_META_HEADER = "X-Roast-Meta";
@@ -54,6 +57,9 @@ interface ByoKey {
 
 interface RoastBody {
   scan?: ScanResult;
+  /** Bare handle when the client has no scan payload (profile-page live roast).
+   * The route then relies on the server-side cached scan (getCachedScan). */
+  username?: string;
   byoKey?: ByoKey;
   /** UI locale → report language. Defaults to zh (see {@link normLang}). */
   lang?: string;
@@ -401,7 +407,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid_body" }, { status: 400 });
   }
 
-  const username = body.scan?.metrics?.username;
+  const username = body.scan?.metrics?.username ?? body.username;
   if (!username || !USERNAME_RE.test(username)) {
     return NextResponse.json({ error: "missing_scan" }, { status: 400 });
   }
@@ -538,13 +544,21 @@ export async function POST(req: NextRequest) {
       // a curated stage label plus elapsed seconds, throttled so reasoning's
       // hundreds of deltas don't spam the wire.
       const t0 = Date.now();
-      // Hard wall-clock budget for the LLM passes, kept ~15s under the 120s
-      // function ceiling (leaving room for meta compute + caching + margin). The
-      // default reasoning model streams chain-of-thought continuously, so the
-      // per-token idle timeout never fires on a long think; this caps the TWO
-      // passes combined so a slow account fails gracefully here (roast_failed)
-      // instead of the platform 504'ing the whole function.
-      const llmDeadlineMs = t0 + 105_000;
+      // Overall hard wall-clock ceiling for ALL LLM work, kept ~20s under the
+      // 240s function ceiling (leaving room for meta DB writes + caching + margin).
+      // The default reasoning model streams chain-of-thought continuously, so the
+      // per-token idle timeout never fires on a long think; this caps everything
+      // combined so a slow account fails gracefully here (roast_failed) instead of
+      // the platform 504'ing the whole function.
+      const llmDeadlineMs = t0 + 220_000;
+      // Per-attempt budget: each provider (StepFun primary, then DeepSeek
+      // fallback) gets its OWN fresh window of this length, still clamped by
+      // llmDeadlineMs. Sized just above the healthy p99 (judge ~47s, writer ~82s)
+      // so slow-but-fine runs aren't clipped, while a stalled primary bails in
+      // time to leave the fallback a real budget (the old shared-deadline bug:
+      // the primary burned the whole 105s and the fallback got ~0s).
+      const JUDGE_ATTEMPT_MS = 60_000;
+      const WRITER_ATTEMPT_MS = 95_000;
       // Per-stage timings for the structured triage log (see logRoastSummary).
       const path = isDefault ? "default" : "byo";
       let judgeMs = 0;
@@ -579,6 +593,7 @@ export async function POST(req: NextRequest) {
           let judgeText = "";
           for await (const ev of chatStreamEventsWithFallback(llmConfigs, buildRoastJudgeMessages(scan, judgeLang), {
             deadlineMs: llmDeadlineMs,
+            attemptBudgetMs: JUDGE_ATTEMPT_MS,
           })) {
             if (ev.type === "content") {
               judgeText += ev.text;
@@ -614,6 +629,7 @@ export async function POST(req: NextRequest) {
       writerStart = Date.now();
       const events = chatStreamEventsWithFallback(llmConfigs, buildRoastMessages(scan, lang, judge), {
         deadlineMs: llmDeadlineMs,
+        attemptBudgetMs: WRITER_ATTEMPT_MS,
       });
       let head = "";
       try {

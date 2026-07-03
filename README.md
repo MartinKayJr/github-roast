@@ -10,7 +10,7 @@ Turn any public GitHub profile into a **0–100 value & trust score**, an honest
 
 **English** · [中文](./README.zh.md)
 
-[**🔥 Roast a GitHub profile**](https://ghfind.com/en) · [**🏆 Explore developers**](https://ghfind.com/en/leaderboard) · [**⭐ View source**](https://github.com/hikariming/github-roast)
+[**🔥 Roast a GitHub profile**](https://ghfind.com/en) · [**🏆 Explore developers**](https://ghfind.com/en/leaderboard) · [**⭐ View source**](https://github.com/hikariming/ghfind)
 
 </div>
 
@@ -81,7 +81,7 @@ pnpm dev
 | `pnpm dev` | Local development |
 | `pnpm start` or `pnpm build/start` | One-command production build + run |
 | `pnpm build` / `pnpm start:prod` | Build only / run an existing production build |
-| `pnpm github-roast` | Agent-friendly CLI wrapper around the website `/api/scan` + `/api/roast` APIs |
+| `pnpm ghfind` | Agent-friendly `ghfind` CLI wrapper around the website scoring and discovery APIs |
 | `pnpm test` | Vitest test suite (scoring, prompts, DB, UI helpers, reactions, etc.) |
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm lint` | ESLint |
@@ -92,36 +92,85 @@ The CLI is a thin remote wrapper around the public website APIs. It does **not**
 run GitHub scanning, scoring, or LLM logic locally.
 
 ```bash
-pnpm github-roast commands --json
-pnpm github-roast score hikariming -o json
-pnpm github-roast roast hikariming --lang en -o markdown
+pnpm ghfind commands --json
+pnpm ghfind update check -o json
+pnpm ghfind score hikariming -o json
+pnpm ghfind roast hikariming --lang en -o markdown
 ```
 
 For a standalone binary:
 
 ```bash
 pnpm cli:build
-./bin/github-roast commands --json
-./bin/github-roast roast hikariming --lang en -o markdown
-./bin/github-roast leaderboard --view trending --window all -o json
-./bin/github-roast developers --type language -o json
+./bin/ghfind commands --json
+./bin/ghfind update check -o json
+./bin/ghfind roast hikariming --lang en -o markdown
+./bin/ghfind leaderboard --view trending --window all -o json
+./bin/ghfind developers --type language -o json
 ```
+
+The CLI name is `ghfind`. The standalone binary is built as `./bin/ghfind`,
+and package/bin metadata also exposes `ghfind`.
 
 The default service host is `https://ghfind.com`. Override it for local dev:
 
 ```bash
-GITHUB_ROAST_HOST=http://localhost:3000 pnpm github-roast roast hikariming --lang en
+GHFIND_HOST=http://localhost:3000 pnpm ghfind roast hikariming --lang en
 ```
+
+`GITHUB_ROAST_HOST` is still accepted as a backward-compatible alias.
 
 Production `/api/scan` uses Turnstile for browser calls. For agent/CLI calls,
 set `GITHUB_ROAST_CLI_API_KEY` on the server and pass the same value to the CLI
-as `GITHUB_ROAST_API_KEY` or `--api-key`; the CLI sends it as
+as `GHFIND_API_KEY` or `--api-key`; the CLI sends it as
 `Authorization: Bearer ...` to the same `/api/scan` endpoint.
+`GITHUB_ROAST_API_KEY` remains a backward-compatible alias.
 
 `/api/scan` checks machine auth or Turnstile before it reads the scan cache or
 uses the server GitHub token. If `GITHUB_ROAST_CLI_API_KEY` is not configured
 and Turnstile is enabled, an unauthenticated CLI request can fail before cache
 lookup, even when the server has a GitHub token and Redis cache.
+
+Version/update management:
+
+```bash
+ghfind --version
+ghfind update check -o json
+ghfind update install --method binary --dry-run -o json
+ghfind update install --method binary
+ghfind update npm --dry-run -o json
+ghfind update npm
+ghfind update pip
+ghfind update brew
+```
+
+`update check` compares the local CLI version with the latest GitHub release and
+prints `update_available`, `latest_version`, and `release_url`. It only reports;
+it never modifies the installed binary.
+
+`update install --method binary` downloads the current platform's GitHub release
+asset, writes it next to the running binary, and replaces the local `ghfind`
+binary by rename. Use `--dry-run` first to inspect the selected asset and target
+path. Package-manager shortcuts run the matching upgrade command:
+
+- `ghfind update npm`: `npm install -g @hikariming/ghfind@latest`
+- `ghfind update pip`: `python3 -m pip install --upgrade ghfind`
+- `ghfind update brew`: `brew upgrade ghfind`
+
+These commands modify the local installation only when explicitly invoked. They
+are not triggered by `update check`.
+
+Connected website APIs:
+
+- `scan` / `score`: `POST /api/scan`, factual structured score data.
+- `roast`: `POST /api/scan` + `POST /api/roast`, web-facing roast report.
+- `stats`: `GET /api/stats`, platform aggregate metadata.
+- `leaderboard`: `GET /api/leaderboard`, cached ranking/discovery entries.
+- `developers`: `GET /api/developers`, language/org/repo discovery facets.
+
+For agent decisions about one account, use `scan` or `score`; leaderboard and
+developer directory commands are discovery/catalog surfaces, not fresh scoring
+facts.
 
 ## Environment variables
 
@@ -179,3 +228,13 @@ Licensed under **[GNU AGPL-3.0](./LICENSE)**.
 - The scoring core is ported from the open-source Claude skill `github-account-value`, kept as the single source of truth.
 
 > **Trademark:** the "GitHub Roast / 毒舌 GitHub 评分" name, logo, and domain are **not covered** by the open-source license; all rights reserved. You may self-host from this code, but please do not use the project's name/brand to impersonate the official site or cause confusion.
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=hikariming%2Fghfind&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=hikariming/ghfind&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=hikariming/ghfind&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=hikariming/ghfind&type=date&legend=top-left" />
+ </picture>
+</a>

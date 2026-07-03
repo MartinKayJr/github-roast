@@ -1,20 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { recordAccountLookup } from "@/lib/db";
 import {
-  AccountNotFoundError,
-  GitHubAuthRequiredError,
-  GitHubDataUnavailableError,
-  GitHubRateLimitError,
-  collect,
-} from "@/lib/github";
-import {
   checkRateLimit,
   coalesceScan,
   getCachedScan,
 } from "@/lib/redis";
-import { score } from "@/lib/score";
+import { buildScanResult, scanErrorResponse } from "@/lib/scan-core";
 import { verifyTurnstile } from "@/lib/turnstile";
-import type { ScanResult } from "@/lib/types";
 import { normalizeUsername } from "@/lib/username";
 
 export const runtime = "nodejs";
@@ -81,49 +73,16 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = await coalesceScan(username, async (): Promise<ScanResult> => {
-      const {
-        metrics,
-        top_repos,
-        recent_prs,
-        flood_pr_titles,
-        impact_repos,
-        verified_impact_prs,
-        pinned_repos,
-        organizations,
-      } = await collect(username);
-      const scoring = score(metrics);
-      return {
-        metrics,
-        top_repos,
-        recent_prs,
-        flood_pr_titles,
-        impact_repos,
-        verified_impact_prs,
-        pinned_repos,
-        organizations,
-        scoring,
-      };
-    });
+    const result = await coalesceScan(username, () => buildScanResult(username));
     await recordSuccessfulLookup(result.metrics.username, ip);
     return NextResponse.json({ ...result, cached: false });
   } catch (e) {
-    if (e instanceof GitHubAuthRequiredError) {
-      return NextResponse.json({ error: "github_token_required" }, { status: 500 });
-    }
-    if (e instanceof AccountNotFoundError) {
-      return NextResponse.json({ error: "account_not_found" }, { status: 404 });
-    }
-    if (e instanceof GitHubRateLimitError) {
-      return NextResponse.json({ error: "github_rate_limited" }, { status: 503 });
-    }
-    if (e instanceof GitHubDataUnavailableError) {
-      return NextResponse.json(
-        { error: "github_unavailable", retry_after: 60 },
-        { status: 503, headers: { "Retry-After": "60" } },
-      );
-    }
-    console.error("scan failed:", e);
-    return NextResponse.json({ error: "scan_failed" }, { status: 500 });
+    const { error, status, retry_after } = scanErrorResponse(e);
+    return NextResponse.json(
+      retry_after ? { error, retry_after } : { error },
+      retry_after
+        ? { status, headers: { "Retry-After": String(retry_after) } }
+        : { status },
+    );
   }
 }

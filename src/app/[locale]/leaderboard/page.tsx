@@ -21,7 +21,7 @@ const WINDOW_LABEL_KEY: Record<LeaderboardWindow, string> = {
 export const dynamic = "force-dynamic";
 
 const REMOVAL_ISSUE_URL =
-  "https://github.com/hikariming/github-roast/issues/new?title=%E7%94%B3%E8%AF%B7%E4%B8%8B%E6%A6%9C&body=%E8%AF%B7%E5%A1%AB%E5%86%99%E4%BD%A0%E7%9A%84%20GitHub%20%E7%94%A8%E6%88%B7%E5%90%8D%EF%BC%9A";
+  "https://github.com/hikariming/ghfind/issues/new?title=%E7%94%B3%E8%AF%B7%E4%B8%8B%E6%A6%9C&body=%E8%AF%B7%E5%A1%AB%E5%86%99%E4%BD%A0%E7%9A%84%20GitHub%20%E7%94%A8%E6%88%B7%E5%90%8D%EF%BC%9A";
 
 export async function generateMetadata({
   params,

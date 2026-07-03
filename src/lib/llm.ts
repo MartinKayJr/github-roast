@@ -133,6 +133,14 @@ export async function* chatStreamEvents(
      * (surfacing as {@link LlmTimeoutError}) so the caller fails fast and clean.
      */
     deadlineMs?: number;
+    /**
+     * Per-attempt wall-clock budget (ms), honoured only by
+     * {@link chatStreamEventsWithFallback}: it gives EACH provider attempt its
+     * own fresh window of this length (still clamped by {@link deadlineMs}), so a
+     * stalled primary can't consume the whole budget and starve the fallback.
+     * A single-provider stream ignores it.
+     */
+    attemptBudgetMs?: number;
   },
 ): AsyncGenerator<ChatEvent> {
   const base = config.baseURL.replace(/\/$/, "");
@@ -255,9 +263,10 @@ export async function* chatStreamEvents(
  * Quota errors (401/402/429) fail over too — the operator's primary may be
  * exhausted while the fallback still has credit — and the LAST provider's quota
  * error surfaces, so the caller can still prompt for a BYO key once every
- * operator option is spent. A shared `opts.deadlineMs` is honoured across
- * providers, so the fallback runs on whatever wall-clock budget the primary
- * left behind (it never gets a fresh 105s).
+ * operator option is spent. `opts.deadlineMs` caps the total wall-clock across
+ * ALL providers (the function-ceiling guard). When `opts.attemptBudgetMs` is set,
+ * each provider additionally gets its OWN fresh window of that length — so a
+ * primary that stalls to its budget can't leave the fallback with ~0s left.
  */
 export async function* chatStreamEventsWithFallback(
   configs: LlmConfig[],
@@ -268,8 +277,20 @@ export async function* chatStreamEventsWithFallback(
   for (let i = 0; i < configs.length; i++) {
     const isLast = i === configs.length - 1;
     let emittedContent = false;
+    // Fresh per-attempt deadline so each provider gets a full budget from the
+    // moment its own attempt starts, still clamped by the overall deadlineMs.
+    const attemptOpts =
+      opts?.attemptBudgetMs !== undefined
+        ? {
+            ...opts,
+            deadlineMs:
+              opts.deadlineMs !== undefined
+                ? Math.min(Date.now() + opts.attemptBudgetMs, opts.deadlineMs)
+                : Date.now() + opts.attemptBudgetMs,
+          }
+        : opts;
     try {
-      for await (const ev of chatStreamEvents(configs[i], messages, opts)) {
+      for await (const ev of chatStreamEvents(configs[i], messages, attemptOpts)) {
         if (ev.type === "content") emittedContent = true;
         yield ev;
       }

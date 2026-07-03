@@ -2,11 +2,17 @@
 
 import { useLocale, useTranslations } from "next-intl";
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
-import { Link } from "@/i18n/navigation";
+import { Link, useRouter } from "@/i18n/navigation";
 import type { LeaderboardWindow } from "@/lib/leaderboardWindow";
 import { TIER_KEY, tierStyle } from "@/lib/tier";
 import type { Tier } from "@/lib/types";
+import { trackEvent } from "@/lib/track";
 import { resolveLeaderboardPageInput } from "./leaderboardPagination";
+
+interface MeResponse {
+  user: { login: string; image: string | null } | null;
+  scored: boolean;
+}
 
 export interface LeaderboardClientEntry {
   username: string;
@@ -36,6 +42,7 @@ export interface LeaderboardLabels {
   scoreTitle: string;
   heatLabel: string;
   heatTitle: string;
+  vsButton: string;
 }
 
 export type LeaderboardView = "trending" | "score" | "heat";
@@ -161,8 +168,35 @@ export function LeaderboardClient({
 }) {
   const locale = useLocale();
   const tTier = useTranslations("tiers");
+  const router = useRouter();
   const listAnchorRef = useRef<HTMLDivElement>(null);
   const pendingScrollRef = useRef(false);
+  // Probe the session once for the inline ⚔️ PK buttons — cached across rows.
+  const meRef = useRef<Promise<MeResponse> | null>(null);
+  const loadMe = () => {
+    if (!meRef.current) {
+      meRef.current = fetch("/api/me")
+        .then((r) => (r.ok ? (r.json() as Promise<MeResponse>) : { user: null, scored: false }))
+        .catch(() => ({ user: null, scored: false }) as MeResponse);
+    }
+    return meRef.current;
+  };
+  // Inline PK: a signed-in visitor duels the row directly (canonical pair pushed
+  // client-side, matching the /vs redirect); anyone else seeds the home Omnibox
+  // with the row as side A so they can pick themselves / any handle.
+  const challengeRow = async (username: string) => {
+    const rowLower = username.toLowerCase();
+    const me = await loadMe();
+    const login = me.user?.login;
+    if (login && login.toLowerCase() !== rowLower) {
+      trackEvent("leaderboard_vs_click", { opponent: rowLower, mode: "direct" });
+      const [x, y] = [login.toLowerCase(), rowLower].sort();
+      router.push(`/vs/${x}/${y}`);
+    } else {
+      trackEvent("leaderboard_vs_click", { opponent: rowLower, mode: "seed" });
+      router.push(`/?username=${encodeURIComponent(`${username} vs `)}`);
+    }
+  };
   const [page, setPage] = useState(0);
   const [pageInput, setPageInput] = useState({ page: 0, value: "1" });
   const entries =
@@ -228,7 +262,6 @@ export function LeaderboardClient({
           // time window, cumulative lookups for "all".
           const heat = timeWindow === "all" ? e.lookup_count : recentLookupCount;
           const heatValue = initialView === "trending" ? recentLookupCount : heat;
-          const profileUrl = e.profile_url ?? `https://github.com/${encodeURIComponent(e.username)}`;
           const scoreLabel = (
             <span className={style.text}>
               {style.emoji} {tierName}
@@ -351,14 +384,13 @@ export function LeaderboardClient({
                 )}
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-                    <a
-                      href={profileUrl}
-                      target="_blank"
-                      rel="noreferrer"
+                    <Link
+                      href={`/u/${e.username}`}
+                      prefetch={false}
                       className="relative z-10 max-w-full truncate font-medium underline-offset-2 hover:underline"
                     >
                       @{e.username}
-                    </a>
+                    </Link>
                     {e.display_name && (
                       <span className="min-w-0 max-w-full truncate text-sm text-zinc-500">
                         {e.display_name}
@@ -371,7 +403,22 @@ export function LeaderboardClient({
                   </div>
                 </div>
               </div>
-              <MetricBlock rows={metricRows} />
+              <div className="flex items-center gap-2 sm:gap-3">
+                <MetricBlock rows={metricRows} />
+                <button
+                  type="button"
+                  onClick={(ev) => {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    void challengeRow(e.username);
+                  }}
+                  aria-label={labels.vsButton}
+                  title={labels.vsButton}
+                  className="relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 text-base leading-none transition hover:border-orange-400/50 hover:bg-orange-500/15"
+                >
+                  ⚔️
+                </button>
+              </div>
             </li>
           );
         })}

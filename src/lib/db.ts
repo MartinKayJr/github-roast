@@ -906,6 +906,102 @@ export async function getRank(
   }
 }
 
+export interface FacetRank {
+  facetType: FacetType;
+  /** The bucket value, e.g. "Rust" — also the display string and URL segment. */
+  facetValue: string;
+  /** 1-based position within the bucket (ties share, mirroring {@link getRank}). */
+  rank: number;
+  total: number;
+  /** The developer immediately above — powers the "上一位 @x →" hook. */
+  ahead: { username: string; final_score: number } | null;
+}
+
+/**
+ * Where `username` ranks inside their strongest language bucket on the
+ * /developers directory — the "you're #12 on the Rust board, one spot behind
+ * @yyy" hook that turns a profile into a transit station.
+ *
+ * Uses the dev's highest-weight `language` facet and the exact same filters as
+ * {@link getDevelopersByFacet} (hidden = 0, final_score ≥ FACET_MIN_SCORE) so the
+ * rank matches the board the link lands on. Returns null when the dev has no
+ * language facet, is below the directory floor, or the bucket has ≤1 ranked dev.
+ * Every join is an index seek via idx_developer_facets_lookup. Best-effort like
+ * the rest of this module.
+ */
+export async function getFacetRank(
+  username: string,
+  score: number,
+): Promise<FacetRank | null> {
+  const db = getClient();
+  if (!db) return null;
+  try {
+    await ensureSchema(db);
+    const uname = username.toLowerCase();
+    // The dev's primary language (the directory only ranks devs above the floor,
+    // so a below-floor dev has no meaningful position to show).
+    if (score < FACET_MIN_SCORE) return null;
+    const topRes = await db.execute({
+      sql: `SELECT facet_value FROM developer_facets
+            WHERE username = ? AND facet_type = 'language'
+            ORDER BY weight DESC LIMIT 1`,
+      args: [uname],
+    });
+    const facetValue = topRes.rows[0]?.facet_value;
+    if (typeof facetValue !== "string" || !facetValue) return null;
+    // rank + total, and the nearest dev above, in one round trip.
+    const [rankRes, aheadRes] = await db.batch(
+      [
+        {
+          sql: `SELECT
+                  SUM(CASE WHEN s.final_score > ? THEN 1 ELSE 0 END) AS above,
+                  COUNT(*) AS total
+                FROM developer_facets AS f
+                JOIN scores AS s ON s.username = f.username
+                WHERE f.facet_type = 'language'
+                  AND f.facet_value = ?
+                  AND s.hidden = 0
+                  AND s.final_score >= ?`,
+          args: [score, facetValue, FACET_MIN_SCORE],
+        },
+        {
+          sql: `SELECT s.username, s.final_score
+                FROM developer_facets AS f
+                JOIN scores AS s ON s.username = f.username
+                WHERE f.facet_type = 'language'
+                  AND f.facet_value = ?
+                  AND s.hidden = 0
+                  AND s.final_score > ?
+                ORDER BY s.final_score ASC
+                LIMIT 1`,
+          args: [facetValue, score],
+        },
+      ],
+      "read",
+    );
+    const row = rankRes.rows[0];
+    if (!row) return null;
+    const total = Number(row.total);
+    if (total <= 1) return null;
+    const aheadRow = aheadRes.rows[0];
+    return {
+      facetType: "language",
+      facetValue,
+      rank: Number(row.above) + 1,
+      total,
+      ahead: aheadRow
+        ? {
+            username: String(aheadRow.username),
+            final_score: Number(aheadRow.final_score),
+          }
+        : null,
+    };
+  } catch (e) {
+    console.error("getFacetRank failed:", e);
+    return null;
+  }
+}
+
 /** Total number of accounts ever evaluated (for the "N developers" counter). */
 export async function getScoreCount(): Promise<number | null> {
   const db = getClient();

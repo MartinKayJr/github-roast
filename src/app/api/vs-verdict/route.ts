@@ -118,6 +118,9 @@ export async function POST(req: NextRequest) {
     const messages = buildPkVerdictMessages(da, db, v);
     const raw = await getCompletionWithFallback(configs, messages, {
       deadlineMs: Date.now() + 100_000,
+      // Fresh per-provider window so a stalled primary leaves the DeepSeek
+      // fallback a real budget instead of the shared-deadline scraps.
+      attemptBudgetMs: 45_000,
     });
     const { verdict: verdictLine, advice } = parsePkVerdict(raw);
     if (!verdictLine.zh && !verdictLine.en) {

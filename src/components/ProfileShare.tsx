@@ -52,7 +52,7 @@ export function ProfileShare({
     beat: beatText,
   });
 
-  const fileName = () => `github-roast-${username}.png`;
+  const fileName = () => `ghfind-${username}.png`;
 
   const genCardBlob = async (): Promise<Blob | null> => {
     if (!cardRef.current) return null;

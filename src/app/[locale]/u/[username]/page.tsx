@@ -1,5 +1,6 @@
 import { cache, Suspense } from "react";
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
 import type { Metadata } from "next";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -7,6 +8,7 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
 import {
   getAccountDetail,
+  getFacetRank,
   getProfileComments,
   getProfileSnapshot,
   getRank,
@@ -14,23 +16,42 @@ import {
   getUserMatchups,
   getCommunityProfileByLogin,
 } from "@/lib/db";
+import { getCachedScan } from "@/lib/redis";
 import { aggregateLanguages, collectTopics } from "@/lib/profile-insights";
+import { PendingProfile } from "./PendingProfile";
+import { LiveRoast } from "@/components/LiveRoast";
 import { JsonLd, profileJsonLd } from "@/components/JsonLd";
 import { SITE_URL, PUBLIC_INDEX_MIN_SCORE, localeAlternates } from "@/lib/site";
 import { CopyBadge } from "@/components/CopyBadge";
 import { ProfileShare } from "@/components/ProfileShare";
 import { FloatingCommentBubbles } from "@/components/FloatingCommentBubbles";
 import { TierAvatarFrame } from "@/components/TierAvatarFrame";
-import { SUBSCORE_MAX, nextTier } from "@/lib/score";
-import { DIMENSIONS, barColor } from "@/lib/dimensions";
+import { DimensionStarChart } from "@/components/DimensionStarChart";
+import { nextTier } from "@/lib/score";
+import { DIMENSIONS } from "@/lib/dimensions";
 import { beatPercent } from "@/lib/percentile";
 import { TIER_KEY, tierStyle } from "@/lib/tier";
 import { normLang } from "@/lib/lang";
 import { ProfileReactionsSection } from "@/components/ProfileReactionsSection";
 import { RescanButton } from "@/components/RescanButton";
 import { ProfileBackfill } from "@/components/ProfileBackfill";
+import { BadgeReferralBanner } from "@/components/BadgeReferralBanner";
+import { ChallengeCta } from "@/components/ChallengeCta";
+import { FacetRankLink } from "@/components/FacetRankLink";
 import { auth, authConfigured } from "@/lib/auth";
 import { CommunitySection } from "@/components/community/CommunitySection";
+
+/** True when a Referer header points at github.com (or a subdomain). GitHub sends
+ *  `strict-origin-when-cross-origin`, so we only ever see the bare origin — enough
+ *  to host-match. Malformed values just fall through to false. */
+function isGithubReferer(referer: string | null): boolean {
+  if (!referer) return false;
+  try {
+    return /(^|\.)github\.com$/i.test(new URL(referer).hostname);
+  } catch {
+    return false;
+  }
+}
 
 // Profile comments must be fresh; score/roast data is still fetched from the DB
 // and remains cached at the persistence layer where applicable.
@@ -38,16 +59,34 @@ export const dynamic = "force-dynamic";
 
 // Dedupe the DB read between generateMetadata() and the page render.
 const getDetail = cache((username: string) => getAccountDetail(username));
+// Dedupe the cached-scan read (pending-profile fallback) across the same pair.
+const getLiveScan = cache((username: string) => getCachedScan(username));
 
 export async function generateMetadata({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string; username: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }): Promise<Metadata> {
   const { locale, username } = await params;
   const t = await getTranslations({ locale, namespace: "detailMeta" });
-  const d = await getDetail(decodeURIComponent(username));
-  if (!d) return { title: t("notFoundTitle") };
+  const decoded = decodeURIComponent(username);
+  const d = await getDetail(decoded);
+  if (!d) {
+    // No persisted row yet. A cached scan or the `?roasting=1` handoff marker
+    // means we render the live-roast pending shell rather than 404 — give it a
+    // title and keep it out of search (it's transient).
+    const scan = await getLiveScan(decoded);
+    const roasting = (await searchParams)?.roasting === "1";
+    if (scan || roasting) {
+      return {
+        title: t("pendingTitle", { username: scan?.metrics.username ?? decoded }),
+        robots: { index: false, follow: true },
+      };
+    }
+    return { title: t("notFoundTitle") };
+  }
 
   const tt = await getTranslations({ locale, namespace: "tiers" });
   const tierName = tt(`${TIER_KEY[d.tier]}.name`);
@@ -88,13 +127,26 @@ export async function generateMetadata({
 
 export default async function AccountPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string; username: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { locale, username } = await params;
   setRequestLocale(locale);
-  const d = await getDetail(decodeURIComponent(username));
-  if (!d) notFound();
+  const decoded = decodeURIComponent(username);
+  const d = await getDetail(decoded);
+  if (!d) {
+    // First-time username being roasted right now: no `scores` row yet. Render
+    // the live pending shell when we have a scan to show — either the server-side
+    // cache, or the `?roasting=1` handoff (the shell reads the scan the homepage
+    // stashed in sessionStorage). LiveRoast refreshes into the full profile on
+    // completion. Otherwise it's a genuine unknown handle → 404.
+    const scan = await getLiveScan(decoded);
+    const roasting = (await searchParams)?.roasting === "1";
+    if (!scan && !roasting) notFound();
+    return <PendingProfile username={decoded} initialScan={scan ?? null} />;
+  }
 
   const t = await getTranslations("detail");
   const tDim = await getTranslations("dimensions");
@@ -109,25 +161,47 @@ export default async function AccountPage({
   // visitor's language even when the full report exists only in the other one.
   // Empty for legacy rows — those still carry the one-liner inline in `roast`.
   const roastLine = lang === "en" ? d.roast_line.en : d.roast_line.zh;
-  const [similar, comments, snap, rank, session, battles, communityProfile] = await Promise.all([
-    getSimilarAccounts(d.username, d.final_score, d.sub_scores),
-    getProfileComments(d.username),
-    getProfileSnapshot(d.username),
-    getRank(d.final_score),
-    authConfigured() ? auth() : Promise.resolve(null),
-    getUserMatchups(d.username),
-    getCommunityProfileByLogin(d.username),
-  ]);
+  // Row exists but this language's roast is missing (e.g. an English visitor on a
+  // zh-only roast). If the scan is still cached, stream a live roast in the
+  // report slot instead of the "run a roast" empty state.
+  const liveScan = !roast && !roastLine ? await getLiveScan(d.username) : null;
+  const [similar, comments, snap, rank, session, battles, facetRank, communityProfile] =
+    await Promise.all([
+      getSimilarAccounts(d.username, d.final_score, d.sub_scores),
+      getProfileComments(d.username),
+      getProfileSnapshot(d.username),
+      getRank(d.final_score),
+      authConfigured() ? auth() : Promise.resolve(null),
+      getUserMatchups(d.username),
+      getFacetRank(d.username, d.final_score),
+      getCommunityProfileByLogin(d.username),
+    ]);
   // Inline re-detect is self-service: only the signed-in owner sees it on their
   // own profile. GitHub handles are case-insensitive, so compare normalized.
   const isOwner =
     session?.user?.login?.toLowerCase() === d.username.toLowerCase();
+  // Badge-landing hook: a visitor arriving from a GitHub README badge (Referer
+  // github.com) or an explicit ?ref=badge, looking at someone else's page, gets
+  // nudged into a PK against the owner. Reading headers is free here — the page
+  // is already force-dynamic. Suppressed for the owner (can't duel yourself).
+  const refParam = (await searchParams)?.ref;
+  const fromBadgeRef = refParam === "badge";
+  const fromGithub = isGithubReferer((await headers()).get("referer"));
+  const badgeSignal: "referer" | "ref" | null = fromBadgeRef
+    ? "ref"
+    : fromGithub
+      ? "referer"
+      : null;
+  const showBadgeBanner = badgeSignal !== null && !isOwner;
   // Milestone hint: points to the next tier line, plus the "beat %" so far.
   const promo = nextTier(d.final_score);
   const promoGap = promo ? (promo.threshold - d.final_score).toFixed(2) : null;
   const promoTierName = promo ? tTier(`${TIER_KEY[promo.tier]}.name`) : null;
   const beat = rank ? beatPercent(rank.below, rank.total) : null;
   const detailPath = locale === "en" ? `/en/u/${d.username}` : `/u/${d.username}`;
+  const dimensionLabels = Object.fromEntries(
+    DIMENSIONS.map((key) => [key, tDim(key)]),
+  ) as Record<(typeof DIMENSIONS)[number], string>;
 
   // Evidence blocks (only when a sedimented snapshot exists). Featured work =
   // the user's own top repos, with self-pinned repos floated to the front.
@@ -179,9 +253,12 @@ export default async function AccountPage({
             scannedAt: d.scanned_at,
           })}
         />
-        <Link href="/leaderboard" className="text-sm text-zinc-400 hover:text-zinc-200">
+        <Link href="/leaderboard" prefetch={false} className="text-sm text-zinc-400 hover:text-zinc-200">
           {t("back")}
         </Link>
+        {showBadgeBanner && (
+          <BadgeReferralBanner owner={d.username} signal={badgeSignal!} />
+        )}
 
       <div className="mt-4 flex flex-col gap-6 lg:flex-row lg:items-start">
         {/* Left: sticky identity sidebar — score stays visible while reading */}
@@ -299,6 +376,37 @@ export default async function AccountPage({
             ? t("milestoneNext", { tier: promoTierName!, gap: promoGap! })
             : t("milestoneCapped")}
         </div>
+        {facetRank && (
+          <FacetRankLink
+            facetValue={facetRank.facetValue}
+            rank={facetRank.rank}
+            ahead={facetRank.ahead?.username ?? null}
+          />
+        )}
+        {/* Turn the profile into a transit station: challenge this dev to a PK.
+            The owner instead seeds the home Omnibox to pull others in against
+            themselves (can't duel yourself). */}
+        {isOwner ? (
+          <Link
+            href={`/?username=${encodeURIComponent(`${d.username} vs `)}`}
+            className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full border border-orange-400/40 px-4 py-2 text-sm font-semibold text-orange-200 transition hover:bg-orange-500/10"
+          >
+            <span aria-hidden>⚔️</span>
+            {t("challengeOwner")}
+          </Link>
+        ) : (
+          <ChallengeCta
+            opponent={d.username}
+            source="profile_btn"
+            variant="banner"
+            label={t("challengeCta")}
+            goLabel={t("challengeGo")}
+            placeholder={t("challengePlaceholder")}
+            selfHint={t("challengeSelf")}
+            invalidHint={t("challengeInvalid")}
+            className="mt-3"
+          />
+        )}
         {isOwner && (
           <RescanButton username={d.username} scannedAt={d.scanned_at} className="mt-3" />
         )}
@@ -374,30 +482,7 @@ export default async function AccountPage({
       {/* Dimension breakdown */}
       <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-5 sm:p-6">
         <h2 className="mb-4 text-base font-bold text-zinc-200">{t("dimensionsHeading")}</h2>
-        <div className="flex flex-col gap-3">
-          {DIMENSIONS.map((key) => {
-            const max = SUBSCORE_MAX[key];
-            const v = d.sub_scores[key] ?? 0;
-            const pct = Math.max(0, Math.min(1, v / max));
-            return (
-              <div key={key}>
-                <div className="mb-1 flex items-baseline justify-between text-sm">
-                  <span className="text-zinc-300">{tDim(key)}</span>
-                  <span className="tabular-nums text-zinc-400">
-                    {v.toFixed(1)}
-                    <span className="text-zinc-600"> / {max}</span>
-                  </span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
-                  <div
-                    className={`h-full rounded-full ${barColor(pct)}`}
-                    style={{ width: `${pct * 100}%` }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <DimensionStarChart scores={d.sub_scores} labels={dimensionLabels} tier={d.tier} />
       </section>
 
       {/* Featured work — the user's own popular repos, self-pinned floated up. */}
@@ -585,7 +670,9 @@ export default async function AccountPage({
           <div className="report text-[0.95rem] text-zinc-200">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{roast}</ReactMarkdown>
           </div>
-        ) : roastLine ? null : (
+        ) : roastLine ? null : liveScan ? (
+          <LiveRoast username={d.username} scan={liveScan} />
+        ) : (
           <p className="text-sm text-zinc-400">
             {t.rich("roastEmpty", {
               a: (c) => (
