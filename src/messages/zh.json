@@ -450,6 +450,9 @@
       "languageTab": "语言",
       "chinese": "中文",
       "english": "English",
+      "aiGenerate": "AI 生成草稿",
+      "aiGenerating": "生成中…",
+      "aiFailed": "AI 生成失败，请稍后再试",
       "charLimit": "最多 {max} 字",
       "back": "上一步",
       "continue": "下一步"

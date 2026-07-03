@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
+import { Loader2, Sparkles } from "lucide-react";
 import { useRouter } from "@/i18n/navigation";
 import {
   Dialog,
@@ -12,7 +13,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import type { CommunityProfile } from "@/lib/db";
@@ -59,6 +59,44 @@ const FIELD_LABEL_KEYS: Record<
   no_recommend_for: { label: "noRecommend", placeholder: "noRecommendPlaceholder" },
 };
 
+type ProfileField = (typeof PROFILE_FIELDS)[number];
+
+interface QuickOption {
+  key: string;
+  value: BilingualField;
+}
+
+const QUICK_OPTIONS: Record<ProfileField, QuickOption[]> = {
+  working_on: [
+    { key: "openSource", value: { zh: "开源项目与长期维护", en: "open-source projects and long-term maintenance" } },
+    { key: "aiApps", value: { zh: "AI 应用与开发者工具", en: "AI apps and developer tools" } },
+    { key: "frontend", value: { zh: "前端体验与产品工程", en: "frontend experience and product engineering" } },
+    { key: "infra", value: { zh: "基础设施、系统与工程效率", en: "infrastructure, systems, and engineering productivity" } },
+  ],
+  want_to_meet: [
+    { key: "collaborators", value: { zh: "能一起认真做项目的开源伙伴", en: "open-source collaborators who ship serious projects" } },
+    { key: "sameStack", value: { zh: "技术栈相近的开发者", en: "developers with a similar stack" } },
+    { key: "builders", value: { zh: "正在做产品或工具的独立开发者", en: "indie builders working on products or tools" } },
+    { key: "maintainers", value: { zh: "关注长期维护的项目作者", en: "maintainers who care about long-term quality" } },
+  ],
+  contact_method: [
+    { key: "github", value: { zh: "GitHub 主页、Issue 或公开讨论", en: "GitHub profile, issues, or public discussions" } },
+    { key: "specific", value: { zh: "欢迎带具体项目或问题来聊", en: "happy to chat when there is a concrete project or question" } },
+    { key: "async", value: { zh: "偏好异步沟通", en: "async communication preferred" } },
+  ],
+  chat_topics: [
+    { key: "architecture", value: { zh: "项目架构与工程取舍", en: "project architecture and engineering tradeoffs" } },
+    { key: "opensource", value: { zh: "开源协作、文档和维护", en: "open-source collaboration, docs, and maintenance" } },
+    { key: "ai", value: { zh: "AI 应用落地与工具链", en: "AI application engineering and tooling" } },
+    { key: "quality", value: { zh: "代码质量、测试和性能", en: "code quality, testing, and performance" } },
+  ],
+  no_recommend_for: [
+    { key: "spam", value: { zh: "无上下文私信或批量推销", en: "context-free DMs or bulk sales outreach" } },
+    { key: "recruiting", value: { zh: "纯招聘或外包转发", en: "generic recruiting or outsourcing blasts" } },
+    { key: "unrelated", value: { zh: "与公开项目无关的请求", en: "requests unrelated to public projects" } },
+  ],
+};
+
 function profileToFormData(profile: CommunityProfile | null | undefined): FormData {
   return {
     working_on: profile?.working_on ?? { zh: "", en: "" },
@@ -86,6 +124,7 @@ export function CommunityOnboardingDialog({
   );
   const [confirmed, setConfirmed] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [formData, setFormData] = useState<FormData>(() => profileToFormData(initialProfile));
@@ -98,6 +137,46 @@ export function CommunityOnboardingDialog({
         [lang]: value,
       },
     }));
+  };
+
+  const mergeOption = (current: string, next: string) => {
+    if (!current.trim()) return next;
+    if (current.includes(next)) return current;
+    return `${current.trim()} / ${next}`;
+  };
+
+  const applyQuickOption = (field: ProfileField, option: QuickOption) => {
+    setFormData((prev) => ({
+      ...prev,
+      [field]: {
+        zh: mergeOption(prev[field].zh, option.value.zh),
+        en: mergeOption(prev[field].en, option.value.en),
+      },
+    }));
+  };
+
+  const handleAiGenerate = async () => {
+    setAiLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/community/profile/ai", { method: "POST" });
+      if (!response.ok) {
+        throw new Error(t("profileForm.aiFailed"));
+      }
+      const data = (await response.json()) as { profile?: Partial<FormData> };
+      if (!data.profile) throw new Error(t("profileForm.aiFailed"));
+      setFormData((prev) => ({
+        working_on: data.profile?.working_on ?? prev.working_on,
+        want_to_meet: data.profile?.want_to_meet ?? prev.want_to_meet,
+        contact_method: data.profile?.contact_method ?? prev.contact_method,
+        chat_topics: data.profile?.chat_topics ?? prev.chat_topics,
+        no_recommend_for: data.profile?.no_recommend_for ?? prev.no_recommend_for,
+      }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("profileForm.aiFailed"));
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   const handleContinueFromIntro = () => {
@@ -242,45 +321,77 @@ export function CommunityOnboardingDialog({
             </DialogHeader>
 
             <div className="space-y-4 py-4">
-              <div className="flex gap-2 mb-4">
-                <button
-                  onClick={() => setCurrentLang("zh")}
-                  className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
-                    currentLang === "zh"
-                      ? "bg-emerald-500/20 text-emerald-300"
-                      : "bg-white/5 text-zinc-400 hover:bg-white/10"
-                  }`}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentLang("zh")}
+                    className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
+                      currentLang === "zh"
+                        ? "bg-emerald-500/20 text-emerald-300"
+                        : "bg-white/5 text-zinc-400 hover:bg-white/10"
+                    }`}
+                  >
+                    {t("profileForm.chinese")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentLang("en")}
+                    className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
+                      currentLang === "en"
+                        ? "bg-emerald-500/20 text-emerald-300"
+                        : "bg-white/5 text-zinc-400 hover:bg-white/10"
+                    }`}
+                  >
+                    {t("profileForm.english")}
+                  </button>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAiGenerate}
+                  disabled={aiLoading || loading}
+                  className="border-emerald-400/30 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20"
                 >
-                  {t("profileForm.chinese")}
-                </button>
-                <button
-                  onClick={() => setCurrentLang("en")}
-                  className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
-                    currentLang === "en"
-                      ? "bg-emerald-500/20 text-emerald-300"
-                      : "bg-white/5 text-zinc-400 hover:bg-white/10"
-                  }`}
-                >
-                  {t("profileForm.english")}
-                </button>
+                  {aiLoading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-3.5 w-3.5" />
+                  )}
+                  {aiLoading ? t("profileForm.aiGenerating") : t("profileForm.aiGenerate")}
+                </Button>
               </div>
 
               {PROFILE_FIELDS.map(
                 (field) => (
-                  <div key={field} className="space-y-1">
+                  <div key={field} className="space-y-2">
                     <Label htmlFor={`${field}-${currentLang}`}>
                       {t(`profileForm.${FIELD_LABEL_KEYS[field].label}`)}
                       {(field === "working_on" || field === "want_to_meet") && (
                         <span className="text-orange-400 ml-1">*</span>
                       )}
                     </Label>
-                    <Input
+                    <div className="flex flex-wrap gap-2">
+                      {QUICK_OPTIONS[field].map((option) => (
+                        <button
+                          key={option.key}
+                          type="button"
+                          onClick={() => applyQuickOption(field, option)}
+                          className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs text-zinc-300 transition-colors hover:border-emerald-400/40 hover:bg-emerald-500/10 hover:text-emerald-200"
+                        >
+                          {option.value[currentLang]}
+                        </button>
+                      ))}
+                    </div>
+                    <textarea
                       id={`${field}-${currentLang}`}
                       value={formData[field][currentLang]}
                       onChange={(e) => updateField(field, currentLang, e.target.value)}
                       placeholder={t(`profileForm.${FIELD_LABEL_KEYS[field].placeholder}`)}
                       maxLength={500}
-                      className="border-white/15 bg-white/5 focus:border-emerald-400/60"
+                      rows={field === "contact_method" ? 3 : 4}
+                      className="flex min-h-24 w-full resize-y rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-zinc-600 focus:border-emerald-400/60 focus-visible:ring-2 focus-visible:ring-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-50"
                     />
                     <p className="text-xs text-zinc-500">
                       {t("profileForm.charLimit", { max: 500 })} (

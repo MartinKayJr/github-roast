@@ -82,6 +82,7 @@ export interface ImpactRepo {
 }
 
 export interface RawMetrics {
+  github_id?: number;
   username: string;
   profile_url: string | null;
   avatar_url: string | null;

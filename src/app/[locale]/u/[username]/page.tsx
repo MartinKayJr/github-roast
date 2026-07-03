@@ -14,7 +14,9 @@ import {
   getRank,
   getSimilarAccounts,
   getUserMatchups,
+  getCommunityProfile,
   getCommunityProfileByLogin,
+  ensureCommunityProfileDraft,
 } from "@/lib/db";
 import { getCachedScan } from "@/lib/redis";
 import { aggregateLanguages, collectTopics } from "@/lib/profile-insights";
@@ -40,6 +42,7 @@ import { ChallengeCta } from "@/components/ChallengeCta";
 import { FacetRankLink } from "@/components/FacetRankLink";
 import { auth, authConfigured } from "@/lib/auth";
 import { CommunitySection } from "@/components/community/CommunitySection";
+import { buildCommunityProfileDraft, sourceFromSnapshot } from "@/lib/community-profile";
 
 /** True when a Referer header points at github.com (or a subdomain). GitHub sends
  *  `strict-origin-when-cross-origin`, so we only ever see the bare origin — enough
@@ -180,6 +183,22 @@ export default async function AccountPage({
   // own profile. GitHub handles are case-insensitive, so compare normalized.
   const isOwner =
     session?.user?.login?.toLowerCase() === d.username.toLowerCase();
+  let communityProfileForSection = communityProfile;
+  if (
+    isOwner &&
+    session?.user?.githubId &&
+    snap &&
+    communityProfile?.status !== "active" &&
+    (!communityProfile?.working_on || !communityProfile.want_to_meet)
+  ) {
+    await ensureCommunityProfileDraft({
+      github_id: session.user.githubId,
+      login: d.username,
+      ...buildCommunityProfileDraft(sourceFromSnapshot(d.username, snap, d.display_name)),
+    });
+    communityProfileForSection =
+      (await getCommunityProfile(session.user.githubId)) ?? communityProfileForSection;
+  }
   // Badge-landing hook: a visitor arriving from a GitHub README badge (Referer
   // github.com) or an explicit ?ref=badge, looking at someone else's page, gets
   // nudged into a PK against the owner. Reading headers is free here — the page
@@ -565,7 +584,7 @@ export default async function AccountPage({
       {/* Community Profile — join CTA for owner, card for active members */}
       <div className="mt-6">
         <CommunitySection
-          profile={communityProfile}
+          profile={communityProfileForSection}
           isOwner={isOwner}
           hasRoast={true}
           username={d.username}

@@ -450,6 +450,9 @@
       "languageTab": "Language",
       "chinese": "中文",
       "english": "English",
+      "aiGenerate": "AI draft",
+      "aiGenerating": "Generating…",
+      "aiFailed": "AI generation failed. Try again later.",
       "charLimit": "Max {max} chars",
       "back": "Back",
       "continue": "Continue"

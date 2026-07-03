@@ -1724,6 +1724,7 @@ export async function collect(username: string): Promise<{
   }
 
   const metrics: RawMetrics = {
+    github_id: user.id,
     username: login,
     profile_url: user.html_url,
     avatar_url: user.avatar_url,

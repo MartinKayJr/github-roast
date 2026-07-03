@@ -1971,6 +1971,12 @@ function parseBilingualCardField(raw: unknown): { zh: string; en: string; genera
   }
 }
 
+function stringifyBilingualField(
+  val: { zh: string; en: string; generated_at?: number } | null | undefined,
+): string | null {
+  return val ? JSON.stringify(val) : null;
+}
+
 function toCommunityProfile(row: Record<string, unknown>): CommunityProfile {
   return {
     github_id: Number(row.github_id),
@@ -2049,47 +2055,122 @@ export async function upsertCommunityProfile(
   try {
     await ensureSchema(db);
     const now = Date.now();
-
-    const stringifyBilingual = (val: { zh: string; en: string } | null | undefined): string | null => {
-      return val ? JSON.stringify(val) : null;
-    };
+    const hasStatus = profile.status !== undefined;
+    const hasVisibility = profile.visibility !== undefined;
+    const hasAiCardApproved = profile.ai_card_approved !== undefined;
+    const hasJoinedAt = profile.joined_at !== undefined;
 
     await db.execute({
       sql: `INSERT INTO community_profiles
               (github_id, login, status, visibility, working_on, want_to_meet,
                contact_method, chat_topics, no_recommend_for, ai_card,
                ai_card_approved, joined_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, COALESCE(?, 'pending'), COALESCE(?, 'public'), ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(github_id) DO UPDATE SET
               login            = COALESCE(excluded.login, community_profiles.login),
-              status           = COALESCE(excluded.status, community_profiles.status),
-              visibility       = COALESCE(excluded.visibility, community_profiles.visibility),
+              status           = CASE
+                                    WHEN ? = 1 THEN excluded.status
+                                    ELSE community_profiles.status
+                                  END,
+              visibility       = CASE
+                                    WHEN ? = 1 THEN excluded.visibility
+                                    ELSE community_profiles.visibility
+                                  END,
               working_on       = COALESCE(excluded.working_on, community_profiles.working_on),
               want_to_meet     = COALESCE(excluded.want_to_meet, community_profiles.want_to_meet),
               contact_method   = COALESCE(excluded.contact_method, community_profiles.contact_method),
               chat_topics      = COALESCE(excluded.chat_topics, community_profiles.chat_topics),
               no_recommend_for = COALESCE(excluded.no_recommend_for, community_profiles.no_recommend_for),
               ai_card          = COALESCE(excluded.ai_card, community_profiles.ai_card),
-              ai_card_approved = COALESCE(excluded.ai_card_approved, community_profiles.ai_card_approved),
+              ai_card_approved = CASE
+                                    WHEN ? = 1 THEN excluded.ai_card_approved
+                                    ELSE community_profiles.ai_card_approved
+                                  END,
+              joined_at        = CASE
+                                    WHEN ? = 1 THEN excluded.joined_at
+                                    ELSE community_profiles.joined_at
+                                  END,
               updated_at       = excluded.updated_at`,
       args: [
         profile.github_id,
         profile.login.toLowerCase(),
-        profile.status ?? "pending",
-        profile.visibility ?? "public",
-        stringifyBilingual(profile.working_on),
-        stringifyBilingual(profile.want_to_meet),
-        stringifyBilingual(profile.contact_method),
-        stringifyBilingual(profile.chat_topics),
-        stringifyBilingual(profile.no_recommend_for),
-        stringifyBilingual(profile.ai_card),
+        profile.status ?? null,
+        profile.visibility ?? null,
+        stringifyBilingualField(profile.working_on),
+        stringifyBilingualField(profile.want_to_meet),
+        stringifyBilingualField(profile.contact_method),
+        stringifyBilingualField(profile.chat_topics),
+        stringifyBilingualField(profile.no_recommend_for),
+        stringifyBilingualField(profile.ai_card),
         profile.ai_card_approved ? 1 : 0,
         profile.joined_at ?? now,
         now,
+        hasStatus ? 1 : 0,
+        hasVisibility ? 1 : 0,
+        hasAiCardApproved ? 1 : 0,
+        hasJoinedAt ? 1 : 0,
       ],
     });
   } catch (e) {
     console.error("upsertCommunityProfile failed:", e);
+  }
+}
+
+/**
+ * Create or lightly refresh an auto-generated community draft. This is used by
+ * scans/profile pages to give the owner a starting point, so it must never
+ * overwrite an active or already user-edited profile.
+ */
+export async function ensureCommunityProfileDraft(
+  profile: Pick<CommunityProfile, "github_id" | "login"> &
+    Partial<
+      Pick<
+        CommunityProfile,
+        | "working_on"
+        | "want_to_meet"
+        | "contact_method"
+        | "chat_topics"
+        | "no_recommend_for"
+        | "ai_card"
+      >
+    >,
+): Promise<void> {
+  const db = getClient();
+  if (!db) return;
+  try {
+    await ensureSchema(db);
+    const now = Date.now();
+    await db.execute({
+      sql: `INSERT INTO community_profiles
+              (github_id, login, status, visibility, working_on, want_to_meet,
+               contact_method, chat_topics, no_recommend_for, ai_card,
+               ai_card_approved, joined_at, updated_at)
+            VALUES (?, ?, 'pending', 'public', ?, ?, ?, ?, ?, ?, 0, ?, ?)
+            ON CONFLICT(github_id) DO UPDATE SET
+              login            = excluded.login,
+              working_on       = COALESCE(NULLIF(community_profiles.working_on, ''), excluded.working_on),
+              want_to_meet     = COALESCE(NULLIF(community_profiles.want_to_meet, ''), excluded.want_to_meet),
+              contact_method   = COALESCE(NULLIF(community_profiles.contact_method, ''), excluded.contact_method),
+              chat_topics      = COALESCE(NULLIF(community_profiles.chat_topics, ''), excluded.chat_topics),
+              no_recommend_for = COALESCE(NULLIF(community_profiles.no_recommend_for, ''), excluded.no_recommend_for),
+              ai_card          = COALESCE(NULLIF(community_profiles.ai_card, ''), excluded.ai_card),
+              updated_at       = excluded.updated_at
+            WHERE community_profiles.status != 'active'`,
+      args: [
+        profile.github_id,
+        profile.login.toLowerCase(),
+        stringifyBilingualField(profile.working_on),
+        stringifyBilingualField(profile.want_to_meet),
+        stringifyBilingualField(profile.contact_method),
+        stringifyBilingualField(profile.chat_topics),
+        stringifyBilingualField(profile.no_recommend_for),
+        stringifyBilingualField(profile.ai_card),
+        now,
+        now,
+      ],
+    });
+  } catch (e) {
+    console.error("ensureCommunityProfileDraft failed:", e);
   }
 }
 

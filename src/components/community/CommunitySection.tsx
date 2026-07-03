@@ -75,6 +75,7 @@ export function CommunitySection({
         onOpenChange={setDialogOpen}
         username={username}
         hasRoast={hasRoast}
+        initialProfile={profile}
       />
     </div>
   );

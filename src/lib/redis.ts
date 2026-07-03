@@ -28,6 +28,8 @@ let roastMinuteLimiter: Ratelimit | null = null;
 let roastDayLimiter: Ratelimit | null = null;
 let verdictMinuteLimiter: Ratelimit | null = null;
 let verdictDayLimiter: Ratelimit | null = null;
+let communityProfileAiMinuteLimiter: Ratelimit | null = null;
+let communityProfileAiDayLimiter: Ratelimit | null = null;
 
 function getRedis(): Redis | null {
   if (redis) return redis;
@@ -435,6 +437,40 @@ export async function checkVerdictRateLimit(ip: string): Promise<{ success: bool
     const [minute, day] = await Promise.all([
       verdictMinuteLimiter.limit(ip),
       verdictDayLimiter.limit(ip),
+    ]);
+    return { success: minute.success && day.success };
+  } catch {
+    return { success: true };
+  }
+}
+
+/** Per-user/IP limiter for AI community-profile drafting. This is owner-only but
+ * still spends operator credit, so keep it much tighter than public reads. */
+export async function checkCommunityProfileAiRateLimit(
+  key: string,
+): Promise<{ success: boolean }> {
+  const r = getRedis();
+  if (!r) return { success: true };
+  if (!communityProfileAiMinuteLimiter) {
+    communityProfileAiMinuteLimiter = new Ratelimit({
+      redis: r,
+      limiter: Ratelimit.slidingWindow(3, "60 s"),
+      prefix: "rl:community-profile-ai:m",
+      analytics: false,
+    });
+  }
+  if (!communityProfileAiDayLimiter) {
+    communityProfileAiDayLimiter = new Ratelimit({
+      redis: r,
+      limiter: Ratelimit.slidingWindow(20, "1 d"),
+      prefix: "rl:community-profile-ai:d",
+      analytics: false,
+    });
+  }
+  try {
+    const [minute, day] = await Promise.all([
+      communityProfileAiMinuteLimiter.limit(key),
+      communityProfileAiDayLimiter.limit(key),
     ]);
     return { success: minute.success && day.success };
   } catch {

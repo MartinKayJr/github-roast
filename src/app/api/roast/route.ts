@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { TIER_EN, TIER_LABEL_EN } from "@/lib/badge";
-import { getArchivedRoast, getRank, recordProfileSnapshot, recordScore, updateRoast } from "@/lib/db";
+import {
+  ensureCommunityProfileDraft,
+  getArchivedRoast,
+  getRank,
+  recordProfileSnapshot,
+  recordScore,
+  updateRoast,
+} from "@/lib/db";
 import { Lang, normLang } from "@/lib/lang";
 import {
   LlmConfig,
@@ -12,6 +19,7 @@ import {
 } from "@/lib/llm";
 import { beatPercent } from "@/lib/percentile";
 import { buildRoastJudgeMessages, buildRoastMessages } from "@/lib/prompt";
+import { buildCommunityProfileDraftFromScan } from "@/lib/community-profile";
 import { reportMatchesLang } from "@/lib/report";
 import { sanitizeIdentityClaims } from "@/lib/identity";
 import {
@@ -237,6 +245,8 @@ function sanitizeScan(scan: ScanResult): ScanResult {
       title: p.title?.slice(0, 200) ?? null,
       files: (p.files ?? []).slice(0, 20).map((f) => f.slice(0, 200)),
     })),
+    pinned_repos: (scan.pinned_repos ?? []).slice(0, 6).map((r) => r.slice(0, 200)),
+    organizations: (scan.organizations ?? []).slice(0, 20).map((o) => o.slice(0, 80)),
     scoring: scan.scoring,
   };
 }
@@ -347,6 +357,13 @@ async function computeMeta(
     // Sediment the raw developer profile (the data moat) alongside the score.
     // Fire-and-forget inside recordProfileSnapshot; never blocks the roast.
     await recordProfileSnapshot(scan);
+    if (scan.metrics.github_id) {
+      await ensureCommunityProfileDraft({
+        github_id: scan.metrics.github_id,
+        login: scan.metrics.username,
+        ...buildCommunityProfileDraftFromScan(scan),
+      });
+    }
   }
   const percentile = await percentileFor(summary.final_score);
   return { ...summary, percentile, tags, roast_line: roastLine };

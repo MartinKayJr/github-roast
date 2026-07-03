@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ScanResult } from "@/lib/types";
 
 const mocks = vi.hoisted(() => ({
+  ensureCommunityProfileDraft: vi.fn(),
   getArchivedRoast: vi.fn(),
   getRank: vi.fn(),
   recordScore: vi.fn(),
@@ -25,6 +26,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/db", () => ({
+  ensureCommunityProfileDraft: mocks.ensureCommunityProfileDraft,
   getArchivedRoast: mocks.getArchivedRoast,
   getRank: mocks.getRank,
   recordScore: mocks.recordScore,
@@ -208,6 +210,7 @@ beforeEach(() => {
   mocks.acquireRoastLock.mockResolvedValue(true);
   mocks.waitForCachedRoast.mockResolvedValue(null);
   mocks.getRank.mockResolvedValue({ rank: 4, below: 5, total: 10 });
+  mocks.ensureCommunityProfileDraft.mockResolvedValue(undefined);
   mocks.recordScore.mockResolvedValue(undefined);
   mocks.recordProfileSnapshot.mockResolvedValue(undefined);
   mocks.updateRoast.mockResolvedValue(undefined);
