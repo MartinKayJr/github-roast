@@ -1,5 +1,6 @@
 import createMiddleware from "next-intl/middleware";
 import { NextResponse, type NextRequest } from "next/server";
+import { AGENT_LINK_HEADER } from "@/lib/agent-docs";
 import { routing } from "@/i18n/routing";
 
 const handleI18n = createMiddleware(routing);
@@ -36,6 +37,20 @@ function ensureCookie(res: NextResponse, locale: string) {
     maxAge: ONE_YEAR,
     sameSite: "lax",
   });
+}
+
+/**
+ * Advertise the machine surfaces (llms.txt, openapi, sitemap, index.md) on every
+ * HTML page, after next-intl's hreflang links. The markdown routes set this
+ * header themselves, so the negotiation rewrite branch must NOT go through here
+ * (it would duplicate the values on /index.md responses).
+ */
+function appendAgentLink(res: NextResponse) {
+  const existing = res.headers.get("Link");
+  res.headers.set(
+    "Link",
+    existing ? `${existing}, ${AGENT_LINK_HEADER}` : AGENT_LINK_HEADER,
+  );
 }
 
 /** Preserve any existing Vary value while adding Accept (markdown negotiation). */
@@ -81,6 +96,7 @@ export default function proxy(req: NextRequest) {
   if (isEnPath) {
     const res = handleI18n(req);
     ensureCookie(res, "en");
+    appendAgentLink(res);
     if (isHome) appendVaryAccept(res);
     return res;
   }
@@ -105,6 +121,7 @@ export default function proxy(req: NextRequest) {
 
   const res = handleI18n(req);
   ensureCookie(res, "zh");
+  appendAgentLink(res);
   if (isHome) appendVaryAccept(res);
   return res;
 }

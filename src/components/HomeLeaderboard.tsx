@@ -4,6 +4,8 @@ import { HomeLeaderboardClient, type HomeLeaderboardLabels } from "./HomeLeaderb
 import type { LeaderboardLabels } from "./LeaderboardClient";
 import { withDevLeaderboardPreview } from "./devLeaderboardPreview";
 
+const HOME_PREVIEW_LIMIT = 50;
+
 export async function HomeLeaderboard({ pageSize = 10 }: { pageSize?: number }) {
   const tHome = await getTranslations("home");
   const tBoard = await getTranslations("leaderboard");
@@ -41,9 +43,12 @@ export async function HomeLeaderboard({ pageSize = 10 }: { pageSize?: number }) 
     getLeaderboardCached("score"),
     getLeaderboardCached("heat"),
   ]);
-  const trendingEntries = trending.entries;
-  const scoreEntries = score.entries;
-  const heatEntries = heat.entries;
+  // Only seed the preview depth: the full 500-entry boards serialize to ~700KB
+  // of RSC payload in the homepage HTML (3×500 entries), drowning the page's
+  // readable text for crawlers. Deeper browsing lives behind the full-board link.
+  const trendingEntries = trending.entries.slice(0, HOME_PREVIEW_LIMIT);
+  const scoreEntries = score.entries.slice(0, HOME_PREVIEW_LIMIT);
+  const heatEntries = heat.entries.slice(0, HOME_PREVIEW_LIMIT);
 
   return (
     <HomeLeaderboardClient

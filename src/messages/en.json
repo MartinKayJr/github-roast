@@ -98,6 +98,9 @@
     "repoBucketHeading": "{value} · contributors",
     "orgBucketHeading": "{value} · members",
     "bucketSubtitle": "Ranked by overall score, showing up to the top {limit}.",
+    "pinRankLine": "<strong>@{username}</strong> ranks <strong>#{rank}</strong> on this board",
+    "pinChallenge": "Challenge @{username}, one spot up",
+    "pinTop": "Top of the board 👑",
     "empty": "No developers in this category yet.",
     "backToDirectory": "← Back to Discover",
     "metaTitle": "Discover developers",
@@ -334,6 +337,7 @@
     "contact": "Contact",
     "privacy": "Privacy",
     "methodology": "Methodology",
+    "docs": "API docs",
     "blog": "Research",
     "source": "Source on GitHub",
     "sectionProduct": "Product",
@@ -371,6 +375,96 @@
         "q": "How do I remove my profile from ghfind?",
         "a": "Only accounts scoring 60+ are indexed and listed. To be removed from the board, use the removal link on the leaderboard footer or open an issue on the GitHub repository, and the profile will be delisted."
       }
+    ]
+  },
+  "homeIntro": {
+    "whatHeading": "What is ghfind?",
+    "whatBody": "ghfind is a developer-scoring and discovery tool for GitHub. It rates any account from 0 to 100 across six weighted dimensions — account maturity, original project quality, contribution quality, ecosystem impact, community influence, and activity authenticity — using a fully deterministic engine (the open-source github-account-value skill, AGPL). The same inputs always produce the same score; no LLM touches the number. On top of the score it adds an optional AI-written roast, developer-vs-developer battles, language and organization leaderboards, and README score badges.",
+    "howHeading": "How ghfind works",
+    "steps": [
+      {
+        "title": "1. Scan the public footprint",
+        "body": "Enter any GitHub username. The engine crawls the account's public data — repositories, pull requests, issues, stars, followers — and builds an evidence snapshot. No login and no permissions are required."
+      },
+      {
+        "title": "2. Score six deterministic dimensions",
+        "body": "The snapshot is scored across account maturity, original project quality, contribution quality, ecosystem impact, community influence, and activity authenticity, with penalties for PR-farming, star inflation, and template-spam patterns."
+      },
+      {
+        "title": "3. Get a score, tier, and roast",
+        "body": "You get a reproducible 0-100 score with a tier from Trash to God, a per-dimension breakdown showing exactly what holds the score down, and — only if you ask for it — a savage AI-written roast."
+      }
+    ],
+    "numbersHeading": "ghfind by the numbers",
+    "numbers": {
+      "accounts": "{count} GitHub accounts scored in the public research dataset",
+      "snapshots": "{count} full evidence snapshots collected and analyzed",
+      "dimensions": "{count} weighted dimensions behind every score",
+      "flagged": "{share} of scored accounts flagged for inauthentic activity"
+    },
+    "tableCaption": "ghfind score vs raw GitHub signals",
+    "tableColSignal": "Signal",
+    "tableColMeasures": "What it measures",
+    "tableColGameable": "Easily inflated?",
+    "tableRows": [
+      {
+        "signal": "GitHub stars",
+        "measures": "A project's popularity, not its author's contribution quality",
+        "gameable": "Yes — star markets and mutual-starring rings are cheap"
+      },
+      {
+        "signal": "Followers",
+        "measures": "Audience size and social reach",
+        "gameable": "Yes — follow-back loops and bought followers"
+      },
+      {
+        "signal": "ghfind score",
+        "measures": "Real contribution value and trust across six weighted dimensions",
+        "gameable": "Hard — inauthentic patterns are detected and penalized"
+      }
+    ]
+  },
+  "docs": {
+    "metaTitle": "ghfind API documentation — REST API, MCP server, SDKs",
+    "metaDescription": "Developer documentation for ghfind: REST endpoints for GitHub account scoring, the ghfind MCP server for AI agents, authentication, official npm and PyPI SDKs, and machine-readable specs (OpenAPI, llms.txt).",
+    "heading": "ghfind API documentation",
+    "lead": "ghfind scores any GitHub account 0-100 for real contribution value and trustworthiness with a deterministic, open-source engine. Everything on the site is also available programmatically: a public REST API, an MCP server for AI agents, and official SDKs. This page documents all of them.",
+    "restHeading": "ghfind REST API",
+    "restIntro": "Base URL: https://ghfind.com. Scoring reads need no authentication. Errors are structured JSON ({error, message, hint}), responses carry RateLimit-* headers, and list endpoints support limit/offset pagination.",
+    "endpoints": [
+      { "sig": "GET /api/score/{username}", "desc": "Deterministic 0-100 score, tier, and six-dimension breakdown. Scores unseen accounts live; no auth, no LLM." },
+      { "sig": "POST /api/scan", "desc": "Full deterministic scan payload: raw metrics, top repositories, recent pull requests, red flags, sub-scores." },
+      { "sig": "POST /api/roast", "desc": "AI-written roast report (the only LLM endpoint; supports bring-your-own key)." },
+      { "sig": "POST /api/vs-verdict", "desc": "Head-to-head verdict for two accounts." },
+      { "sig": "GET /api/leaderboard", "desc": "Ranked developers by trending, score, heat, or progress; paginated via limit/offset." },
+      { "sig": "GET /api/developers", "desc": "Developer directory by language, organization, or contributed repository; paginated." },
+      { "sig": "GET /api/search-users", "desc": "Prefix search across already-scored accounts." },
+      { "sig": "GET /api/stats", "desc": "Platform totals (number of scored accounts)." },
+      { "sig": "GET /api/badge/{username}", "desc": "SVG score badge to embed in a README." }
+    ],
+    "mcpHeading": "ghfind MCP server",
+    "mcpIntro": "A Streamable HTTP Model Context Protocol server lives at https://ghfind.com/mcp (no auth, per-IP rate limited, read-only). Add it to Claude, Cursor, or any MCP client to score and compare GitHub accounts from inside the agent.",
+    "tools": [
+      { "name": "score_user", "desc": "0-100 score, tier, and six-dimension breakdown for any GitHub login." },
+      { "name": "scan_user", "desc": "Full scan payload: metrics, top repos, recent PRs, red flags." },
+      { "name": "compare_users", "desc": "Deterministic head-to-head comparison with winner and score gap." },
+      { "name": "get_leaderboard", "desc": "Ranked public developers for discovery." },
+      { "name": "search_users", "desc": "Prefix search over scored accounts." }
+    ],
+    "authHeading": "Authentication",
+    "authBody": "Read endpoints are public. Write endpoints (POST /api/scan, POST /api/roast) accept a browser Turnstile verification or a Bearer API key. Agents should read the machine walkthrough at /auth.md.",
+    "sdkHeading": "Official SDKs & CLI",
+    "sdks": [
+      { "name": "@hikariming/ghfind (npm)", "desc": "JavaScript / TypeScript SDK and CLI: npm install -g @hikariming/ghfind" },
+      { "name": "ghfind (PyPI)", "desc": "Python SDK: pip install --upgrade ghfind" },
+      { "name": "ghfind CLI", "desc": "ghfind score {username} -o json · ghfind scan · ghfind roast · ghfind leaderboard · ghfind stats" }
+    ],
+    "machineHeading": "Machine-readable surfaces",
+    "machine": [
+      { "label": "/openapi.json", "desc": "OpenAPI 3.1 spec of every public endpoint" },
+      { "label": "/llms.txt", "desc": "Agent-facing guide with markdown links to every surface" },
+      { "label": "/index.md", "desc": "Markdown twin of the homepage (also served on Accept: text/markdown)" },
+      { "label": "/.well-known/agent-card.json", "desc": "A2A agent card, MCP server card, API catalog and skills under /.well-known/" }
     ]
   },
   "about": {

@@ -4,6 +4,7 @@ import { DeveloperCount } from "@/components/DeveloperCount";
 import { HomeLeaderboard } from "@/components/HomeLeaderboard";
 import { Roaster } from "@/components/Roaster";
 import { HomeFaq, getFaqItems } from "@/components/HomeFaq";
+import { HomeIntro } from "@/components/HomeIntro";
 import { JsonLd, faqJsonLd } from "@/components/JsonLd";
 import type { TierKey } from "@/lib/tier";
 
@@ -73,6 +74,8 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
       >
         <HomeLeaderboard pageSize={10} />
       </Suspense>
+
+      <HomeIntro />
 
       <HomeFaq items={faqItems} />
 

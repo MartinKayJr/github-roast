@@ -13,12 +13,11 @@ import { SITE_URL } from "@/lib/site";
 
 /**
  * RFC 8288 Link header advertising the machine surfaces. Set on the markdown/doc
- * route responses we fully control (the homepage HTTP Link header is owned by
- * Next's hreflang metadata and can't be extended). Agents that content-negotiate
- * markdown on `/` are served /index.md, so they receive this.
+ * route responses, and appended by the middleware (src/proxy.ts) to every HTML
+ * page after next-intl's hreflang links.
  */
 export const AGENT_LINK_HEADER = [
-  `<${SITE_URL}/llms.txt>; rel="llms-txt"; type="text/plain"`,
+  `<${SITE_URL}/llms.txt>; rel="llms-txt describedby"; type="text/plain"`,
   `<${SITE_URL}/openapi.json>; rel="service-desc"; type="application/openapi+json"`,
   `<${SITE_URL}/.well-known/api-catalog>; rel="api-catalog"`,
   `<${SITE_URL}/sitemap.xml>; rel="sitemap"; type="application/xml"`,
@@ -82,8 +81,8 @@ Machine-readable spec: [${SITE_URL}/openapi.json](${SITE_URL}/openapi.json) · A
 - \`POST ${SITE_URL}/api/scan\` { "username": "..." } — full deterministic scan payload (metrics + repo/PR signals + red flags).
 - \`POST ${SITE_URL}/api/roast\` — LLM roast report (streaming); pass \`byoKey\` for your own model.
 - \`POST ${SITE_URL}/api/vs-verdict\` { "a": "...", "b": "..." } — head-to-head verdict.
-- \`GET ${SITE_URL}/api/leaderboard?view=trending|score|heat|progress&window=all|24h|7d|30d\`
-- \`GET ${SITE_URL}/api/developers?type=language|org|repo&value={facet}\`
+- \`GET ${SITE_URL}/api/leaderboard?view=trending|score|heat|progress&window=all|24h|7d|30d&limit={1-500}&offset={n}\` — paginated; walk pages via \`nextOffset\`.
+- \`GET ${SITE_URL}/api/developers?type=language|org|repo&value={facet}&limit={1-500}&offset={n}\`
 - \`GET ${SITE_URL}/api/search-users?q={prefix}\` · \`GET ${SITE_URL}/api/stats\`
 
 Errors are JSON: \`{ "error": "<code>", "message": "...", "hint": "..." }\`. Responses carry \`RateLimit-*\` headers; a 429 carries \`Retry-After\`. Write calls accept an \`Idempotency-Key\` header (scans are idempotent per username).`;

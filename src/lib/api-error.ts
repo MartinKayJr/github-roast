@@ -18,7 +18,8 @@ export type ApiErrorCode =
   | "scan_failed"
   | "not_scored"
   | "unauthorized"
-  | "invalid_type";
+  | "invalid_type"
+  | "not_found";
 
 /** Human hints keyed by code — kept in one place so docs and responses agree. */
 const HINTS: Partial<Record<ApiErrorCode, string>> = {
@@ -32,6 +33,7 @@ const HINTS: Partial<Record<ApiErrorCode, string>> = {
   not_scored: "Score the account first (POST /api/scan or GET /api/score/{username}).",
   unauthorized: "Provide a valid Bearer API key.",
   invalid_type: "type must be one of language, org, repo.",
+  not_found: `Unknown API path. See ${SITE_URL}/openapi.json for every available endpoint.`,
 };
 
 const RESOURCE_METADATA = `${SITE_URL}/.well-known/oauth-protected-resource`;
