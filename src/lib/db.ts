@@ -346,6 +346,31 @@ function ensureSchema(db: Client): Promise<void> {
           `CREATE INDEX IF NOT EXISTS idx_vs_matchups_a ON vs_matchups(handle_a, updated_at DESC)`,
           `CREATE INDEX IF NOT EXISTS idx_vs_matchups_b ON vs_matchups(handle_b, updated_at DESC)`,
           `CREATE INDEX IF NOT EXISTS idx_vs_matchups_hot ON vs_matchups(view_count DESC)`,
+          // Community profiles — privacy-first opt-in social layer. Users must
+          // explicitly claim their developer identity and join the community circle.
+          // Stores bilingual user-provided content (working_on, want_to_meet, etc.)
+          // and optional AI-generated community card. Separate from users table to
+          // clearly distinguish auth identity from social profile.
+          `CREATE TABLE IF NOT EXISTS community_profiles (
+             github_id         INTEGER PRIMARY KEY,
+             login             TEXT NOT NULL,
+             status            TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'active', 'inactive')),
+             visibility        TEXT NOT NULL DEFAULT 'public' CHECK(visibility IN ('public', 'private')),
+             working_on        TEXT,
+             want_to_meet      TEXT,
+             contact_method    TEXT,
+             chat_topics       TEXT,
+             no_recommend_for  TEXT,
+             ai_card           TEXT,
+             ai_card_approved  INTEGER NOT NULL DEFAULT 0,
+             joined_at         INTEGER NOT NULL,
+             updated_at        INTEGER NOT NULL,
+             FOREIGN KEY (github_id) REFERENCES users(github_id) ON DELETE CASCADE
+           )`,
+          `CREATE INDEX IF NOT EXISTS idx_community_profiles_status
+             ON community_profiles(status, visibility)`,
+          `CREATE INDEX IF NOT EXISTS idx_community_profiles_login
+             ON community_profiles(login)`,
         ],
         "write",
       );
@@ -1787,6 +1812,188 @@ export async function upsertUser(u: UserUpsert): Promise<void> {
     });
   } catch (e) {
     console.error("upsertUser failed:", e);
+  }
+}
+
+// ============================================================================
+// Community Profiles
+// ============================================================================
+
+export interface CommunityProfile {
+  github_id: number;
+  login: string;
+  status: "pending" | "active" | "inactive";
+  visibility: "public" | "private";
+  working_on: { zh: string; en: string } | null;
+  want_to_meet: { zh: string; en: string } | null;
+  contact_method: { zh: string; en: string } | null;
+  chat_topics: { zh: string; en: string } | null;
+  no_recommend_for: { zh: string; en: string } | null;
+  ai_card: { zh: string; en: string; generated_at?: number } | null;
+  ai_card_approved: boolean;
+  joined_at: number;
+  updated_at: number;
+}
+
+function parseBilingualField(raw: unknown): { zh: string; en: string } | null {
+  if (typeof raw !== "string" || !raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      typeof parsed.zh === "string" &&
+      typeof parsed.en === "string"
+    ) {
+      return { zh: parsed.zh, en: parsed.en };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function parseBilingualCardField(raw: unknown): { zh: string; en: string; generated_at?: number } | null {
+  if (typeof raw !== "string" || !raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      typeof parsed.zh === "string" &&
+      typeof parsed.en === "string"
+    ) {
+      return {
+        zh: parsed.zh,
+        en: parsed.en,
+        generated_at: typeof parsed.generated_at === "number" ? parsed.generated_at : undefined,
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function toCommunityProfile(row: Record<string, unknown>): CommunityProfile {
+  return {
+    github_id: Number(row.github_id),
+    login: String(row.login),
+    status: String(row.status) as "pending" | "active" | "inactive",
+    visibility: String(row.visibility) as "public" | "private",
+    working_on: parseBilingualField(row.working_on),
+    want_to_meet: parseBilingualField(row.want_to_meet),
+    contact_method: parseBilingualField(row.contact_method),
+    chat_topics: parseBilingualField(row.chat_topics),
+    no_recommend_for: parseBilingualField(row.no_recommend_for),
+    ai_card: parseBilingualCardField(row.ai_card),
+    ai_card_approved: Boolean(row.ai_card_approved),
+    joined_at: Number(row.joined_at),
+    updated_at: Number(row.updated_at),
+  };
+}
+
+/**
+ * Get a community profile by GitHub ID.
+ */
+export async function getCommunityProfile(githubId: number): Promise<CommunityProfile | null> {
+  const db = getClient();
+  if (!db) return null;
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT github_id, login, status, visibility, working_on, want_to_meet,
+                   contact_method, chat_topics, no_recommend_for, ai_card,
+                   ai_card_approved, joined_at, updated_at
+            FROM community_profiles
+            WHERE github_id = ?`,
+      args: [githubId],
+    });
+    if (res.rows.length === 0) return null;
+    return toCommunityProfile(res.rows[0] as Record<string, unknown>);
+  } catch (e) {
+    console.error("getCommunityProfile failed:", e);
+    return null;
+  }
+}
+
+/**
+ * Upsert a community profile. Preserves existing fields if not provided.
+ */
+export async function upsertCommunityProfile(
+  profile: Partial<CommunityProfile> & { github_id: number; login: string },
+): Promise<void> {
+  const db = getClient();
+  if (!db) return;
+  try {
+    await ensureSchema(db);
+    const now = Date.now();
+
+    const stringifyBilingual = (val: { zh: string; en: string } | null | undefined): string | null => {
+      return val ? JSON.stringify(val) : null;
+    };
+
+    await db.execute({
+      sql: `INSERT INTO community_profiles
+              (github_id, login, status, visibility, working_on, want_to_meet,
+               contact_method, chat_topics, no_recommend_for, ai_card,
+               ai_card_approved, joined_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(github_id) DO UPDATE SET
+              login            = COALESCE(excluded.login, community_profiles.login),
+              status           = COALESCE(excluded.status, community_profiles.status),
+              visibility       = COALESCE(excluded.visibility, community_profiles.visibility),
+              working_on       = COALESCE(excluded.working_on, community_profiles.working_on),
+              want_to_meet     = COALESCE(excluded.want_to_meet, community_profiles.want_to_meet),
+              contact_method   = COALESCE(excluded.contact_method, community_profiles.contact_method),
+              chat_topics      = COALESCE(excluded.chat_topics, community_profiles.chat_topics),
+              no_recommend_for = COALESCE(excluded.no_recommend_for, community_profiles.no_recommend_for),
+              ai_card          = COALESCE(excluded.ai_card, community_profiles.ai_card),
+              ai_card_approved = COALESCE(excluded.ai_card_approved, community_profiles.ai_card_approved),
+              updated_at       = excluded.updated_at`,
+      args: [
+        profile.github_id,
+        profile.login.toLowerCase(),
+        profile.status ?? "pending",
+        profile.visibility ?? "public",
+        stringifyBilingual(profile.working_on),
+        stringifyBilingual(profile.want_to_meet),
+        stringifyBilingual(profile.contact_method),
+        stringifyBilingual(profile.chat_topics),
+        stringifyBilingual(profile.no_recommend_for),
+        stringifyBilingual(profile.ai_card),
+        profile.ai_card_approved ? 1 : 0,
+        profile.joined_at ?? now,
+        now,
+      ],
+    });
+  } catch (e) {
+    console.error("upsertCommunityProfile failed:", e);
+  }
+}
+
+/**
+ * Update community profile status (active/inactive).
+ */
+export async function updateCommunityStatus(
+  githubId: number,
+  status: "active" | "inactive",
+): Promise<boolean> {
+  const db = getClient();
+  if (!db) return false;
+  try {
+    await ensureSchema(db);
+    const now = Date.now();
+    const res = await db.execute({
+      sql: `UPDATE community_profiles
+            SET status = ?, updated_at = ?
+            WHERE github_id = ?`,
+      args: [status, now, githubId],
+    });
+    return res.rowsAffected > 0;
+  } catch (e) {
+    console.error("updateCommunityStatus failed:", e);
+    return false;
   }
 }
 
