@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth, authConfigured } from "@/lib/auth";
-import { getScoreBrief } from "@/lib/db";
+import { getScoreBrief, getCommunityProfile } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,21 +15,25 @@ export const dynamic = "force-dynamic";
  * CDN, while the navbar fills in the avatar/login state client-side from here.
  *
  * Returns the GitHub handle + avatar when signed in, plus whether the user has a
- * scored profile (drives the "my profile" vs "judge self" link). Always 200 with
- * `{ user: null }` when unconfigured or signed out, so the client logic is simple.
+ * scored profile (drives the "my profile" vs "judge self" link) and whether they
+ * have an active community profile (drives the community menu indicator).
+ * Always 200 with `{ user: null }` when unconfigured or signed out, so the client
+ * logic is simple.
  */
 export async function GET() {
   if (!authConfigured()) {
-    return NextResponse.json({ user: null, scored: false });
+    return NextResponse.json({ user: null, scored: false, hasCommunityProfile: false });
   }
   const session = await auth();
   const user = session?.user;
-  if (!user?.login) {
-    return NextResponse.json({ user: null, scored: false });
+  if (!user?.login || !user?.githubId) {
+    return NextResponse.json({ user: null, scored: false, hasCommunityProfile: false });
   }
   const brief = await getScoreBrief(user.login);
+  const communityProfile = await getCommunityProfile(user.githubId);
   return NextResponse.json({
     user: { login: user.login, image: user.image ?? null },
     scored: Boolean(brief),
+    hasCommunityProfile: communityProfile?.status === "active",
   });
 }
