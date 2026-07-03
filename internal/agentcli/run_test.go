@@ -194,21 +194,20 @@ func TestAuthStatusDoesNotContactServer(t *testing.T) {
 	}
 }
 
-func TestScoreCommandCallsScanAPI(t *testing.T) {
+func TestScoreCommandCallsPublicScoreAPI(t *testing.T) {
 	var calledPath string
+	var method string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calledPath = r.URL.Path
+		method = r.Method
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
-			"metrics":{"username":"DemoDev"},
-			"scoring":{
-				"final_score":68,
-				"tier":"NPC",
-				"tier_label":"普通账号",
-				"sub_scores":{"contribution_quality":20},
-				"red_flags":[]
-			},
-			"cached":false
+			"source":"indexed",
+			"username":"DemoDev",
+			"final_score":68,
+			"tier":"NPC",
+			"tier_key":"npc",
+			"sub_scores":{"contribution_quality":20}
 		}`))
 	}))
 	defer server.Close()
@@ -218,8 +217,9 @@ func TestScoreCommandCallsScanAPI(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("Execute returned %d", code)
 	}
-	if calledPath != "/api/scan" {
-		t.Fatalf("expected /api/scan, got %q", calledPath)
+	// score uses the cheap, cacheable public GET endpoint — NOT POST /api/scan.
+	if calledPath != "/api/score/DemoDev" || method != "GET" {
+		t.Fatalf("expected GET /api/score/DemoDev, got %s %q", method, calledPath)
 	}
 
 	var payload map[string]any
@@ -227,6 +227,56 @@ func TestScoreCommandCallsScanAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	if payload["final_score"] != float64(68) {
-		t.Fatalf("unexpected score summary: %#v", payload)
+		t.Fatalf("unexpected score payload: %#v", payload)
+	}
+}
+
+func TestVsCommandPostsToVerdict(t *testing.T) {
+	var path, method string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path, method = r.URL.Path, r.Method
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"winner":"a","bucket":"blowout","verdict":{"zh":"甲胜","en":"A wins"}}`))
+	}))
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	code := Execute([]string{"vs", "a", "b", "--host", server.URL, "-o", "json"}, &stdout, &bytes.Buffer{})
+	if code != 0 {
+		t.Fatalf("Execute returned %d", code)
+	}
+	if path != "/api/vs-verdict" || method != "POST" {
+		t.Fatalf("expected POST /api/vs-verdict, got %s %q", method, path)
+	}
+}
+
+func TestBadgeMarkdownLinksToProfile(t *testing.T) {
+	var stdout bytes.Buffer
+	code := Execute([]string{"badge", "torvalds", "--markdown", "--host", "https://ghfind.com"}, &stdout, &bytes.Buffer{})
+	if code != 0 {
+		t.Fatalf("Execute returned %d", code)
+	}
+	want := "[![ghfind score](https://ghfind.com/api/badge/torvalds)](https://ghfind.com/u/torvalds)\n"
+	if stdout.String() != want {
+		t.Fatalf("unexpected badge markdown: %q", stdout.String())
+	}
+}
+
+func TestSearchCommandGETs(t *testing.T) {
+	var uri string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		uri = r.URL.RequestURI()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"users":[{"username":"torvalds","final_score":94.6,"tier":"夯"}]}`))
+	}))
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	code := Execute([]string{"search", "torv", "--host", server.URL, "-o", "json"}, &stdout, &bytes.Buffer{})
+	if code != 0 {
+		t.Fatalf("Execute returned %d", code)
+	}
+	if uri != "/api/search-users?q=torv" {
+		t.Fatalf("expected /api/search-users?q=torv, got %q", uri)
 	}
 }

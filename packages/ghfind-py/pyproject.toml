@@ -19,6 +19,9 @@ classifiers = [
 ]
 dependencies = []
 
+[project.scripts]
+ghfind = "ghfind._cli:main"
+
 [project.urls]
 Homepage = "https://ghfind.com"
 Documentation = "https://ghfind.com/openapi.json"

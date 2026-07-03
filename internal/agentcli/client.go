@@ -15,6 +15,7 @@ import (
 
 const roastMetaHeader = "X-Roast-Meta"
 const streamFramePrefix = "\x1f"
+const githubAPI = "https://api.github.com"
 
 type HTTPDoer interface {
 	Do(req *http.Request) (*http.Response, error)
@@ -24,6 +25,7 @@ type Client struct {
 	Host           string
 	APIKey         string
 	TurnstileToken string
+	GitHubToken    string
 	HTTP           HTTPDoer
 }
 
@@ -51,6 +53,7 @@ func NewClient(opts globalOptions) Client {
 		Host:           strings.TrimRight(opts.Host, "/"),
 		APIKey:         opts.APIKey,
 		TurnstileToken: opts.TurnstileToken,
+		GitHubToken:    opts.GitHubToken,
 		HTTP:           &http.Client{Timeout: 180 * time.Second},
 	}
 }
@@ -67,10 +70,65 @@ func (c Client) Scan(ctx context.Context, username string) (map[string]any, erro
 	return result, nil
 }
 
-func (c Client) Roast(ctx context.Context, scan map[string]any, lang string) (RoastResult, error) {
+func (c Client) Scored(ctx context.Context, username string) (map[string]any, error) {
+	return c.getJSON(ctx, "/api/score/"+url.PathEscape(username), nil)
+}
+
+func (c Client) SearchUsers(ctx context.Context, q string) (map[string]any, error) {
+	query := url.Values{}
+	query.Set("q", q)
+	return c.getJSON(ctx, "/api/search-users", query)
+}
+
+func (c Client) Vs(ctx context.Context, a string, b string) (map[string]any, error) {
+	var result map[string]any
+	if err := c.postJSON(ctx, "/api/vs-verdict", map[string]any{"a": a, "b": b}, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// GitHubUser checks a login against GitHub's own public API, on the caller's
+// IP/quota — never touching ghfind. Returns (profile, exists, error). A 404 is
+// exists=false with no error; a rate-limit becomes an APIError so a throttle is
+// never mistaken for "not found".
+func (c Client) GitHubUser(ctx context.Context, username string) (map[string]any, bool, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, githubAPI+"/users/"+url.PathEscape(username), nil)
+	if err != nil {
+		return nil, false, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	if c.GitHubToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.GitHubToken)
+	}
+	res, err := c.http().Do(req)
+	if err != nil {
+		return nil, false, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode == http.StatusNotFound {
+		return nil, false, nil
+	}
+	if res.StatusCode == http.StatusForbidden || res.StatusCode == http.StatusTooManyRequests {
+		return nil, false, APIError{Status: res.StatusCode, Code: "github_rate_limited"}
+	}
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return nil, false, readAPIError(res)
+	}
+	var user map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&user); err != nil {
+		return nil, false, err
+	}
+	return user, true, nil
+}
+
+func (c Client) Roast(ctx context.Context, scan map[string]any, lang string, byoKey map[string]string) (RoastResult, error) {
 	body := map[string]any{
 		"scan": scan,
 		"lang": lang,
+	}
+	if byoKey != nil {
+		body["byoKey"] = byoKey
 	}
 	reqBody, err := json.Marshal(body)
 	if err != nil {
