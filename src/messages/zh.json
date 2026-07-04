@@ -122,7 +122,7 @@
     "recentCommits": "提交（7天）",
     "lastActive": "最近活跃",
     "allTab": "全部",
-    "timelineTitle": "成长轨迹图 — 节点位置对应最新快照分数",
+    "timelineTitle": "成长分布图 — 头像位置对应贡献日期和当前分数",
     "timelineEmpty": "暂无足够成长轨迹数据 — 扫描账号后即可出现在这里。",
     "tooltipBand": "等级",
     "tooltipGrowth": "成长分",

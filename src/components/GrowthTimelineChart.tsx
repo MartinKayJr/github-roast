@@ -70,28 +70,6 @@ function startOfDayTs(ts: number): number {
   return date.getTime();
 }
 
-/** Ring/text tailwind class → a concrete stroke color for SVG polylines. */
-function bandStroke(band: string): string {
-  switch (band) {
-    case "S+":
-      return "rgba(252,211,77,0.55)";
-    case "S":
-      return "rgba(253,224,71,0.5)";
-    case "A+":
-      return "rgba(196,181,253,0.5)";
-    case "A":
-      return "rgba(165,180,252,0.5)";
-    case "B+":
-      return "rgba(110,231,183,0.5)";
-    case "B":
-      return "rgba(94,234,212,0.5)";
-    case "C+":
-      return "rgba(125,211,252,0.45)";
-    default:
-      return "rgba(203,213,225,0.4)";
-  }
-}
-
 export function GrowthTimelineChart({
   points,
   labels,
@@ -282,27 +260,6 @@ export function GrowthTimelineChart({
           stroke="rgba(255,255,255,0.12)"
           strokeWidth={1}
         />
-
-        {/* Trajectory polylines (one per user, drawn behind avatars) */}
-        {points.map((p) => {
-          if (p.steps.length < 2) return null;
-          const pts = p.steps
-            .map((s) => `${xForTime(s.t)},${yForScore(s.score)}`)
-            .join(" ");
-          const dimmed = focusedNode !== null && focusedNode !== p.username;
-          return (
-            <polyline
-              key={`line-${p.username}`}
-              points={pts}
-              fill="none"
-              stroke={bandStroke(p.band)}
-              strokeWidth={focusedNode === p.username ? 2.5 : 1.25}
-              strokeLinejoin="round"
-              strokeLinecap="round"
-              opacity={dimmed ? 0.15 : 1}
-            />
-          );
-        })}
 
         {/* Nodes: every growth entry is rendered as its own avatar. */}
         {renderNodes.map((n) => {

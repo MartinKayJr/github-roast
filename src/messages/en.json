@@ -122,7 +122,7 @@
     "recentCommits": "commits (7d)",
     "lastActive": "active",
     "allTab": "All",
-    "timelineTitle": "Growth timeline — avatar positions show latest snapshot score",
+    "timelineTitle": "Growth distribution — avatars show contribution date and current score",
     "timelineEmpty": "Not enough growth data yet — scan an account to appear here.",
     "tooltipBand": "Band",
     "tooltipGrowth": "Growth",
