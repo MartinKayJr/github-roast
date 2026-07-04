@@ -9,8 +9,11 @@
 export const USERNAME_RE = /^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$/;
 
 /** Extract a bare handle from a raw username, `@handle`, or profile URL.
- * Returns the normalized handle, or `null` if it isn't a valid GitHub login. */
-export function normalizeUsername(input: string): string | null {
+ * Returns the normalized handle, or `null` if it isn't a valid GitHub login.
+ * Accepts `unknown` so routes can pass JSON body fields straight through —
+ * scripted clients send numbers/objects here, which must be a 400, not a 500. */
+export function normalizeUsername(input: unknown): string | null {
+  if (typeof input !== "string") return null;
   let s = input.trim();
   const m = s.match(/github\.com\/([^/?#]+)/i);
   if (m) s = m[1];

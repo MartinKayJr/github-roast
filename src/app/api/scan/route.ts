@@ -21,10 +21,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 interface ScanBody {
-  username?: string;
-  turnstileToken?: string;
-  circleEmail?: string;
-  circleConsent?: boolean;
+  username?: unknown;
+  turnstileToken?: unknown;
+  circleEmail?: unknown;
+  circleConsent?: unknown;
 }
 
 function clientIp(req: NextRequest): string {
@@ -93,17 +93,23 @@ export async function POST(req: NextRequest) {
     return apiError("invalid_body", { status: 400, headers: idem });
   }
 
-  const username = normalizeUsername(body.username ?? "");
+  const username = normalizeUsername(body.username);
   if (!username) {
     return apiError("invalid_username", { status: 400, headers: idem });
   }
-  if (body.circleEmail && !body.circleConsent) {
+  const circleEmail =
+    typeof body.circleEmail === "string" ? body.circleEmail : undefined;
+  const circleConsent = body.circleConsent === true;
+  if (body.circleEmail !== undefined && typeof body.circleEmail !== "string") {
+    return NextResponse.json({ error: "invalid_email" }, { status: 400, headers: idem });
+  }
+  if (circleEmail && !circleConsent) {
     return NextResponse.json(
       { error: "circle_consent_required" },
       { status: 400, headers: idem },
     );
   }
-  if (body.circleConsent && (!body.circleEmail || !isValidCircleEmail(body.circleEmail))) {
+  if (circleConsent && (!circleEmail || !isValidCircleEmail(circleEmail))) {
     return NextResponse.json({ error: "invalid_email" }, { status: 400, headers: idem });
   }
 
@@ -116,10 +122,21 @@ export async function POST(req: NextRequest) {
     return apiError("unauthorized", { status: 401, headers: idem });
   }
   if (auth === "absent") {
-    const human = await verifyTurnstile(body.turnstileToken ?? null, ip);
+    const token = typeof body.turnstileToken === "string" ? body.turnstileToken : null;
+    const human = await verifyTurnstile(token, ip);
     if (!human) {
       return apiError("turnstile_failed", { status: 403, headers: idem });
     }
+  }
+
+  // Rate-limit BEFORE the cache lookup. The cached path used to skip the
+  // limiter as "cheap", but it still recorded a lookup per request — a bot
+  // burst replaying cached usernames bypassed the limiter entirely and
+  // exhausted Turso's connection pool (2026-07 incident).
+  const limit = await checkRateLimit(ip);
+  const rlHeaders = rateLimitHeaders(limit);
+  if (!limit.success) {
+    return apiError("rate_limited", { status: 429, headers: { ...idem, ...rlHeaders } });
   }
 
   // Cache hit short-circuits both GitHub and (later) the LLM. The leaderboard
@@ -130,17 +147,14 @@ export async function POST(req: NextRequest) {
     await recordSuccessfulLookup(cached.metrics.username, ip);
     const optInError = await handleCircleEmailOptIn(
       cached,
-      body.circleEmail,
-      body.circleConsent,
+      circleEmail,
+      circleConsent,
     );
     if (optInError) return optInError;
-    return NextResponse.json({ ...cached, cached: true }, { headers: idem });
-  }
-
-  const limit = await checkRateLimit(ip);
-  const rlHeaders = rateLimitHeaders(limit);
-  if (!limit.success) {
-    return apiError("rate_limited", { status: 429, headers: { ...idem, ...rlHeaders } });
+    return NextResponse.json(
+      { ...cached, cached: true },
+      { headers: { ...idem, ...rlHeaders } },
+    );
   }
 
   try {
@@ -148,8 +162,8 @@ export async function POST(req: NextRequest) {
     await recordSuccessfulLookup(result.metrics.username, ip);
     const optInError = await handleCircleEmailOptIn(
       result,
-      body.circleEmail,
-      body.circleConsent,
+      circleEmail,
+      circleConsent,
     );
     if (optInError) return optInError;
     return NextResponse.json(

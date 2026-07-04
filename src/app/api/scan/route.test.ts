@@ -136,4 +136,42 @@ describe("scan route machine auth", () => {
     expect(mocks.verifyTurnstile).not.toHaveBeenCalled();
     expect(mocks.collect).toHaveBeenCalledWith("DemoDev");
   });
+
+  it("rejects a non-string username with a 400 instead of crashing", async () => {
+    const response = await POST(
+      new NextRequest("https://example.test/api/scan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: 12345 }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe("invalid_username");
+  });
+
+  it("rate-limits before the cache lookup so cached hits can't bypass the limiter", async () => {
+    mocks.checkRateLimit.mockResolvedValue({ success: false, limit: 10, remaining: 0, reset: Date.now() + 60_000 });
+    mocks.rateLimitHeaders.mockReturnValue({ "Retry-After": "60" });
+    mocks.getCachedScan.mockResolvedValue({ metrics, scoring });
+
+    const response = await POST(request({ auth: "Bearer cli-secret" }));
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("60");
+    expect(mocks.getCachedScan).not.toHaveBeenCalled();
+    expect(mocks.recordAccountLookup).not.toHaveBeenCalled();
+  });
+
+  it("serves cache hits with RateLimit headers once the limiter passes", async () => {
+    mocks.rateLimitHeaders.mockReturnValue({ "RateLimit-Remaining": "9" });
+    mocks.getCachedScan.mockResolvedValue({ metrics, scoring });
+
+    const response = await POST(request({ auth: "Bearer cli-secret" }));
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).cached).toBe(true);
+    expect(response.headers.get("RateLimit-Remaining")).toBe("9");
+    expect(mocks.collect).not.toHaveBeenCalled();
+  });
 });

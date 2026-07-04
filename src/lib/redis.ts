@@ -123,6 +123,36 @@ export async function coalesceScan(
   return producer(); // fallback: produce ourselves rather than starve.
 }
 
+/**
+ * Best-effort NX gate in front of the Turso heat-lookup transaction. Heat
+ * counts once per (username, ip) per window, so replays within the window can
+ * be answered by one cheap Redis call instead of opening a Turso write
+ * transaction each time — a bot burst replaying the same handles exhausted the
+ * connection pool (2026-07 incident). Returns true when the caller should
+ * proceed to the Turso gate: first sight of the pair, Redis unconfigured, or
+ * Redis erroring — Turso stays the source of truth.
+ */
+export async function tryAcquireLookupGate(
+  key: string,
+  windowSeconds: number,
+): Promise<boolean> {
+  const r = getRedis();
+  if (!r) return true;
+  try {
+    return (await r.set(key, "1", { nx: true, ex: windowSeconds })) === "OK";
+  } catch {
+    return true;
+  }
+}
+
+/** Release a lookup gate acquired by tryAcquireLookupGate, so a failed Turso
+ *  write doesn't suppress the count for a whole window. Best-effort. */
+export async function releaseLookupGate(key: string): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await r.del(key).catch(() => {});
+}
+
 /** Rate-limit outcome. `limit`/`remaining`/`reset` are present when Redis is
  *  configured (reset is epoch ms) so callers can emit RFC RateLimit headers. */
 export interface RateLimitResult {

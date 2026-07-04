@@ -34,7 +34,9 @@ import { VS_MIN_SCORE } from "./site";
 import {
   clearCachedReactionCounts,
   getCachedReactionCounts,
+  releaseLookupGate,
   setCachedReactionCounts,
+  tryAcquireLookupGate,
 } from "./redis";
 import type { Lang } from "./lang";
 import { rankSimilar } from "./similarity";
@@ -526,10 +528,21 @@ export interface GrowthLeaderboardEntry {
 export async function recordAccountLookup(username: string, ip: string): Promise<boolean> {
   const db = getClient();
   if (!db) return false;
+  const normalizedUsername = username.toLowerCase();
+  const ipHash = heatIpHash(ip);
+  // Redis shield in front of the Turso write transaction: repeats of the same
+  // (username, ip) inside the window are answered by one Redis call instead of
+  // holding a Turso connection. Turso's own gate below stays the source of
+  // truth (covers Redis-unconfigured/flushed cases); the Redis key is kept even
+  // when Turso declines, which can delay a re-count by up to one extra window
+  // after a Redis flush — fine for a best-effort heat counter.
+  const gateKey = `heat:gate:${normalizedUsername}:${ipHash}`;
+  if (!(await tryAcquireLookupGate(gateKey, HEAT_LOOKUP_WINDOW_MS / 1000))) {
+    return false;
+  }
   try {
     await ensureSchema(db);
     const now = Date.now();
-    const normalizedUsername = username.toLowerCase();
     const tx = await db.transaction("write");
     try {
       const gate = await tx.execute({
@@ -541,7 +554,7 @@ export async function recordAccountLookup(username: string, ip: string): Promise
               RETURNING last_counted_at`,
         args: [
           normalizedUsername,
-          heatIpHash(ip),
+          ipHash,
           now,
           now - HEAT_LOOKUP_WINDOW_MS,
         ],
@@ -565,6 +578,9 @@ export async function recordAccountLookup(username: string, ip: string): Promise
       throw e;
     }
   } catch (e) {
+    // Give the count back: a failed Turso write must not suppress this pair's
+    // heat for a whole window.
+    await releaseLookupGate(gateKey);
     console.error("recordAccountLookup failed:", e);
     return false;
   }
