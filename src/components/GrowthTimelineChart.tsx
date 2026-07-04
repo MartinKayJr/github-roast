@@ -208,7 +208,8 @@ export function GrowthTimelineChart({
                 y1={y}
                 x2={PAD.left + PLOT_W}
                 y2={y}
-                stroke="rgba(255,255,255,0.05)"
+                stroke="var(--border-soft)"
+                opacity={0.7}
                 strokeWidth={1}
               />
               <text
@@ -216,7 +217,7 @@ export function GrowthTimelineChart({
                 y={y + 3}
                 textAnchor="end"
                 fontSize={10}
-                fill="rgba(255,255,255,0.4)"
+                fill="var(--muted-foreground)"
                 className="tabular-nums"
               >
                 {score}
@@ -235,7 +236,7 @@ export function GrowthTimelineChart({
                 y1={PAD.top + PLOT_H}
                 x2={x}
                 y2={PAD.top + PLOT_H + 4}
-                stroke="rgba(255,255,255,0.15)"
+                stroke="var(--border)"
                 strokeWidth={1}
               />
               <text
@@ -243,7 +244,7 @@ export function GrowthTimelineChart({
                 y={PAD.top + PLOT_H + 16}
                 textAnchor="middle"
                 fontSize={10}
-                fill="rgba(255,255,255,0.35)"
+                fill="var(--muted-foreground)"
               >
                 {formatDate(ts)}
               </text>
@@ -257,7 +258,7 @@ export function GrowthTimelineChart({
           y1={PAD.top + PLOT_H}
           x2={PAD.left + PLOT_W}
           y2={PAD.top + PLOT_H}
-          stroke="rgba(255,255,255,0.12)"
+          stroke="var(--border)"
           strokeWidth={1}
         />
 
