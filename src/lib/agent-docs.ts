@@ -26,11 +26,11 @@ export const AGENT_LINK_HEADER = [
 
 /** The canonical one-sentence definition. Reused verbatim everywhere. */
 export const PRODUCT_ONELINER =
-  "ghfind scores any GitHub account 0-100 for real contribution value and trustworthiness with a deterministic, open-source engine — plus a savage one-line roast, head-to-head battles, and a ranked developer directory.";
+  "ghsphere scores any GitHub account 0-100 for real contribution value and trustworthiness with a deterministic, open-source engine — plus a savage one-line roast, head-to-head battles, and a ranked developer directory.";
 
 /** A tight definitional paragraph (the passage LLMs lift into "what is X" answers). */
 export const PRODUCT_DESCRIPTION =
-  "ghfind is a developer-scoring and discovery tool for GitHub. It rates any account from 0 to 100 across six weighted dimensions — account maturity, original project quality, contribution quality, ecosystem impact, community influence, and activity authenticity — using a fully deterministic engine (the open-source github-account-value skill, AGPL). The same inputs always produce the same score; no LLM touches the number. On top of the score it adds an optional AI-written roast, developer-vs-developer battles, language/org/project leaderboards, and README score badges.";
+  "ghsphere is a developer-scoring and discovery tool for GitHub. It rates any account from 0 to 100 across six weighted dimensions — account maturity, original project quality, contribution quality, ecosystem impact, community influence, and activity authenticity — using a fully deterministic engine (the open-source github-account-value skill, AGPL). The same inputs always produce the same score; no LLM touches the number. On top of the score it adds an optional AI-written roast, developer-vs-developer battles, language/org/project leaderboards, and README score badges.";
 
 /**
  * Named statistics from the public research dataset. Specific numbers are what
@@ -101,9 +101,9 @@ Tools: \`score_user\`, \`scan_user\`, \`compare_users\`, \`get_leaderboard\`, \`
 export function toolingMd(): string {
   return `## Official SDKs & CLI
 
-- JavaScript / TypeScript (npm): [\`@hikariming/ghfind\`](https://www.npmjs.com/package/@hikariming/ghfind) — \`npm install -g @hikariming/ghfind\`
-- Python (PyPI): [\`ghfind\`](https://pypi.org/project/ghfind/) — \`pip install --upgrade ghfind\`
+- ghsphere JavaScript / TypeScript SDK (npm package [\`@hikariming/ghfind\`](https://www.npmjs.com/package/@hikariming/ghfind)) — \`npm install -g @hikariming/ghfind\`
+- ghsphere Python SDK (PyPI package [\`ghfind\`](https://pypi.org/project/ghfind/)) — \`pip install --upgrade ghfind\`
 - CLI: \`ghfind score {username} -o json\` · \`ghfind scan {username} -o json\` · \`ghfind roast {username} --lang zh|en\` · \`ghfind leaderboard\` · \`ghfind developers\` · \`ghfind stats\`
 
-Scoring is deterministic and never calls an LLM. Roast/vs prose is the only LLM part and supports bring-your-own key. Source: [github.com/hikariming/ghfind](https://github.com/hikariming/ghfind).`;
+Scoring is deterministic and never calls an LLM. Roast/vs prose is the only LLM part and supports bring-your-own key. Source: [github.com/MartinKayJr/github-roast](https://github.com/MartinKayJr/github-roast).`;
 }

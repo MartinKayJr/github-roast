@@ -4,17 +4,17 @@ export const dynamic = "force-static";
 export const revalidate = 86400;
 
 /**
- * /auth.md — how an agent authenticates to ghfind, in the WorkOS auth.md prose
+ * /auth.md — how an agent authenticates to ghsphere, in the WorkOS auth.md prose
  * shape (Discover / Pick a method / Register / Claim / Use / Errors / Revocation).
- * Honest by design: ghfind's read surface is public and unauthenticated; the only
+ * Honest by design: ghsphere's read surface is public and unauthenticated; the only
  * credential is an optional machine API key for higher scan limits. We do NOT run
  * an OAuth authorization server, so we don't advertise register/claim/revocation
  * endpoints that would 404 under probing. Spec ref: https://workos.com/auth-md
  */
 export function buildAuthMd(): string {
-  return `# Authenticating to ghfind
+  return `# Authenticating to ghsphere
 
-Most of ghfind is a **public, read-only, deterministic API** — no credential is
+Most of ghsphere is a **public, read-only, deterministic API** — no credential is
 required to score accounts, scan, compare, or read leaderboards. Authentication
 exists only to raise rate limits for trusted machine callers.
 
@@ -37,13 +37,13 @@ header, so an agent learns the requirement from one request.
 | Roast with your own model | No account needed — pass \`byoKey\` in the request body. |
 
 There is **no OAuth flow, no \`agent_auth\` dynamic registration, and no
-\`identity_assertion\` / \`id-jag\` token exchange** — ghfind does not host an
+\`identity_assertion\` / \`id-jag\` token exchange** — ghsphere does not host an
 authorization server. A single static Bearer key is the only credential.
 
 ## Register
 
 The Bearer API key is issued out-of-band by the operator (open an issue at
-[github.com/hikariming/ghfind/issues](https://github.com/hikariming/ghfind/issues)).
+[github.com/MartinKayJr/github-roast/issues](https://github.com/MartinKayJr/github-roast/issues)).
 Anonymous access needs no registration and is the intended path for most agents.
 
 ## Claim

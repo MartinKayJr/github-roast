@@ -5,7 +5,7 @@ export const revalidate = 86400;
 
 /**
  * Agent Skills index (/.well-known/agent-skills/index.json). A flat catalog of
- * the capabilities ghfind exposes, each with a name + description so an agent can
+ * the capabilities ghsphere exposes, each with a name + description so an agent can
  * find and parse what the product offers. Points at the concrete surfaces (MCP
  * tools, REST endpoints) that back each skill.
  */
@@ -41,7 +41,7 @@ export function GET() {
   ];
   return Response.json(
     {
-      name: "ghfind",
+      name: "ghsphere",
       description:
         "GitHub developer value & trust scoring and discovery. Agent skills for scoring, scanning, comparing, and finding developers.",
       url: SITE_URL,

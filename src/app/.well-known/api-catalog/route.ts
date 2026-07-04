@@ -14,7 +14,7 @@ export function GET() {
       {
         anchor: SITE_URL,
         "service-desc": [
-          { href: `${SITE_URL}/openapi.json`, type: "application/openapi+json", title: "ghfind OpenAPI 3.1 spec" },
+          { href: `${SITE_URL}/openapi.json`, type: "application/openapi+json", title: "ghsphere OpenAPI 3.1 spec" },
         ],
         "service-doc": [
           { href: `${SITE_URL}/llms.txt`, type: "text/plain", title: "llms.txt agent index" },

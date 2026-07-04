@@ -28,7 +28,7 @@ export async function generateMetadata({
   const og = `/api/og/blog/${slug}`;
   const url = locale === "en" ? `/en/blog/${slug}` : `/blog/${slug}`;
   return {
-    title: `${post.title} · ghfind`,
+    title: `${post.title} · ghsphere`,
     description: post.description,
     alternates: {
       ...postAlternates(locale, slug, post.availableLocales),

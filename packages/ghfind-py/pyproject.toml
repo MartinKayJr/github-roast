@@ -5,11 +5,11 @@ build-backend = "hatchling.build"
 [project]
 name = "ghfind"
 version = "0.1.0"
-description = "Official SDK for ghfind.com — score any GitHub account 0-100 for value & trustworthiness (deterministic, no LLM), plus roasts, battles, leaderboards, and developer discovery."
+description = "Official SDK for ghsphere.com — score any GitHub account 0-100 for value & trustworthiness (deterministic, no LLM), plus roasts, battles, leaderboards, and developer discovery."
 readme = "README.md"
 requires-python = ">=3.8"
 license = "AGPL-3.0-or-later"
-authors = [{ name = "ghfind" }]
+authors = [{ name = "ghsphere" }]
 keywords = ["github", "developer-score", "trust-score", "contribution", "leaderboard", "agent", "mcp", "ai", "ghfind"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -23,10 +23,10 @@ dependencies = []
 ghfind = "ghfind._cli:main"
 
 [project.urls]
-Homepage = "https://ghfind.com"
-Documentation = "https://ghfind.com/openapi.json"
-Repository = "https://github.com/hikariming/ghfind"
-Issues = "https://github.com/hikariming/ghfind/issues"
+Homepage = "https://ghsphere.com"
+Documentation = "https://ghsphere.com/openapi.json"
+Repository = "https://github.com/MartinKayJr/github-roast"
+Issues = "https://github.com/MartinKayJr/github-roast/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]

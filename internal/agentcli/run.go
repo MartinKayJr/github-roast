@@ -393,7 +393,7 @@ func runScan(args []string, opts globalOptions, stdout io.Writer, stderr io.Writ
 // runScore uses the public GET /api/score endpoint: no auth, cached, rate-limited
 // and single-flighted on the server, and it scores never-seen accounts live
 // (deterministic, no LLM). This is the cheapest path for both the user and the
-// ghfind server — the heavy POST /api/scan is reserved for the `scan` command.
+// ghsphere server — the heavy POST /api/scan is reserved for the `scan` command.
 func runScore(args []string, opts globalOptions, stdout io.Writer, stderr io.Writer) int {
 	username, err := usernameArg(args)
 	if err != nil {
@@ -625,7 +625,7 @@ func runAuthStatus(opts globalOptions, stdout io.Writer) int {
 func printHelp(stdout io.Writer) {
 	fmt.Fprintln(stdout, "ghfind CLI")
 	fmt.Fprintln(stdout)
-	fmt.Fprintln(stdout, "Remote CLI for the ghfind.com GitHub Roast website APIs.")
+	fmt.Fprintln(stdout, "Remote CLI for the ghsphere.com GitHub Roast website APIs.")
 	fmt.Fprintln(stdout)
 	fmt.Fprintln(stdout, "Commands:")
 	for _, cmd := range commandCatalog {

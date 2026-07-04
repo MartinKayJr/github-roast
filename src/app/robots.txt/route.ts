@@ -8,7 +8,7 @@ export const revalidate = 86400;
  * Content-Signal, schemamap, and per-agent tiers that the metadata API can't.
  *
  * Policy (operator decision): "block training, keep retrieval". We welcome the
- * search/answer crawlers so ghfind stays citable in ChatGPT / Claude / Perplexity
+ * search/answer crawlers so ghsphere stays citable in ChatGPT / Claude / Perplexity
  * live answers, but we opt OUT of bulk model-training crawls — vendors split
  * these into separate user agents, so blocking the training bots costs us almost
  * no live-citation reach while retaining leverage over our data/methodology.

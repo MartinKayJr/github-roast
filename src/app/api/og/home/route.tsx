@@ -27,7 +27,7 @@ export async function GET() {
       >
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <div style={{ width: 16, height: 16, borderRadius: 8, background: "#ea580c" }} />
-          <div style={{ fontSize: 30, fontWeight: 800, color: "#fafafa" }}>ghfind</div>
+          <div style={{ fontSize: 30, fontWeight: 800, color: "#fafafa" }}>ghsphere</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column" }}>
           <div
@@ -55,7 +55,7 @@ export async function GET() {
           }}
         >
           <div style={{ fontSize: 26, color: "#71717a" }}>Open-source scoring engine</div>
-          <div style={{ fontSize: 26, color: "#ea580c" }}>ghfind.com</div>
+          <div style={{ fontSize: 26, color: "#ea580c" }}>ghsphere.com</div>
         </div>
       </div>
     ),

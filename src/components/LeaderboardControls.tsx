@@ -2,7 +2,6 @@ import { Link } from "@/i18n/navigation";
 import type { LeaderboardWindow } from "@/lib/leaderboardWindow";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import type { LeaderboardView } from "./LeaderboardClient";
 
 type LeaderboardControlItem<T extends string> = {
   key: T;
@@ -13,8 +12,8 @@ type LeaderboardControlItem<T extends string> = {
 };
 
 type LeaderboardControlsProps = {
-  viewItems: LeaderboardControlItem<LeaderboardView>[];
-  windowItems: LeaderboardControlItem<LeaderboardWindow>[];
+  viewItems: LeaderboardControlItem<string>[];
+  windowItems?: LeaderboardControlItem<LeaderboardWindow>[];
   windowAriaLabel: string;
   action?: React.ReactNode;
   frame?: "flat" | "panel";
@@ -92,22 +91,24 @@ export function LeaderboardControls({
         ) : null}
       </div>
 
-      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        {action ? (
-          <div className="sm:hidden">
-            <div className="h-px bg-white/10" />
+      {windowItems && windowItems.length > 0 ? (
+        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          {action ? (
+            <div className="sm:hidden">
+              <div className="h-px bg-white/10" />
+            </div>
+          ) : null}
+          <div
+            role="group"
+            aria-label={windowAriaLabel}
+            className="flex w-full flex-wrap items-center gap-2"
+          >
+            {windowItems.map((item) => (
+              <LeaderboardControlChip key={item.key} item={item} size="window" />
+            ))}
           </div>
-        ) : null}
-        <div
-          role="group"
-          aria-label={windowAriaLabel}
-          className="flex w-full flex-wrap items-center gap-2"
-        >
-          {windowItems.map((item) => (
-            <LeaderboardControlChip key={item.key} item={item} size="window" />
-          ))}
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }

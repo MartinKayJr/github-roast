@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Leaderboard } from "@/components/Leaderboard";
 import { LeaderboardControls } from "@/components/LeaderboardControls";
+import { HomeGrowthLeaderboard } from "@/components/HomeGrowthLeaderboard";
 import { JsonLd, leaderboardJsonLd } from "@/components/JsonLd";
 import { localeAlternates } from "@/lib/site";
 import { getLeaderboardCached } from "@/lib/leaderboard";
@@ -10,6 +11,8 @@ import {
   type LeaderboardWindow,
 } from "@/lib/leaderboardWindow";
 import { type LeaderboardView } from "@/components/LeaderboardClient";
+
+type BoardView = "growth" | LeaderboardView;
 
 const WINDOW_LABEL_KEY: Record<LeaderboardWindow, string> = {
   "24h": "window24h",
@@ -21,7 +24,7 @@ const WINDOW_LABEL_KEY: Record<LeaderboardWindow, string> = {
 export const dynamic = "force-dynamic";
 
 const REMOVAL_ISSUE_URL =
-  "https://github.com/hikariming/ghfind/issues/new?title=%E7%94%B3%E8%AF%B7%E4%B8%8B%E6%A6%9C&body=%E8%AF%B7%E5%A1%AB%E5%86%99%E4%BD%A0%E7%9A%84%20GitHub%20%E7%94%A8%E6%88%B7%E5%90%8D%EF%BC%9A";
+  "https://github.com/MartinKayJr/github-roast/issues/new?title=%E7%94%B3%E8%AF%B7%E4%B8%8B%E6%A6%9C&body=%E8%AF%B7%E5%A1%AB%E5%86%99%E4%BD%A0%E7%9A%84%20GitHub%20%E7%94%A8%E6%88%B7%E5%90%8D%EF%BC%9A";
 
 export async function generateMetadata({
   params,
@@ -46,12 +49,14 @@ export default async function LeaderboardPage({
 }) {
   const { locale } = await params;
   const query = await searchParams;
-  const view: LeaderboardView =
-    query?.view === "score"
+  const view: BoardView =
+    query?.view === "trending"
+      ? "trending"
+      : query?.view === "score"
       ? "score"
       : query?.view === "heat"
         ? "heat"
-        : "trending";
+        : "growth";
   const timeWindow: LeaderboardWindow =
     query?.window === "24h"
       ? "24h"
@@ -59,32 +64,47 @@ export default async function LeaderboardPage({
         ? "7d"
         : query?.window === "30d"
           ? "30d"
-          : "all";
-  // Clean URLs: omit the default view/window. Both selectors preserve the other.
-  const boardHref = (nextView: LeaderboardView, nextWindow: LeaderboardWindow) => {
+          : view === "growth"
+            ? "30d"
+            : "all";
+  // Clean URLs: omit the default growth view. Both selectors preserve the other.
+  const boardHref = (nextView: BoardView, nextWindow: LeaderboardWindow) => {
     const search = new URLSearchParams();
-    if (nextView !== "trending") search.set("view", nextView);
-    if (nextWindow !== "all") search.set("window", nextWindow);
+    if (nextView !== "growth") search.set("view", nextView);
+    const defaultWindow = nextView === "growth" ? "30d" : "all";
+    if (nextWindow !== defaultWindow) search.set("window", nextWindow);
     const qs = search.toString();
     return qs ? `/leaderboard?${qs}` : "/leaderboard";
   };
   setRequestLocale(locale);
   const t = await getTranslations("leaderboard");
+  const tGrowth = await getTranslations("growth");
   const viewTitle =
-    view === "score"
+    view === "growth"
+      ? tGrowth("heading")
+      : view === "score"
       ? t("scoreView")
       : view === "heat"
         ? t("heatView")
         : t("trendView");
   const subtitle =
-    view === "score"
+    view === "growth"
+      ? tGrowth("subtitle")
+      : view === "score"
       ? t("scoreSubtitle")
       : view === "heat"
         ? t("heatSubtitle")
         : t("trendSubtitle");
-  const viewItems = (["trending", "score", "heat"] as const).map((tab) => ({
+  const viewItems = (["growth", "trending", "score", "heat"] as const).map((tab) => ({
     key: tab,
-    label: tab === "trending" ? t("trendView") : tab === "score" ? t("scoreView") : t("heatView"),
+    label:
+      tab === "growth"
+        ? tGrowth("heading")
+        : tab === "trending"
+          ? t("trendView")
+          : tab === "score"
+            ? t("scoreView")
+            : t("heatView"),
     active: view === tab,
     href: boardHref(tab, timeWindow),
   }));
@@ -129,13 +149,17 @@ export default async function LeaderboardPage({
         <LeaderboardControls
           className="mt-5"
           viewItems={viewItems}
-          windowItems={windowItems}
+          windowItems={view === "growth" ? [] : windowItems}
           windowAriaLabel={t("windowAria")}
         />
         <p className="mt-2 text-zinc-400">{subtitle}</p>
       </header>
 
-      <Leaderboard pageSize={20} initialView={view} timeWindow={timeWindow} />
+      {view === "growth" ? (
+        <HomeGrowthLeaderboard />
+      ) : (
+        <Leaderboard pageSize={20} initialView={view} timeWindow={timeWindow} />
+      )}
 
       <footer className="mt-12 text-center text-xs leading-relaxed text-zinc-600">
         {t.rich("footerNote", {

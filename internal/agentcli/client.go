@@ -89,7 +89,7 @@ func (c Client) Vs(ctx context.Context, a string, b string) (map[string]any, err
 }
 
 // GitHubUser checks a login against GitHub's own public API, on the caller's
-// IP/quota — never touching ghfind. Returns (profile, exists, error). A 404 is
+// IP/quota — never touching ghsphere. Returns (profile, exists, error). A 404 is
 // exists=false with no error; a rate-limit becomes an APIError so a throttle is
 // never mistaken for "not found".
 func (c Client) GitHubUser(ctx context.Context, username string) (map[string]any, bool, error) {

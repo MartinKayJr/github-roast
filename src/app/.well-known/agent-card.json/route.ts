@@ -5,19 +5,19 @@ export const dynamic = "force-static";
 export const revalidate = 86400;
 
 /**
- * A2A Agent Card (/.well-known/agent-card.json). Describes ghfind's capabilities
- * and where to reach them. ghfind is not a JSON-RPC A2A server, so we advertise
+ * A2A Agent Card (/.well-known/agent-card.json). Describes ghsphere's capabilities
+ * and where to reach them. ghsphere is not a JSON-RPC A2A server, so we advertise
  * the real interfaces (MCP + REST + OpenAPI) rather than a fake A2A endpoint.
  */
 export function GET() {
   const card = {
     protocolVersion: "0.3.0",
-    name: "ghfind",
+    name: "ghsphere",
     description: PRODUCT_ONELINER,
     url: SITE_URL,
     version: "1.0.0",
     provider: {
-      organization: "ghfind",
+      organization: "ghsphere",
       url: SITE_URL,
     },
     documentationUrl: `${SITE_URL}/llms.txt`,

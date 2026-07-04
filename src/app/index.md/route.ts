@@ -22,7 +22,7 @@ export const revalidate = 86400;
  * contract. Content shared with /llms.txt via src/lib/agent-docs.ts.
  */
 export function buildIndexMd(): string {
-  return `# ghfind
+  return `# ghsphere
 
 ${PRODUCT_DESCRIPTION}
 
@@ -46,7 +46,7 @@ curl -s -X POST ${SITE_URL}/api/scan \\
 
 ${USE_CASES.map((u) => `- ${u}`).join("\n")}
 
-## When to use ghfind
+## When to use ghsphere
 
 ${WHEN_TO_USE.map((w) => `- ${w}`).join("\n")}
 

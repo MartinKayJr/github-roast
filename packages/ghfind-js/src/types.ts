@@ -1,11 +1,11 @@
 /**
- * ghfind API contract types.
+ * ghsphere API contract types.
  *
  * Keys are snake_case to mirror the canonical scoring output (identical to the
  * open-source `github-account-value` skill and the website's `src/lib/types.ts`),
  * so the JSON is byte-for-byte compatible across the site, SDKs, and CLIs.
  *
- * Source of truth: https://github.com/hikariming/ghfind (src/lib/types.ts).
+ * Source of truth: https://github.com/MartinKayJr/github-roast (src/lib/types.ts).
  * Keep this file in sync when the contract changes.
  */
 
@@ -157,6 +157,14 @@ export interface Scoring {
   tier_label: string;
 }
 
+export interface ContributionDay {
+  /** GitHub public commit contribution date, YYYY-MM-DD. */
+  date: string;
+  /** Public commit contribution count on that date. PRs, issues and reviews are
+   * intentionally excluded from recent growth. */
+  contribution_count: number;
+}
+
 /** Full scan payload returned by POST /api/scan. */
 export interface ScanResult {
   metrics: RawMetrics;
@@ -167,6 +175,8 @@ export interface ScanResult {
   verified_impact_prs?: RecentPr[];
   pinned_repos?: string[];
   organizations?: string[];
+  /** Daily public commit contributions from GitHub. */
+  contribution_days?: ContributionDay[];
   scoring: Scoring;
 }
 
@@ -265,7 +275,7 @@ export interface ByoKey {
   model: string;
 }
 
-/** Minimal public GitHub profile, from GitHub's own API (not ghfind). Used by the
+/** Minimal public GitHub profile, from GitHub's own API (not ghsphere). Used by the
  * client-side existence pre-check. */
 export interface GitHubUser {
   login: string;

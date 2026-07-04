@@ -150,9 +150,9 @@ const handler = createMcpHandler(
     );
   },
   {
-    serverInfo: { name: "ghfind", version: "1.0.0" },
+    serverInfo: { name: "ghsphere", version: "1.0.0" },
     instructions:
-      "ghfind scores any GitHub account 0-100 for real contribution value and trustworthiness " +
+      "ghsphere scores any GitHub account 0-100 for real contribution value and trustworthiness " +
       "with a deterministic engine — no LLM touches the number, same inputs always give the same score. " +
       "Use score_user for one account's score/tier, scan_user for the full evidence payload " +
       "(metrics, repos, PRs, red flags), compare_users for a head-to-head verdict, and " +

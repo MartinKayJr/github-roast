@@ -49,7 +49,7 @@ export async function GET(
               }}
             />
             <div style={{ fontSize: 28, fontWeight: 800, color: "#fafafa" }}>
-              ghfind
+              ghsphere
             </div>
             <div style={{ fontSize: 26, color: "#52525b" }}>Research</div>
           </div>
@@ -76,7 +76,7 @@ export async function GET(
           }}
         >
           <div style={{ fontSize: 26, color: "#a1a1aa" }}>{date}</div>
-          <div style={{ fontSize: 26, color: "#ea580c" }}>ghfind.com/blog</div>
+          <div style={{ fontSize: 26, color: "#ea580c" }}>ghsphere.com/blog</div>
         </div>
       </div>
     ),

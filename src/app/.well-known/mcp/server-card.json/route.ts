@@ -12,7 +12,7 @@ export const revalidate = 86400;
 export function GET() {
   return Response.json(
     {
-      name: "ghfind",
+      name: "ghsphere",
       description: PRODUCT_ONELINER,
       version: "1.0.0",
       serverUrl: `${SITE_URL}/mcp`,

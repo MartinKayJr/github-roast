@@ -356,11 +356,11 @@ func TestVsCommandPostsToVerdict(t *testing.T) {
 
 func TestBadgeMarkdownLinksToProfile(t *testing.T) {
 	var stdout bytes.Buffer
-	code := Execute([]string{"badge", "torvalds", "--markdown", "--host", "https://ghfind.com"}, &stdout, &bytes.Buffer{})
+	code := Execute([]string{"badge", "torvalds", "--markdown", "--host", "https://ghsphere.com"}, &stdout, &bytes.Buffer{})
 	if code != 0 {
 		t.Fatalf("Execute returned %d", code)
 	}
-	want := "[![ghfind score](https://ghfind.com/api/badge/torvalds)](https://ghfind.com/u/torvalds)\n"
+	want := "[![ghfind score](https://ghsphere.com/api/badge/torvalds)](https://ghsphere.com/u/torvalds)\n"
 	if stdout.String() != want {
 		t.Fatalf("unexpected badge markdown: %q", stdout.String())
 	}

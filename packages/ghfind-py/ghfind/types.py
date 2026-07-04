@@ -1,4 +1,4 @@
-"""Typed shapes for the ghfind API contract.
+"""Typed shapes for the ghsphere API contract.
 
 Keys are snake_case to mirror the canonical scoring output (identical to the
 open-source ``github-account-value`` skill and the website's ``src/lib/types.ts``),
@@ -6,7 +6,7 @@ so the JSON is byte-for-byte compatible across the site, SDKs, and CLIs.
 
 Methods return plain ``dict`` payloads; these ``TypedDict``s document their shape
 for editors and type checkers. Source of truth:
-https://github.com/hikariming/ghfind (src/lib/types.ts).
+https://github.com/MartinKayJr/github-roast (src/lib/types.ts).
 """
 
 from __future__ import annotations

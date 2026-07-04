@@ -13,7 +13,7 @@ export const revalidate = 86400;
 export async function GET() {
   return NextResponse.json(
     {
-      name: "ghfind API",
+      name: "ghsphere API",
       description: PRODUCT_ONELINER,
       openapi: `${SITE_URL}/openapi.json`,
       docs: {

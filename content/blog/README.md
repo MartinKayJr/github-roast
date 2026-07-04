@@ -29,7 +29,7 @@ To add a language, ask Claude Code:
 > - Translate the body plus the `title` and `description` frontmatter.
 > - Copy `date`/`updated`/`tags` unchanged (they're ignored anyway).
 > - Do NOT alter: image paths/URLs, code blocks, numbers, footnote markers
->   (`[^1]`), or product names (ghfind, GitHub).
+>   (`[^1]`), or product names (ghsphere, GitHub).
 > - Keep heading structure identical (anchors are derived from headings).
 > - Natural register for a technical blog, not word-for-word.
 

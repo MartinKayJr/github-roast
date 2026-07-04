@@ -1,6 +1,6 @@
 <div align="center">
 
-# ghfind 🔥
+# ghsphere 🔥
 
 ### Discover the best developers — and become one.
 
@@ -10,11 +10,11 @@ Start with a brutally honest **0–100 value & trust score** on any public GitHu
 
 **English** · [中文](./README.zh.md)
 
-[**🔍 Score a GitHub profile**](https://ghfind.com/en) · [**🏆 Discover top developers**](https://ghfind.com/en/leaderboard) · [**⭐ View source**](https://github.com/hikariming/ghfind)
+[**🔍 Score a GitHub profile**](https://ghsphere.com/en) · [**🏆 Discover top developers**](https://ghsphere.com/en/leaderboard) · [**⭐ View source**](https://github.com/MartinKayJr/github-roast)
 
 </div>
 
-[![ghfind developer profile preview](./show_img/usercard.png)](https://ghfind.com/en/u/hikariming)
+[![ghsphere developer profile preview](./show_img/usercard.png)](https://ghsphere.com/en/u/hikariming)
 
 ## Measure. Grow. Discover.
 
@@ -24,9 +24,9 @@ Enter a GitHub handle to get a **0–100 value & trust score**, a five-tier verd
 
 ### 🧭 Discover the developers worth knowing
 
-ghfind is a discovery engine, not just a scorer. Use the leaderboard and public profiles to find strong open-source contributors, builders in your ecosystem, potential collaborators, and the developers you want to measure yourself against — and let the right people find you.
+ghsphere is a discovery engine, not just a scorer. Use the leaderboard and public profiles to find strong open-source contributors, builders in your ecosystem, potential collaborators, and the developers you want to measure yourself against — and let the right people find you.
 
-[![ghfind developer leaderboard](./show_img/leaderboard.png)](https://ghfind.com/en/leaderboard)
+[![ghsphere developer leaderboard](./show_img/leaderboard.png)](https://ghsphere.com/en/leaderboard)
 
 ### 🪪 Turn your GitHub work into a shareable identity
 
@@ -34,13 +34,13 @@ Every assessment can generate a live badge and light/dark developer card for you
 
 <div align="center">
 
-[![ghfind score badge](https://ghfind.com/api/badge/hikariming)](https://ghfind.com/en/u/hikariming)
+[![ghsphere score badge](https://ghsphere.com/api/badge/hikariming)](https://ghsphere.com/en/u/hikariming)
 
-<a href="https://ghfind.com/en/u/hikariming">
+<a href="https://ghsphere.com/en/u/hikariming">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://ghfind.com/api/card/hikariming?theme=dark">
-    <source media="(prefers-color-scheme: light)" srcset="https://ghfind.com/api/card/hikariming?theme=light">
-    <img alt="ghfind card for hikariming" src="https://ghfind.com/api/card/hikariming?theme=light" width="720">
+    <source media="(prefers-color-scheme: dark)" srcset="https://ghsphere.com/api/card/hikariming?theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://ghsphere.com/api/card/hikariming?theme=light">
+    <img alt="ghsphere card for hikariming" src="https://ghsphere.com/api/card/hikariming?theme=light" width="720">
   </picture>
 </a>
 
@@ -64,14 +64,14 @@ browser ─▶ /api/scan ─▶ [Redis cache?] ─▶ lib/github.ts  (GitHub RES
 - 6 dimensions (account maturity / original project quality / contribution quality / ecosystem impact / community influence / activity authenticity) + 10 farming red flags. Weights lean toward **hard-to-fake** signals (PRs merged into real repos, sustained activity) and discount **buyable** ones (stars, followers).
 - The site also includes share cards, README badges, profile comments, and GitHub-authenticated profile reactions.
 
-## ghfind API, MCP server & SDKs
+## ghsphere API, MCP server & SDKs
 
-Everything on the site is available programmatically — full reference at **[ghfind API documentation](https://ghfind.com/docs)**:
+Everything on the site is available programmatically — full reference at **[ghsphere API documentation](https://ghsphere.com/docs)**:
 
-- **REST API** — `GET https://ghfind.com/api/score/{username}` for a deterministic 0–100 score (no auth, no LLM); OpenAPI 3.1 spec at [ghfind.com/openapi.json](https://ghfind.com/openapi.json)
-- **MCP server** — Streamable HTTP at [ghfind.com/mcp](https://ghfind.com/mcp); add it to Claude, Cursor, or any MCP client to score and compare GitHub accounts from inside the agent
-- **SDKs** — [`@hikariming/ghfind`](https://www.npmjs.com/package/@hikariming/ghfind) (npm) · [`ghfind`](https://pypi.org/project/ghfind/) (PyPI)
-- **For AI agents** — [ghfind.com/llms.txt](https://ghfind.com/llms.txt) links every machine-readable surface
+- **REST API** — `GET https://ghsphere.com/api/score/{username}` for a deterministic 0–100 score (no auth, no LLM); OpenAPI 3.1 spec at [ghsphere.com/openapi.json](https://ghsphere.com/openapi.json)
+- **MCP server** — Streamable HTTP at [ghsphere.com/mcp](https://ghsphere.com/mcp); add it to Claude, Cursor, or any MCP client to score and compare GitHub accounts from inside the agent
+- **SDKs** — ghsphere JavaScript/TypeScript SDK ([`@hikariming/ghfind`](https://www.npmjs.com/package/@hikariming/ghfind) on npm) · ghsphere Python SDK ([`ghfind`](https://pypi.org/project/ghfind/) on PyPI)
+- **For AI agents** — [ghsphere.com/llms.txt](https://ghsphere.com/llms.txt) links every machine-readable surface
 
 ## Local development
 
@@ -90,7 +90,7 @@ pnpm dev
 | `pnpm dev` | Local development |
 | `pnpm start` or `pnpm build/start` | One-command production build + run |
 | `pnpm build` / `pnpm start:prod` | Build only / run an existing production build |
-| `pnpm ghfind` | Agent-friendly `ghfind` CLI wrapper around the website scoring and discovery APIs |
+| `pnpm ghfind` | Agent-friendly `ghsphere` CLI wrapper around the website scoring and discovery APIs |
 | `pnpm test` | Vitest test suite (scoring, prompts, DB, UI helpers, reactions, etc.) |
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm lint` | ESLint |
@@ -118,10 +118,10 @@ pnpm cli:build
 ./bin/ghfind developers --type language -o json
 ```
 
-The CLI name is `ghfind`. The standalone binary is built as `./bin/ghfind`,
+The CLI command name is `ghfind`. The standalone binary is built as `./bin/ghfind`,
 and package/bin metadata also exposes `ghfind`.
 
-The default service host is `https://ghfind.com`. Override it for local dev:
+The default service host is `https://ghsphere.com`. Override it for local dev:
 
 ```bash
 GHFIND_HOST=http://localhost:3000 pnpm ghfind roast hikariming --lang en
@@ -236,14 +236,14 @@ Licensed under **[GNU AGPL-3.0](./LICENSE)**.
 - **If you modify it and offer it as a network service** (SaaS / hosted), AGPL requires you to **release your modifications under AGPL as well** (users interacting over the network are entitled to the source).
 - The scoring core is ported from the open-source Claude skill `github-account-value`, kept as the single source of truth.
 
-> **Trademark:** the "ghfind / 毒舌 GitHub 评分" name, logo, and domain are **not covered** by the open-source license; all rights reserved. You may self-host from this code, but please do not use the project's name/brand to impersonate the official site or cause confusion.
+> **Trademark:** the "ghsphere / 毒舌 GitHub 评分" name, logo, and domain are **not covered** by the open-source license; all rights reserved. You may self-host from this code, but please do not use the project's name/brand to impersonate the official site or cause confusion.
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=hikariming%2Fghfind&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=MartinKayJr%2Fgithub-roast&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=hikariming/ghfind&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=hikariming/ghfind&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=hikariming/ghfind&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=MartinKayJr/github-roast&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=MartinKayJr/github-roast&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=MartinKayJr/github-roast&type=date&legend=top-left" />
  </picture>
 </a>

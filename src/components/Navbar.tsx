@@ -15,7 +15,7 @@ export async function Navbar() {
   const tNav = await getTranslations("nav");
   const tRepo = await getTranslations("repoLink");
   const oauthConfigured = authConfigured();
-  const repoHref = "https://github.com/hikariming/ghfind";
+  const repoHref = "https://github.com/MartinKayJr/github-roast";
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-white/10 bg-white/[0.03] backdrop-blur-xl">

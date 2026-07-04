@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth, authConfigured } from "@/lib/auth";
-import { getScoreBrief, getCommunityProfile } from "@/lib/db";
+import {
+  getCommunityProfile,
+  getGrowthScanSubscription,
+  getScoreBrief,
+} from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,18 +26,30 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   if (!authConfigured()) {
-    return NextResponse.json({ user: null, scored: false, hasCommunityProfile: false });
+    return NextResponse.json({
+      user: null,
+      scored: false,
+      hasCommunityProfile: false,
+      growthSubscribed: false,
+    });
   }
   const session = await auth();
   const user = session?.user;
   if (!user?.login || !user?.githubId) {
-    return NextResponse.json({ user: null, scored: false, hasCommunityProfile: false });
+    return NextResponse.json({
+      user: null,
+      scored: false,
+      hasCommunityProfile: false,
+      growthSubscribed: false,
+    });
   }
   const brief = await getScoreBrief(user.login);
   const communityProfile = await getCommunityProfile(user.githubId);
+  const growthSubscription = await getGrowthScanSubscription(user.githubId);
   return NextResponse.json({
     user: { login: user.login, image: user.image ?? null },
     scored: Boolean(brief),
     hasCommunityProfile: communityProfile?.status === "active",
+    growthSubscribed: growthSubscription?.status === "active",
   });
 }

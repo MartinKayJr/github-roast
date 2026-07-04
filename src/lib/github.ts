@@ -9,6 +9,7 @@
 
 import { logRatio } from "./score";
 import type {
+  ContributionDay,
   ImpactRepo,
   RawMetrics,
   ReadmeFeatures,
@@ -34,7 +35,7 @@ function authHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
-    "User-Agent": "ghfind",
+    "User-Agent": "ghsphere",
   };
   if (token) headers.Authorization = `Bearer ${token}`;
   return headers;
@@ -1347,6 +1348,75 @@ async function fetchCommitContribReposByYear(
   }));
 }
 
+interface RecentCommitContributionNode {
+  occurredAt: string;
+}
+
+interface RecentCommitContribByRepoNode {
+  contributions: {
+    totalCount?: number;
+    nodes?: RecentCommitContributionNode[];
+  };
+}
+
+async function fetchRecentCommitContributionDays(
+  username: string,
+  now = new Date(),
+): Promise<ContributionDay[]> {
+  const from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const data = await graphql<{
+    user: {
+      contributionsCollection: {
+        commitContributionsByRepository: RecentCommitContribByRepoNode[];
+      };
+    } | null;
+  }>(
+    `query($login: String!, $from: DateTime!, $to: DateTime!) {
+      user(login: $login) {
+        contributionsCollection(from: $from, to: $to) {
+          commitContributionsByRepository(maxRepositories: 100) {
+            contributions(first: 100) {
+              totalCount
+              nodes {
+                occurredAt
+              }
+            }
+          }
+        }
+      }
+    }`,
+    {
+      login: username,
+      from: from.toISOString(),
+      to: now.toISOString(),
+    },
+  );
+  if (!data.user) {
+    throw new GitHubDataUnavailableError("GitHub GraphQL returned no commit contribution data.");
+  }
+
+  const byDate = new Map<string, number>();
+  for (const repo of data.user.contributionsCollection.commitContributionsByRepository ?? []) {
+    const nodes = repo.contributions.nodes ?? [];
+    for (const node of nodes) {
+      const date = node.occurredAt?.slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+      byDate.set(date, (byDate.get(date) ?? 0) + 1);
+    }
+    const missing = Math.max(0, (repo.contributions.totalCount ?? nodes.length) - nodes.length);
+    if (missing > 0) {
+      const fallbackDate = nodes[nodes.length - 1]?.occurredAt?.slice(0, 10) ?? now.toISOString().slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(fallbackDate)) {
+        byDate.set(fallbackDate, (byDate.get(fallbackDate) ?? 0) + missing);
+      }
+    }
+  }
+
+  return [...byDate.entries()]
+    .map(([date, contribution_count]) => ({ date, contribution_count }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
 interface MergedPrRepoNode {
   mergedAt: string | null;
   repository: {
@@ -1471,6 +1541,7 @@ export async function collect(username: string): Promise<{
   verified_impact_prs: RecentPr[];
   pinned_repos: string[];
   organizations: string[];
+  contribution_days: ContributionDay[];
 }> {
   if (!process.env.GITHUB_TOKEN) {
     throw new GitHubAuthRequiredError("GITHUB_TOKEN is required for accurate scoring.");
@@ -1517,7 +1588,9 @@ export async function collect(username: string): Promise<{
         totalIssueContributions: number;
         totalPullRequestReviewContributions: number;
         restrictedContributionsCount: number;
-        contributionCalendar: { totalContributions: number };
+        contributionCalendar: {
+          totalContributions: number;
+        };
       };
       contributionYears: { contributionYears: number[] };
       pinnedItems: { nodes: ({ nameWithOwner?: string } | null)[] };
@@ -1551,7 +1624,9 @@ export async function collect(username: string): Promise<{
           totalIssueContributions
           totalPullRequestReviewContributions
           restrictedContributionsCount
-          contributionCalendar { totalContributions }
+          contributionCalendar {
+            totalContributions
+          }
         }
         contributionYears: contributionsCollection { contributionYears }
       }
@@ -1566,7 +1641,8 @@ export async function collect(username: string): Promise<{
   const pinnedRepos = (contrib.user.pinnedItems?.nodes ?? [])
     .map((n) => n?.nameWithOwner)
     .filter((s): s is string => typeof s === "string");
-  const [commitContribRepos, mergedPrContribRepos] = await Promise.all([
+  const [contributionDays, commitContribRepos, mergedPrContribRepos] = await Promise.all([
+    fetchRecentCommitContributionDays(login, now),
     fetchContributionGraphWithPolicyFallback(() =>
       fetchCommitContribReposByYear(login, contributionYears),
     ),
@@ -1804,5 +1880,6 @@ export async function collect(username: string): Promise<{
     verified_impact_prs: verifiedImpactPrs,
     pinned_repos: pinnedRepos,
     organizations,
+    contribution_days: contributionDays,
   };
 }

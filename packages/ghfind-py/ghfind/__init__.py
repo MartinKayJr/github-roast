@@ -1,4 +1,4 @@
-"""ghfind — official Python SDK for https://ghfind.com.
+"""ghfind — official Python SDK for https://ghsphere.com.
 
 Score any GitHub account 0-100 for value and trustworthiness (deterministic, no
 LLM), plus roasts, battles, leaderboards, and developer discovery.

@@ -7,7 +7,7 @@ export const dynamic = "force-static";
 /**
  * Human-readable developer docs. The machine surfaces (openapi.json, llms.txt,
  * auth.md) already exist for agents that know the URLs — this HTML page is what
- * search engines index, so a "ghfind API" query can find the resources by name.
+ * search engines index, so a "ghsphere API" query can find the resources by name.
  */
 
 type Endpoint = { sig: string; desc: string };

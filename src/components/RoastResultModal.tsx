@@ -81,7 +81,7 @@ export function RoastResultModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="w-[min(calc(100vw-2rem),34rem)] max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-[34rem] max-h-[85vh] overflow-y-auto">
         <DialogTitle className="text-center text-lg font-bold text-orange-400">
           {t("modalTitle")}
         </DialogTitle>

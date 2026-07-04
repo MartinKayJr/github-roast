@@ -39,7 +39,7 @@ export function VsShare({
       ? `${SITE_URL}/en/vs/${a.username}/${b.username}`
       : `${SITE_URL}/vs/${a.username}/${b.username}`;
   const shareText = t("shareText", { a: a.username, b: b.username });
-  const fileName = () => `ghfind-vs-${a.username}-${b.username}.png`;
+  const fileName = () => `ghsphere-vs-${a.username}-${b.username}.png`;
 
   const genBlob = async (): Promise<Blob | null> => {
     if (!cardRef.current) return null;

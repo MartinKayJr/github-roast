@@ -1,11 +1,11 @@
 {
   "meta": {
-    "title": "ghfind | 毒舌 GitHub 评分 · 开发者自测成长 · 发现最佳开发者",
-    "description": "ghfind（毒舌 GitHub 评分）：输入 GitHub 账号，30 秒得到 0-100 分价值与信任评分和一句扎心毒舌点评，看清差距、知道往哪努力，自测并持续成长；再逛发现榜找到值得关注的优质开发者，也让世界发现你。专治刷量号、AI 机器人、收藏夹开发者。",
-    "ogTitle": "ghfind | 毒舌 GitHub 评分 · 开发者自测成长 · 发现最佳开发者",
-    "ogDescription": "ghfind：给 GitHub 账号打分，发现最佳开发者。30 秒出 0-100 分含金量评分 + 一句毒舌点评，还能逛开发者榜单。",
-    "twDescription": "30 秒给 GitHub 账号打分 + 毒舌点评，在 ghfind 发现最佳开发者。",
-    "siteName": "ghfind"
+    "title": "ghsphere | 毒舌 GitHub 评分 · 开发者自测成长 · 发现最佳开发者",
+    "description": "ghsphere（毒舌 GitHub 评分）：输入 GitHub 账号，30 秒得到 0-100 分价值与信任评分和一句扎心毒舌点评，看清差距、知道往哪努力，自测并持续成长；再逛发现榜找到值得关注的优质开发者，也让世界发现你。专治刷量号、AI 机器人、收藏夹开发者。",
+    "ogTitle": "ghsphere | 毒舌 GitHub 评分 · 开发者自测成长 · 发现最佳开发者",
+    "ogDescription": "ghsphere：给 GitHub 账号打分，发现最佳开发者。30 秒出 0-100 分含金量评分 + 一句毒舌点评，还能逛开发者榜单。",
+    "twDescription": "30 秒给 GitHub 账号打分 + 毒舌点评，在 ghsphere 发现最佳开发者。",
+    "siteName": "ghsphere"
   },
   "nav": {
     "brand": "ghsphere",
@@ -23,7 +23,8 @@
     "signOut": "登出",
     "myProfile": "我的主页",
     "judgeSelf": "检测我自己",
-    "communityProfile": "社区档案"
+    "communityProfile": "社区档案",
+    "settings": "设置"
   },
   "loginNudge": {
     "title": "🔥 登录解锁更多玩法",
@@ -43,6 +44,20 @@
     "dark": "暗色主题",
     "auto": "跟随系统"
   },
+  "settings": {
+    "metaTitle": "设置 | ghsphere",
+    "metaDescription": "管理 ghsphere 的账号订阅与个性化功能。",
+    "heading": "设置",
+    "subtitle": "管理需要登录身份的功能。近期成长订阅会定时扫描你的 GitHub 公开贡献，用于更新成长榜和成长轨迹。",
+    "growthTitle": "近期成长订阅",
+    "growthBody": "订阅后，ghsphere 会通过定时任务重新扫描你的公开 GitHub 数据，不运行 LLM，不生成锐评，只更新评分、公开贡献日期和成长榜需要的数据。",
+    "signInToSubscribe": "登录后订阅近期成长",
+    "subscribeGrowth": "订阅近期成长",
+    "unsubscribeGrowth": "取消订阅",
+    "growthSubscribed": "已订阅。后续定时任务会按公开贡献变化更新你的近期成长数据。",
+    "saving": "保存中…",
+    "failed": "保存失败，稍后再试"
+  },
   "repoLink": {
     "label": "开源",
     "title": "源码与评分算法均开源 · 在 GitHub 查看"
@@ -58,7 +73,7 @@
   },
   "leaderboard": {
     "heading": "🏆 名人堂",
-    "subtitle": "名人堂收录评分 60 分以上的账号，默认展示趋势榜。",
+    "subtitle": "名人堂收录公开账号，默认展示近期成长榜。",
     "judgeCta": "← 去审判一个账号",
     "footerNote": "仅收录基于 GitHub 公开数据的高分账号。如需将自己从榜单移除，<a>点此申请下榜</a>。",
     "loadError": "榜单暂时加载不出来，稍后再试。",
@@ -87,6 +102,43 @@
     "window7d": "7 天",
     "window30d": "30 天",
     "windowAll": "全部"
+  },
+  "growth": {
+    "heading": "📈 近期成长",
+    "subtitle": "按近 30 天公开开源贡献带来的真实增长排序，不是历史总分。",
+    "bandLabel": "等级",
+    "growthLabel": "成长",
+    "growthTitle": "相比上次扫描的公开贡献增长",
+    "commitsLabel": "提交",
+    "commitsTitle": "近期新增公开贡献数",
+    "mergedPrs": "合并 PR",
+    "impactCommits": "影响提交",
+    "loading": "加载成长榜…",
+    "loadError": "成长榜暂时加载不出来，稍后再试。",
+    "empty": "该等级段暂无近期成长数据。",
+    "scanCta": "检测你的评分 →",
+    "bandAria": "选择等级段",
+    "sinceLastScan": "较上次扫描",
+    "recentCommits": "提交（7天）",
+    "lastActive": "最近活跃",
+    "allTab": "全部",
+    "timelineTitle": "成长轨迹图 — 节点位置对应最新快照分数",
+    "timelineEmpty": "暂无足够成长轨迹数据 — 扫描账号后即可出现在这里。",
+    "tooltipBand": "等级",
+    "tooltipGrowth": "成长分",
+    "tooltipCommits": "提交数",
+    "tooltipMergedPrs": "合并 PR",
+    "tooltipImpact": "影响提交",
+    "tooltipScan": "最近扫描",
+    "tooltipRepo": "代表仓库",
+    "tooltipLanguage": "主要语言",
+    "clusterTitle": "{count} 位开发者",
+    "close": "关闭",
+    "overflowMore": "+{n} 人",
+    "subscribeAfterLogin": "登录后订阅近期成长",
+    "subscribe": "订阅近期成长",
+    "subscribed": "已订阅近期成长",
+    "subscribeFailed": "订阅失败，稍后再试"
   },
   "developers": {
     "heading": "发现开发者",
@@ -223,11 +275,11 @@
     "cooldown": "{hours} 小时后可重新检测"
   },
   "detailMeta": {
-    "title": "{username} — {score}/100 · {tier} | ghfind",
-    "descWithTags": "{tags} —— 在 ghfind.com 查看 {username} 的完整评分报告。",
-    "descPlain": "{username} 的 GitHub 价值评分报告 —— ghfind.com。",
-    "notFoundTitle": "查无此号 · ghfind",
-    "pendingTitle": "正在锐评 @{username}… · ghfind"
+    "title": "{username} — {score}/100 · {tier} | ghsphere",
+    "descWithTags": "{tags} —— 在 ghsphere.com 查看 {username} 的完整评分报告。",
+    "descPlain": "{username} 的 GitHub 价值评分报告 —— ghsphere.com。",
+    "notFoundTitle": "查无此号 · ghsphere",
+    "pendingTitle": "正在锐评 @{username}… · ghsphere"
   },
   "roaster": {
     "inputPlaceholder": "输入 GitHub 用户名或主页链接",
@@ -250,7 +302,7 @@
     "pasteGithub": "📌 贴到 GitHub",
     "copied": "已复制 ✓",
     "privateNote": "注：评分仅基于公开信号，私有贡献不计入，可能低估私有组织的活跃员工。",
-    "shareText": "我的 GitHub 含金量被审判了：{score}/100 · {tier}（{tierLabel}）{beat}。来测测你的 👉 ghfind.com",
+    "shareText": "我的 GitHub 含金量被审判了：{score}/100 · {tier}（{tierLabel}）{beat}。来测测你的 👉 ghsphere.com",
     "shareBeat": "，超越了 {beat}% 的开发者",
     "errEmpty": "请先输入 GitHub 用户名或主页链接。",
     "errNeedTurnstile": "请先完成下方的人机校验。",
@@ -282,7 +334,7 @@
     "copyLink": "复制链接",
     "copied": "已复制 ✓",
     "native": "系统分享…",
-    "siteName": "ghfind"
+    "siteName": "ghsphere"
   },
   "badge": {
     "heading": "📌 贴到你的 GitHub 主页",
@@ -324,7 +376,7 @@
   "developerCount": "已经有 <n>{count, number}</n> 名开发者参与战斗 ⚔️",
   "shareCard": {
     "beatLabel": "超越的开发者",
-    "brand": "🔥 ghfind · 来测测你的含金量"
+    "brand": "🔥 ghsphere · 来测测你的含金量"
   },
   "tiers": {
     "god": { "name": "夯", "blurb": "封神 · 殿堂级标杆" },
@@ -387,8 +439,8 @@
     "heading": "常见问题",
     "items": [
       {
-        "q": "ghfind 是什么？",
-        "a": "ghfind 是一个面向 GitHub 的开发者评分与发现工具。它用一套完全确定性的开源引擎，为任意账号打出 0–100 的真实贡献含金量与可信度评分，并在此之上提供 AI 吐槽、开发者对战和排行榜。"
+        "q": "ghsphere 是什么？",
+        "a": "ghsphere 是一个面向 GitHub 的开发者评分与发现工具。它用一套完全确定性的开源引擎，为任意账号打出 0–100 的真实贡献含金量与可信度评分，并在此之上提供 AI 吐槽、开发者对战和排行榜。"
       },
       {
         "q": "分数是怎么算出来的？",
@@ -403,7 +455,7 @@
         "a": "可以。有公开的 REST API（见 /openapi.json）、官方 npm 与 PyPI 包及命令行工具，以及位于 /mcp 的 Model Context Protocol 服务器，暴露 score_user、scan_user、compare_users、get_leaderboard、search_users 等工具。评分接口无需鉴权。"
       },
       {
-        "q": "ghfind 能识别机器人和刷出来的账号吗？",
+        "q": "ghsphere 能识别机器人和刷出来的账号吗？",
         "a": "能。它专门识别刷量与真实贡献之间的差异——高度雷同的模板化 PR 标题、贡献集中在自己并不拥有的仓库、以及可疑的 star / 关注者膨胀。在 18,947 个被评分账号的数据集中，命中最高风险信号的不到 1%——罕见，但一旦出现就很极端。"
       },
       {
@@ -411,15 +463,15 @@
         "a": "不会。评分只用公开信号，私有组织内的贡献对引擎不可见，因此活跃于私有仓库的成员可能被低估。低分不是对某个人的事实判断——它描述的是一个账号的公开足迹。"
       },
       {
-        "q": "如何把我的主页从 ghfind 移除？",
+        "q": "如何把我的主页从 ghsphere 移除？",
         "a": "只有 60 分及以上的账号才会被索引和收录。若想从榜单移除，可使用排行榜底部的移除链接，或在 GitHub 仓库提 issue，主页即会被下架。"
       }
     ]
   },
   "homeIntro": {
-    "whatHeading": "ghfind 是什么？",
-    "whatBody": "ghfind 是一个面向 GitHub 的开发者评分与发现工具。它用一套完全确定性的引擎（开源的 github-account-value skill，AGPL 协议），从账号成熟度、原创项目质量、贡献质量、生态影响力、社区影响力、活跃真实性六个加权维度，为任意账号打出 0–100 分。相同输入永远得到相同分数，大模型不参与打分。在分数之上，还提供可选的 AI 吐槽、开发者对战、按语言和组织的排行榜，以及 README 评分徽章。",
-    "howHeading": "ghfind 如何工作",
+    "whatHeading": "ghsphere 是什么？",
+    "whatBody": "ghsphere 是一个面向 GitHub 的开发者评分与发现工具。它用一套完全确定性的引擎（开源的 github-account-value skill，AGPL 协议），从账号成熟度、原创项目质量、贡献质量、生态影响力、社区影响力、活跃真实性六个加权维度，为任意账号打出 0–100 分。相同输入永远得到相同分数，大模型不参与打分。在分数之上，还提供可选的 AI 吐槽、开发者对战、按语言和组织的排行榜，以及 README 评分徽章。",
+    "howHeading": "ghsphere 如何工作",
     "steps": [
       {
         "title": "1. 扫描公开足迹",
@@ -434,14 +486,14 @@
         "body": "你会得到一个可复现的 0–100 分、从「拉完了」到「夯」的段位、一份指出短板的分维度报告，以及（只在你主动要求时）一段毒舌 AI 吐槽。"
       }
     ],
-    "numbersHeading": "用数字看 ghfind",
+    "numbersHeading": "用数字看 ghsphere",
     "numbers": {
       "accounts": "公开研究数据集已覆盖 {count} 个 GitHub 账号",
       "snapshots": "已采集并分析 {count} 份完整证据快照",
       "dimensions": "每个分数背后有 {count} 个加权维度",
       "flagged": "被标记存在刷量行为的账号不到 1%"
     },
-    "tableCaption": "ghfind 分数 vs 原始 GitHub 信号",
+    "tableCaption": "ghsphere 分数 vs 原始 GitHub 信号",
     "tableColSignal": "信号",
     "tableColMeasures": "它衡量什么",
     "tableColGameable": "容易刷吗？",
@@ -457,19 +509,19 @@
         "gameable": "容易——互关和买粉即可"
       },
       {
-        "signal": "ghfind 分数",
+        "signal": "ghsphere 分数",
         "measures": "六个加权维度下的真实贡献含金量与可信度",
         "gameable": "难——刷量模式会被识别并扣分"
       }
     ]
   },
   "docs": {
-    "metaTitle": "ghfind API 文档 — REST API、MCP 服务器、SDK",
-    "metaDescription": "ghfind 开发者文档：GitHub 账号评分 REST 接口、面向 AI Agent 的 ghfind MCP 服务器、认证方式、官方 npm/PyPI SDK，以及机器可读规范（OpenAPI、llms.txt）。",
-    "heading": "ghfind API 文档",
-    "lead": "ghfind 用确定性的开源引擎为任意 GitHub 账号打出 0–100 的真实贡献含金量与可信度评分。站点的全部能力都可以编程调用：公开 REST API、面向 AI Agent 的 MCP 服务器，以及官方 SDK。本页是它们的完整文档。",
-    "restHeading": "ghfind REST API",
-    "restIntro": "Base URL：https://ghfind.com。评分读取接口无需认证。错误为结构化 JSON（{error, message, hint}），响应携带 RateLimit-* 头，列表接口支持 limit/offset 分页。",
+    "metaTitle": "ghsphere API 文档 — REST API、MCP 服务器、SDK",
+    "metaDescription": "ghsphere 开发者文档：GitHub 账号评分 REST 接口、面向 AI Agent 的 ghsphere MCP 服务器、认证方式、官方 npm/PyPI SDK，以及机器可读规范（OpenAPI、llms.txt）。",
+    "heading": "ghsphere API 文档",
+    "lead": "ghsphere 用确定性的开源引擎为任意 GitHub 账号打出 0–100 的真实贡献含金量与可信度评分。站点的全部能力都可以编程调用：公开 REST API、面向 AI Agent 的 MCP 服务器，以及官方 SDK。本页是它们的完整文档。",
+    "restHeading": "ghsphere REST API",
+    "restIntro": "Base URL：https://ghsphere.com。评分读取接口无需认证。错误为结构化 JSON（'{error, message, hint}'），响应携带 RateLimit-* 头，列表接口支持 limit/offset 分页。",
     "endpoints": [
       { "sig": "GET /api/score/{username}", "desc": "确定性 0–100 分、段位和六维拆解。未见过的账号也能实时评分；无需认证，不经过 LLM。" },
       { "sig": "POST /api/scan", "desc": "完整的确定性扫描载荷：原始指标、头部仓库、近期 PR、风险标记、子分数。" },
@@ -481,8 +533,8 @@
       { "sig": "GET /api/stats", "desc": "平台总量统计（已评分账号数）。" },
       { "sig": "GET /api/badge/{username}", "desc": "可嵌入 README 的 SVG 评分徽章。" }
     ],
-    "mcpHeading": "ghfind MCP 服务器",
-    "mcpIntro": "Streamable HTTP 协议的 Model Context Protocol 服务器位于 https://ghfind.com/mcp（无需认证、按 IP 限流、只读）。把它加进 Claude、Cursor 或任意 MCP 客户端，即可在 Agent 内直接评分和对比 GitHub 账号。",
+    "mcpHeading": "ghsphere MCP 服务器",
+    "mcpIntro": "Streamable HTTP 协议的 Model Context Protocol 服务器位于 https://ghsphere.com/mcp（无需认证、按 IP 限流、只读）。把它加进 Claude、Cursor 或任意 MCP 客户端，即可在 Agent 内直接评分和对比 GitHub 账号。",
     "tools": [
       { "name": "score_user", "desc": "任意 GitHub 账号的 0–100 分、段位和六维拆解。" },
       { "name": "scan_user", "desc": "完整扫描载荷：指标、头部仓库、近期 PR、风险标记。" },
@@ -494,9 +546,9 @@
     "authBody": "读取接口全部公开。写入接口（POST /api/scan、POST /api/roast）接受浏览器 Turnstile 验证或 Bearer API key。Agent 请阅读 /auth.md 的机器可读指引。",
     "sdkHeading": "官方 SDK 与 CLI",
     "sdks": [
-      { "name": "@hikariming/ghfind (npm)", "desc": "JavaScript / TypeScript SDK 与 CLI：npm install -g @hikariming/ghfind" },
-      { "name": "ghfind (PyPI)", "desc": "Python SDK：pip install --upgrade ghfind" },
-      { "name": "ghfind CLI", "desc": "ghfind score {username} -o json · ghfind scan · ghfind roast · ghfind leaderboard · ghfind stats" }
+      { "name": "ghsphere JS/TS SDK", "desc": "npm 包：@hikariming/ghfind · npm install -g @hikariming/ghfind" },
+      { "name": "ghsphere Python SDK", "desc": "PyPI 包：ghfind · pip install --upgrade ghfind" },
+      { "name": "ghsphere CLI (`ghfind`)", "desc": "ghfind score {username} -o json · ghfind scan · ghfind roast · ghfind leaderboard · ghfind stats" }
     ],
     "machineHeading": "机器可读入口",
     "machine": [
@@ -507,38 +559,38 @@
     ]
   },
   "about": {
-    "metaTitle": "关于 ghfind",
-    "metaDescription": "ghfind 用开源、确定性的引擎为任意 GitHub 账号打出 0–100 的真实贡献含金量与可信度评分，并帮助你发现顶尖开发者。",
-    "heading": "关于 ghfind",
+    "metaTitle": "关于 ghsphere",
+    "metaDescription": "ghsphere 用开源、确定性的引擎为任意 GitHub 账号打出 0–100 的真实贡献含金量与可信度评分，并帮助你发现顶尖开发者。",
+    "heading": "关于 ghsphere",
     "paragraphs": [
-      "ghfind 是一个面向 GitHub 的开发者评分与发现工具。它为任意账号打出 0–100 的真实贡献含金量与可信度评分，使用一套只基于公开 GitHub 数据的完全确定性引擎。相同输入永远得到相同分数——分数本身不涉及任何大语言模型——因此结果可复现、可审计，而非黑箱。",
-      "分数由六个加权维度构成，合计 100 分：账号成熟度、原创项目质量、贡献质量、生态影响力、社区影响力、活动真实性。在这一事实内核之上，ghfind 还提供可选的 AI 吐槽、开发者对战、按语言 / 组织 / 项目划分的排行榜，以及可嵌入自己主页的 README 评分徽章。",
-      "评分引擎以 github-account-value skill 的形式按 AGPL 开源，网站、官方 npm 与 PyPI 包、命令行工具、Model Context Protocol 服务器都跑在同一套代码路径上。ghfind 的目标是让 GitHub 贡献变得可读：奖励真实的开源工作，让值得关注的开发者浮出水面，并通过看模式而非看原始数量，让刷出来的账号一眼可辨。"
+      "ghsphere 是一个面向 GitHub 的开发者评分与发现工具。它为任意账号打出 0–100 的真实贡献含金量与可信度评分，使用一套只基于公开 GitHub 数据的完全确定性引擎。相同输入永远得到相同分数——分数本身不涉及任何大语言模型——因此结果可复现、可审计，而非黑箱。",
+      "分数由六个加权维度构成，合计 100 分：账号成熟度、原创项目质量、贡献质量、生态影响力、社区影响力、活动真实性。在这一事实内核之上，ghsphere 还提供可选的 AI 吐槽、开发者对战、按语言 / 组织 / 项目划分的排行榜，以及可嵌入自己主页的 README 评分徽章。",
+      "评分引擎以 github-account-value skill 的形式按 AGPL 开源，网站、官方 npm 与 PyPI 包、命令行工具、Model Context Protocol 服务器都跑在同一套代码路径上。ghsphere 的目标是让 GitHub 贡献变得可读：奖励真实的开源工作，让值得关注的开发者浮出水面，并通过看模式而非看原始数量，让刷出来的账号一眼可辨。"
     ]
   },
   "contact": {
-    "metaTitle": "联系 ghfind",
-    "metaDescription": "如何联系 ghfind 团队：报告问题、申请从排行榜移除，或咨询 API、CLI 与 MCP 服务器。",
+    "metaTitle": "联系 ghsphere",
+    "metaDescription": "如何联系 ghsphere 团队：报告问题、申请从排行榜移除，或咨询 API、CLI 与 MCP 服务器。",
     "heading": "联系",
     "paragraphs": [
-      "ghfind 是一个开源项目。联系团队、报告问题、申请从排行榜移除，或咨询 API、CLI、MCP 服务器，最快的方式是在公开的 GitHub 仓库提 issue。所有 issue 都会在那里被阅读和处理，公开讨论也能帮到遇到同样问题的其他用户。",
+      "ghsphere 是一个开源项目。联系团队、报告问题、申请从排行榜移除，或咨询 API、CLI、MCP 服务器，最快的方式是在公开的 GitHub 仓库提 issue。所有 issue 都会在那里被阅读和处理，公开讨论也能帮到遇到同样问题的其他用户。",
       "关于集成：机器可读的 API 契约在 /openapi.json，面向 agent 的文档索引在 /llms.txt，鉴权说明在 /auth.md。如果你需要为高并发的服务端批量评分提升限流额度，请在 GitHub issue 中说明用途。"
     ],
     "issuesLabel": "在 GitHub 上提 issue",
-    "issuesUrl": "https://github.com/hikariming/ghfind/issues",
+    "issuesUrl": "https://github.com/MartinKayJr/github-roast/issues",
     "resourcesLabel": "开发者资源",
     "apiLabel": "API 参考（OpenAPI）",
     "llmsLabel": "Agent 文档（llms.txt）",
     "authLabel": "鉴权（auth.md）"
   },
   "privacy": {
-    "metaTitle": "隐私 — ghfind",
-    "metaDescription": "ghfind 如何处理数据：只对公开 GitHub 数据评分，不出售个人数据，并支持对已收录主页的移除请求。",
+    "metaTitle": "隐私 — ghsphere",
+    "metaDescription": "ghsphere 如何处理数据：只对公开 GitHub 数据评分，不出售个人数据，并支持对已收录主页的移除请求。",
     "heading": "隐私",
     "sections": [
       {
-        "h": "ghfind 使用哪些数据",
-        "p": "ghfind 只用公开的 GitHub 数据计算分数——也就是任何人在主页及其公开仓库、PR、活动中都能看到的信息。它不访问私有仓库、私有贡献、邮件内容，或任何尚未在 GitHub 上公开的数据。因此，分数描述的是一个账号的公开足迹，并非对其背后的人的事实判断。"
+        "h": "ghsphere 使用哪些数据",
+        "p": "ghsphere 只用公开的 GitHub 数据计算分数——也就是任何人在主页及其公开仓库、PR、活动中都能看到的信息。它不访问私有仓库、私有贡献、邮件内容，或任何尚未在 GitHub 上公开的数据。因此，分数描述的是一个账号的公开足迹，并非对其背后的人的事实判断。"
       },
       {
         "h": "我们存储什么",
@@ -550,15 +602,15 @@
       },
       {
         "h": "移除与控制",
-        "p": "如果你希望下架自己的主页，可使用排行榜底部的移除链接，或在 GitHub 仓库提 issue，我们会将其从榜单和索引中移除。由于 ghfind 只反映公开的 GitHub 数据，更新或将你的 GitHub 活动设为私有，也会在下一次扫描时改变或移除 ghfind 能看到的内容。"
+        "p": "如果你希望下架自己的主页，可使用排行榜底部的移除链接，或在 GitHub 仓库提 issue，我们会将其从榜单和索引中移除。由于 ghsphere 只反映公开的 GitHub 数据，更新或将你的 GitHub 活动设为私有，也会在下一次扫描时改变或移除 ghsphere 能看到的内容。"
       }
     ]
   },
   "methodology": {
-    "metaTitle": "评分方法 — ghfind 如何为 GitHub 账号打分",
-    "metaDescription": "ghfind 的确定性引擎如何在六个加权维度上为 GitHub 账号打分、施加风险信号扣分，并在完全不使用 LLM 的情况下保持可复现。",
-    "heading": "ghfind 如何为 GitHub 账号打分",
-    "lead": "ghfind 的分数由一套确定性评分规则产生，而非模型。引擎读取公开 GitHub 数据，对合计 100 分的六个维度打分，扣除风险信号惩罚，对相同输入每次返回相同数字。内核按 AGPL 开源，任何结果都可复现、可审计。",
+    "metaTitle": "评分方法 — ghsphere 如何为 GitHub 账号打分",
+    "metaDescription": "ghsphere 的确定性引擎如何在六个加权维度上为 GitHub 账号打分、施加风险信号扣分，并在完全不使用 LLM 的情况下保持可复现。",
+    "heading": "ghsphere 如何为 GitHub 账号打分",
+    "lead": "ghsphere 的分数由一套确定性评分规则产生，而非模型。引擎读取公开 GitHub 数据，对合计 100 分的六个维度打分，扣除风险信号惩罚，对相同输入每次返回相同数字。内核按 AGPL 开源，任何结果都可复现、可审计。",
     "dimensionsHeading": "六个维度",
     "dimensionsIntro": "每个维度都贡献于 100 分的基础分。它们合在一起，奖励持续、原创、被广泛使用的开源工作，而非原始活动数量。",
     "dimensionDetails": {
@@ -577,8 +629,8 @@
     "dataBody": "在一个 18,947 个被评分账号（其中 3,444 个有完整原始指标快照）的公开数据集上，刷出来的贡献比舆论想象的更罕见（命中最高风险信号的账号不到 1%），但一旦出现就极端得多。完整分析见研究栏目。"
   },
   "vs": {
-    "metaTitle": "{a} vs {b} · 谁更强？| ghfind",
-    "metaDescription": "{a} 与 {b} 的 GitHub 含金量正面对决 —— 谁更硬核？来 ghfind.com 围观。",
+    "metaTitle": "{a} vs {b} · 谁更强？| ghsphere",
+    "metaDescription": "{a} 与 {b} 的 GitHub 含金量正面对决 —— 谁更硬核？来 ghsphere.com 围观。",
     "back": "← 返回名人堂",
     "heading": "开发者对决",
     "pkHeading": "⚔️ 发起对战",
@@ -607,7 +659,7 @@
     "adviceHeading": "💡 进步建议",
     "saveImage": "📸 保存对战图",
     "saving": "生成中…",
-    "shareText": "{a} vs {b} —— 谁更硬核？来 ghfind.com 围观这场 GitHub 对决 ⚔️",
+    "shareText": "{a} vs {b} —— 谁更硬核？来 ghsphere.com 围观这场 GitHub 对决 ⚔️",
     "trendingHeading": "🔥 热门对战",
     "trendingSub": "被围观最多的 GitHub 开发者 PK,点进去看毒舌裁决",
     "trendingEmpty": "还没有对战上榜。去首页输入「a vs b」,打响第一枪。",

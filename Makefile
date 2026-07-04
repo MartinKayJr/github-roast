@@ -5,9 +5,9 @@ CLI_BIN ?= $(BINDIR)/ghfind
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || printf dev)
 COMMIT ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || printf none)
 BUILD_DATE ?= $(shell git show -s --format=%cI HEAD 2>/dev/null || printf unknown)
-LDFLAGS := -X 'github.com/hikariming/ghfind/internal/agentcli.Version=$(VERSION)' \
-	-X 'github.com/hikariming/ghfind/internal/agentcli.Commit=$(COMMIT)' \
-	-X 'github.com/hikariming/ghfind/internal/agentcli.Date=$(BUILD_DATE)'
+LDFLAGS := -X 'github.com/MartinKayJr/github-roast/internal/agentcli.Version=$(VERSION)' \
+	-X 'github.com/MartinKayJr/github-roast/internal/agentcli.Commit=$(COMMIT)' \
+	-X 'github.com/MartinKayJr/github-roast/internal/agentcli.Date=$(BUILD_DATE)'
 
 .PHONY: cli-build cli-build-all cli-test cli-clean
 

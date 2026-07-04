@@ -178,6 +178,14 @@ export interface Scoring {
   tier_label: string;
 }
 
+export interface ContributionDay {
+  /** GitHub public commit contribution date, YYYY-MM-DD. */
+  date: string;
+  /** Public commit contribution count on that date. PRs, issues and reviews are
+   * intentionally excluded from recent growth. */
+  contribution_count: number;
+}
+
 /** Full scan payload — same shape the Python script prints. */
 export interface ScanResult {
   metrics: RawMetrics;
@@ -196,6 +204,8 @@ export interface ScanResult {
   /** Organizations the user belongs to (e.g. huggingface, pytorch) — high-signal
    * for circle/affiliation. Optional for back-compat. */
   organizations?: string[];
+  /** Daily public commit contributions from GitHub. */
+  contribution_days?: ContributionDay[];
   scoring: Scoring;
 }
 

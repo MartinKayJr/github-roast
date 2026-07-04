@@ -172,7 +172,7 @@ export function Brand({ palette }: { palette: CardPalette }) {
     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 22 }}>
       <div style={{ display: "flex", color: palette.subtle }}>
         GitHub Roast ·{" "}
-        <span style={{ color: "#fb923c", fontWeight: 800, marginLeft: 6 }}>ghfind.com</span>
+        <span style={{ color: "#fb923c", fontWeight: 800, marginLeft: 6 }}>ghsphere.com</span>
       </div>
       <div style={{ display: "flex", color: palette.subtle }}>Powered by {SPONSOR.name}</div>
     </div>

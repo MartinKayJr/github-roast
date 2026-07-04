@@ -52,7 +52,7 @@ export function ProfileShare({
     beat: beatText,
   });
 
-  const fileName = () => `ghfind-${username}.png`;
+  const fileName = () => `ghsphere-${username}.png`;
 
   const genCardBlob = async (): Promise<Blob | null> => {
     if (!cardRef.current) return null;

@@ -19,7 +19,7 @@ tags: ["data", "github", "anti-abuse", "open-source"]
 2. **结构。** 造假发生时，它的统计特征与正常贡献行为差在哪里？
 3. **构成。** 在被检测规则命中的账号中，主动造假与单纯的不活跃、缺乏原创工作各占多少？
 
-为回答这些问题，我们使用一套确定性规则（[ghfind](https://ghfind.com)，评分核心以 AGPL 协议开源，见[代码仓库](https://github.com/hikariming/ghfind)）对 18,947 个公开账号评分，并分析了保留完整原始指标快照（含 PR 级样本、仓库质量特征与活跃形态统计）的 3,444 个账号构成的深度样本。各图背后的聚合数据与本文一并发布（[data.json](/blog/we-scored-19000-github-accounts/data.json)）。
+为回答这些问题，我们使用一套确定性规则（[ghsphere](https://ghsphere.com)，评分核心以 AGPL 协议开源，见[代码仓库](https://github.com/MartinKayJr/github-roast)）对 18,947 个公开账号评分，并分析了保留完整原始指标快照（含 PR 级样本、仓库质量特征与活跃形态统计）的 3,444 个账号构成的深度样本。各图背后的聚合数据与本文一并发布（[data.json](/blog/we-scored-19000-github-accounts/data.json)）。
 
 主要结论：在本样本中，造假远比公共讨论所暗示的少见；一旦出现就是极端形态，没有渐变地带；而且只靠模式层面的特征，就足以把它与真实活动近乎完全分开。
 
@@ -27,7 +27,7 @@ tags: ["data", "github", "anti-abuse", "open-source"]
 
 ### 2.1 评分规则
 
-引擎实现了一套覆盖六个维度、合计 100 分的确定性规则，并对风险信号施加累加式扣分。引擎不调用任何模型，分数可完全由公开 GitHub 数据复现。ghfind 网站、npm/PyPI SDK 与本文分析使用同一套代码路径。
+引擎实现了一套覆盖六个维度、合计 100 分的确定性规则，并对风险信号施加累加式扣分。引擎不调用任何模型，分数可完全由公开 GitHub 数据复现。ghsphere 网站、npm/PyPI SDK 与本文分析使用同一套代码路径。
 
 | 维度 | 满分 | 奖励的信号 |
 |---|---|---|
@@ -44,7 +44,7 @@ tags: ["data", "github", "anti-abuse", "open-source"]
 
 ### 2.2 样本构成与已知偏差
 
-样本由两部分构成：(a) 通过 ghfind 网站主动给自己账号评分的用户；(b) 从活跃开源组织收录的开发者。这一构成从两个方面限制了结论的适用范围。第一，样本是自选择的，天然偏向真实、活跃的开发者；因此下文报告的所有造假比例，都应理解为**一个已被过滤过的人群里的下限**，而非对 GitHub 全站的估计。第二，18,947 个已评分账号（其中 3,444 个含深度指标）足以刻画分布的形状，但相对 GitHub 总量微不足道；我们报告的是形状，不是普查。
+样本由两部分构成：(a) 通过 ghsphere 网站主动给自己账号评分的用户；(b) 从活跃开源组织收录的开发者。这一构成从两个方面限制了结论的适用范围。第一，样本是自选择的，天然偏向真实、活跃的开发者；因此下文报告的所有造假比例，都应理解为**一个已被过滤过的人群里的下限**，而非对 GitHub 全站的估计。第二，18,947 个已评分账号（其中 3,444 个含深度指标）足以刻画分布的形状，但相对 GitHub 总量微不足道；我们报告的是形状，不是普查。
 
 ## 3. 结果
 
@@ -119,6 +119,6 @@ tags: ["data", "github", "anti-abuse", "open-source"]
 
 ## 6. 可复现性
 
-全部评分逻辑均为确定性且以 AGPL 协议开源：[github.com/hikariming/ghfind](https://github.com/hikariming/ghfind)。同一引擎通过 `npm install ghfind` 与 `pip install ghfind` 分发，既可调用公开 API（[OpenAPI 规范](https://ghfind.com/openapi.json)），也可携带用户自己的 GitHub token 完全在本地运行。本文所有图表背后的聚合统计见 [data.json](/blog/we-scored-19000-github-accounts/data.json)。
+全部评分逻辑均为确定性且以 AGPL 协议开源：[github.com/MartinKayJr/github-roast](https://github.com/MartinKayJr/github-roast)。同一引擎通过 `npm install ghfind` 与 `pip install ghfind` 分发，既可调用公开 API（[OpenAPI 规范](https://ghsphere.com/openapi.json)），也可携带用户自己的 GitHub token 完全在本地运行。本文所有图表背后的聚合统计见 [data.json](/blog/we-scored-19000-github-accounts/data.json)。
 
-*单个账号可在 [ghfind.com](https://ghfind.com) 进行评分。*
+*单个账号可在 [ghsphere.com](https://ghsphere.com) 进行评分。*

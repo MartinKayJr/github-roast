@@ -3,10 +3,10 @@
 Design goals (in priority order):
   1. Useful with zero setup: ``score`` hits the public GET /api/score endpoint,
      which needs no auth and is cached + rate-limited on the server.
-  2. Kind to the ghfind server: ``--local`` moves the heavy GitHub crawl onto the
-     caller's own token/machine (see :mod:`ghfind.local`); nothing touches ghfind.
+  2. Kind to the ghsphere server: ``--local`` moves the heavy GitHub crawl onto the
+     caller's own token/machine (see :mod:`ghfind.local`); nothing touches ghsphere.
   3. Drives traffic back: human-facing output ends with a profile link, and
-     ``badge --markdown`` prints a README-ready snippet that links to ghfind.com.
+     ``badge --markdown`` prints a README-ready snippet that links to ghsphere.com.
 
 No LLM is ever bundled. ``roast`` uses the server's model by default (protected by
 caching + rate limits); pass ``--byo-*`` to run it through your own provider.
@@ -110,7 +110,7 @@ def _local_scan(args: argparse.Namespace, username: str) -> Dict[str, Any]:
     if not token:
         _fail(
             "--local needs a GitHub token: pass --github-token or set GITHUB_TOKEN.\n"
-            "Local scoring crawls GitHub on your own machine and quota (ghfind is never called)."
+            "Local scoring crawls GitHub on your own machine and quota (ghsphere is never called)."
         )
     # Imported lazily so the common remote path never pays for the scoring engine.
     from .local import collect_and_score
@@ -371,7 +371,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("b")
     p.add_argument("--lang", choices=["zh", "en"], default="zh")
 
-    p = add("exists", _cmd_exists, help="Check a GitHub login exists (client-side; never touches ghfind).")
+    p = add("exists", _cmd_exists, help="Check a GitHub login exists (client-side; never touches ghsphere).")
     p.add_argument("username")
 
     p = add("search", _cmd_search, help="Prefix autocomplete over scored accounts.")

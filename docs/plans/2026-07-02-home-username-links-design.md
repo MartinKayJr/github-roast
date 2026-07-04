@@ -2,7 +2,7 @@
 
 ## Goal
 
-Increase visits to ghfind profile pages by routing username links on the home page to the existing localized user detail route instead of GitHub.
+Increase visits to ghsphere profile pages by routing username links on the home page to the existing localized user detail route instead of GitHub.
 
 ## Scope
 

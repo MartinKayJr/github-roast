@@ -1,4 +1,4 @@
-"""Official Python client for the ghfind API (https://ghfind.com).
+"""Official Python client for the ghsphere API (https://ghsphere.com).
 
 Every method is an atomic capability backed by one public endpoint. Scoring
 (``scan``, ``score``, ``get_score``, the ``vs`` winner) is deterministic and never
@@ -21,7 +21,7 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 
 from .types import ByoKey, RoastResult, ScanResult, ScorePayload, Scoring
 
-DEFAULT_HOST = "https://ghfind.com"
+DEFAULT_HOST = "https://ghsphere.com"
 _GITHUB_API = "https://api.github.com"
 _ROAST_META_HEADER = "x-roast-meta"
 _FRAME = "\x1f"
@@ -117,13 +117,13 @@ class GhFind:
             self._raise(status, text)
         return json.loads(text)
 
-    # ---- GitHub existence check (client-side; does NOT touch ghfind) ----------
+    # ---- GitHub existence check (client-side; does NOT touch ghsphere) ----------
 
     def get_github_user(self, username: str, *, token: Optional[str] = None) -> Optional[dict]:
         """Look up a GitHub account directly from GitHub's public API.
 
         Returns the basic public profile, or ``None`` if the login does not exist
-        (HTTP 404). Runs on the caller's IP/quota, not ghfind's — confirm an
+        (HTTP 404). Runs on the caller's IP/quota, not ghsphere's — confirm an
         account is real before spending a call on scoring. No token needed; pass
         one to raise GitHub's ~60/h anon limit to 5000/h. Raises ``GhFindError``
         (code ``github_rate_limited``) if GitHub throttles the check, so a
@@ -162,7 +162,7 @@ class GhFind:
 
         Pass ``verify_exists=True`` to confirm the account is real via the
         client-side GitHub check first, so a typo/nonexistent handle fails fast
-        without hitting ghfind at all.
+        without hitting ghsphere at all.
         """
         if verify_exists:
             self._ensure_exists(username, github_token)
@@ -188,7 +188,7 @@ class GhFind:
         a score.
 
         Pass ``verify_exists=True`` to confirm the account is real (client-side
-        GitHub check) before calling ghfind — avoids triggering a live
+        GitHub check) before calling ghsphere — avoids triggering a live
         server-side crawl for a handle that doesn't exist.
         """
         if verify_exists:

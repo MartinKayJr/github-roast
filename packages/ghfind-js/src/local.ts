@@ -1,11 +1,11 @@
 /**
  * `ghfind/local` — LOCAL deterministic scoring (Node-only).
  *
- * This entry point bundles the *actual* open-source scoring core from the ghfind
+ * This entry point bundles the *actual* open-source scoring core from the ghsphere
  * website (`src/lib/score.ts` + `src/lib/github.ts`) — not a copy — so results are
  * byte-for-byte identical to the site and can never drift. With your own GitHub
  * token you can score any account entirely on your own machine and quota, WITHOUT
- * calling the ghfind server at all. No LLM is involved.
+ * calling the ghsphere server at all. No LLM is involved.
  *
  * Import it only when you want local scoring — the main `ghfind` entry stays a
  * tiny dependency-free remote client and does NOT pull this core in.
@@ -15,7 +15,7 @@
  *   console.log(scan.scoring.final_score, scan.scoring.red_flags);
  *
  * No token? Use the remote client instead: `new GhFind().getScore(username)` —
- * the ghfind server does the crawl + deterministic scoring for you.
+ * the ghsphere server does the crawl + deterministic scoring for you.
  */
 
 import {

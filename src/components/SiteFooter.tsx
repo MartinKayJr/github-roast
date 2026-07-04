@@ -2,7 +2,7 @@ import { getTranslations } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
 import { PoweredByLobeHub } from "@/components/Sponsor";
 
-const REPO_URL = "https://github.com/hikariming/ghfind";
+const REPO_URL = "https://github.com/MartinKayJr/github-roast";
 
 /**
  * Global footer. Beyond the sponsor credit, it surfaces the trust-anchor pages
@@ -36,7 +36,7 @@ export async function SiteFooter() {
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
         <div className="grid grid-cols-2 gap-8 sm:grid-cols-4">
           <div className="col-span-2 sm:col-span-1">
-            <div className="text-lg font-black text-[var(--foreground)]">ghfind</div>
+            <div className="text-lg font-black text-[var(--foreground)]">ghsphere</div>
             <p className="mt-2 text-sm text-zinc-500">{t("tagline")}</p>
           </div>
           <FooterCol title={t("sectionProduct")}>

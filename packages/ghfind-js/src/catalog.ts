@@ -1,5 +1,5 @@
 /**
- * Machine-readable catalog of ghfind's atomic capabilities. Mirrors the CLI
+ * Machine-readable catalog of ghsphere's atomic capabilities. Mirrors the CLI
  * command catalog and the /openapi.json spec so an agent can introspect what the
  * SDK can do — including whether a capability is deterministic or uses an LLM.
  */
@@ -17,7 +17,7 @@ export interface Capability {
   agent_guidance: string;
 }
 
-export const DEFAULT_HOST = "https://ghfind.com";
+export const DEFAULT_HOST = "https://ghsphere.com";
 
 export const catalog: Capability[] = [
   {
@@ -36,7 +36,7 @@ export const catalog: Capability[] = [
     summary: "Confirm a GitHub account exists (client-side, via GitHub's own API).",
     llm: false,
     response_semantics:
-      "Basic public GitHub profile, or null if the login does not exist. Runs on the caller's IP/quota, NOT ghfind's. No token needed (optional token raises GitHub's ~60/h anon limit).",
+      "Basic public GitHub profile, or null if the login does not exist. Runs on the caller's IP/quota, NOT ghsphere's. No token needed (optional token raises GitHub's ~60/h anon limit).",
     agent_guidance:
       "Use to validate a handle before spending a call on scoring. Pass { verifyExists: true } to scan()/getScore() to do this automatically and fail fast on typos/nonexistent users.",
   },

@@ -6,7 +6,13 @@ import { withDevLeaderboardPreview } from "./devLeaderboardPreview";
 
 const HOME_PREVIEW_LIMIT = 50;
 
-export async function HomeLeaderboard({ pageSize = 10 }: { pageSize?: number }) {
+export async function HomeLeaderboard({
+  pageSize = 10,
+  compact = false,
+}: {
+  pageSize?: number;
+  compact?: boolean;
+}) {
   const tHome = await getTranslations("home");
   const tBoard = await getTranslations("leaderboard");
   const leaderboardLabels: LeaderboardLabels = {
@@ -55,6 +61,7 @@ export async function HomeLeaderboard({ pageSize = 10 }: { pageSize?: number }) 
       labels={labels}
       leaderboardLabels={leaderboardLabels}
       pageSize={pageSize}
+      compact={compact}
       scoreEntries={withDevLeaderboardPreview("score", scoreEntries)}
       heatEntries={withDevLeaderboardPreview("heat", heatEntries)}
       trendingEntries={withDevLeaderboardPreview("trending", trendingEntries)}

@@ -6,6 +6,7 @@ import { createClient } from "@libsql/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ROAST_CACHE_VERSION } from "../cache-version";
 import type { ScoreEntry } from "../db";
+import type { RawMetrics, ScanResult } from "../types";
 
 let db: typeof import("../db");
 let tmpDir: string;
@@ -30,6 +31,100 @@ const entry: ScoreEntry = {
   },
   scanned_at: 1_800_000_000_000,
 };
+
+const baseMetrics: RawMetrics = {
+  username: "growth-qualified",
+  profile_url: "https://github.com/growth-qualified",
+  avatar_url: null,
+  name: "Growth Qualified",
+  bio: null,
+  company: null,
+  account_age_years: 3,
+  created_at: "2023-01-01T00:00:00Z",
+  followers: 10,
+  following: 5,
+  public_repos: 4,
+  fetched_repo_count: 4,
+  original_repo_count: 4,
+  nonempty_original_repo_count: 3,
+  fork_repo_count: 0,
+  empty_original_repo_count: 1,
+  total_stars: 10,
+  max_stars: 8,
+  best_original_repo_quality_score: 0.8,
+  top_starred_original_repo_quality_score: 0.8,
+  merged_pr_count: 4,
+  total_pr_count: 5,
+  issues_created: 1,
+  last_year_contributions: 80,
+  activity_type_count: 2,
+  contribution_years_active: 3,
+  days_since_last_activity: 1,
+  recent_merged_pr_sample: 3,
+  recent_trivial_pr_count: 0,
+  external_trivial_pr_count: 0,
+  max_impact_repo_stars: 0,
+  impact_pr_count: 0,
+  impact_depth_raw: 0,
+  impact_commit_count: 0,
+  star_inflation_suspect: false,
+  closed_unmerged_pr_count: 0,
+  pr_rejection_rate: 0,
+  recent_pr_sample: 3,
+  top_repo_pr_target: null,
+  top_repo_pr_share: 0,
+  templated_pr_ratio: 0,
+  pr_flood_suspect: false,
+};
+
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function scanFixture(
+  username: string,
+  finalScore: number,
+  overrides: Partial<RawMetrics> = {},
+): ScanResult {
+  return {
+    metrics: {
+      ...baseMetrics,
+      ...overrides,
+      username,
+      profile_url: `https://github.com/${username}`,
+    },
+    top_repos: [
+      {
+        name: "app",
+        owner_login: username,
+        name_with_owner: `${username}/app`,
+        stars: 10,
+        forks: 1,
+        open_issues: 0,
+        size: 100,
+        language: "TypeScript",
+        description: null,
+        pushed_at: new Date().toISOString(),
+      },
+    ],
+    recent_prs: [],
+    flood_pr_titles: [],
+    impact_repos: [],
+    verified_impact_prs: [],
+    pinned_repos: [],
+    organizations: [],
+    contribution_days: [{ date: todayIso(), contribution_count: 4 }],
+    scoring: {
+      sub_scores: entry.sub_scores,
+      base_score: finalScore,
+      red_flags: [],
+      total_penalty: 0,
+      final_score: finalScore,
+      tier: finalScore > 70 ? "人上人" : "NPC",
+      tier_label: "test",
+    },
+  };
+}
 
 beforeAll(async () => {
   tmpDir = mkdtempSync(join(tmpdir(), "ghroast-db-"));
@@ -327,5 +422,130 @@ describe("getRank", () => {
     // A hidden high score neither inflates the total nor worsens the rank.
     expect(after!.total).toBe(before!.total);
     expect(after!.rank).toBe(before!.rank);
+  });
+});
+
+describe("growth scan subscriptions", () => {
+  it("tracks subscription state and due scans", async () => {
+    await db.upsertUser({
+      github_id: 991001,
+      login: "GrowthSubUser",
+      name: "Growth Sub",
+      avatar_url: null,
+    });
+
+    const active = await db.upsertGrowthScanSubscription({
+      github_id: 991001,
+      login: "GrowthSubUser",
+    });
+    expect(active).toMatchObject({
+      github_id: 991001,
+      login: "growthsubuser",
+      status: "active",
+      last_scanned_at: null,
+      last_error: null,
+    });
+
+    const due = await db.listDueGrowthScanSubscriptions(10, 24 * 60 * 60 * 1000);
+    expect(due.some((s) => s.github_id === 991001)).toBe(true);
+
+    await db.markGrowthScanSubscriptionRun(991001, {
+      last_scanned_at: Date.now(),
+      last_error: null,
+    });
+    const notDue = await db.listDueGrowthScanSubscriptions(10, 24 * 60 * 60 * 1000);
+    expect(notDue.some((s) => s.github_id === 991001)).toBe(false);
+
+    const inactive = await db.updateGrowthScanSubscriptionStatus(991001, "inactive");
+    expect(inactive?.status).toBe("inactive");
+  });
+});
+
+describe("recent growth contribution eligibility", () => {
+  it("adds roast scans to recent growth when the final score is above 50 and activity is recent", async () => {
+    const username = "growth-roast-qualified";
+    const scan = scanFixture(username, 45);
+    await db.recordScore({
+      ...entry,
+      username,
+      final_score: 55,
+      tier: "NPC",
+      scanned_at: Date.now(),
+    });
+
+    await db.recordProfileSnapshot(scan, { growthFinalScore: 55 });
+
+    const points = await db.getGrowthTimeline(50, "30d");
+    expect(points.some((p) => p.username === username)).toBe(true);
+  });
+
+  it("does not add accounts at or below the growth score floor", async () => {
+    const username = "growth-low-score";
+    const scan = scanFixture(username, 50);
+    await db.recordScore({
+      ...entry,
+      username,
+      final_score: 50,
+      tier: "NPC",
+      scanned_at: Date.now(),
+    });
+
+    await db.recordProfileSnapshot(scan);
+
+    const points = await db.getGrowthTimeline(50, "30d");
+    expect(points.some((p) => p.username === username)).toBe(false);
+  });
+
+  it("removes recent growth days when a later scan looks like farming", async () => {
+    const username = "growth-spam-clears";
+    await db.recordScore({
+      ...entry,
+      username,
+      final_score: 72,
+      tier: "人上人",
+      scanned_at: Date.now(),
+    });
+    await db.recordProfileSnapshot(scanFixture(username, 72));
+
+    let points = await db.getGrowthTimeline(50, "30d");
+    expect(points.some((p) => p.username === username)).toBe(true);
+
+    const spamScan = scanFixture(username, 72, {
+      recent_merged_pr_sample: 20,
+      external_trivial_pr_count: 16,
+    });
+    spamScan.scoring.red_flags = [
+      {
+        flag: "trivial_pr_farming",
+        penalty: 8,
+        detail: "test farming signal",
+      },
+    ];
+    await db.recordProfileSnapshot(spamScan);
+
+    points = await db.getGrowthTimeline(50, "30d");
+    expect(points.some((p) => p.username === username)).toBe(false);
+  });
+
+  it("does not clear existing growth days when an old cached scan has no contribution_days field", async () => {
+    const username = "growth-legacy-cache";
+    await db.recordScore({
+      ...entry,
+      username,
+      final_score: 72,
+      tier: "人上人",
+      scanned_at: Date.now(),
+    });
+    await db.recordProfileSnapshot(scanFixture(username, 72));
+
+    let points = await db.getGrowthTimeline(50, "30d");
+    expect(points.some((p) => p.username === username)).toBe(true);
+
+    const legacyScan = scanFixture(username, 72);
+    delete legacyScan.contribution_days;
+    await db.recordProfileSnapshot(legacyScan);
+
+    points = await db.getGrowthTimeline(50, "30d");
+    expect(points.some((p) => p.username === username)).toBe(true);
   });
 });

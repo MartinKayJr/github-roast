@@ -48,11 +48,20 @@ import type {
   TopRepo,
 } from "./types";
 import type { LeaderboardWindow } from "./leaderboardWindow";
+import { bandFor } from "./band";
+import { spamBotScore } from "./score";
 
 const EMPTY_TAGS: Tags = { zh: [], en: [] };
 const HEAT_LOOKUP_WINDOW_MS = 24 * 60 * 60 * 1000;
 const TRENDING_LOOKUP_WINDOW_MS = 7 * HEAT_LOOKUP_WINDOW_MS;
 const MIN_RECORDED_LOOKUP_COUNT = 1;
+const GROWTH_MIN_FINAL_SCORE = 50;
+const GROWTH_RECENT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const GROWTH_MAX_SPAM_BOT_SCORE = 3;
+const GROWTH_FARMING_FLAGS = new Set([
+  "trivial_pr_farming",
+  "templated_pr_flooding",
+]);
 
 // User-selectable leaderboard time window. Every board shares one meaning: the
 // candidate pool is "accounts looked up within this window" (and the recent-heat
@@ -238,6 +247,16 @@ function ensureSchema(db: Client): Promise<void> {
            )`,
           `CREATE INDEX IF NOT EXISTS idx_profile_snapshots_username_scanned
              ON profile_snapshots(username, scanned_at DESC)`,
+          `CREATE TABLE IF NOT EXISTS github_contribution_days (
+             username           TEXT NOT NULL,
+             contribution_date  TEXT NOT NULL,
+             contribution_count INTEGER NOT NULL,
+             scanned_at         INTEGER NOT NULL,
+             source             TEXT NOT NULL DEFAULT 'github_commit_contributions',
+             PRIMARY KEY(username, contribution_date)
+           )`,
+          `CREATE INDEX IF NOT EXISTS idx_github_contribution_days_date
+             ON github_contribution_days(contribution_date DESC)`,
           // Legacy: AI-generated anonymous danmaku for the detail page. The
           // feature was removed; this table is no longer read or written and is
           // kept only so existing databases (which may hold rows) stay valid.
@@ -280,6 +299,18 @@ function ensureSchema(db: Client): Promise<void> {
              last_login  INTEGER NOT NULL
            )`,
           `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_login ON users(login)`,
+          `CREATE TABLE IF NOT EXISTS growth_scan_subscriptions (
+             github_id       INTEGER PRIMARY KEY,
+             login           TEXT NOT NULL,
+             status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive')),
+             created_at      INTEGER NOT NULL,
+             updated_at      INTEGER NOT NULL,
+             last_scanned_at INTEGER,
+             last_error      TEXT,
+             FOREIGN KEY (github_id) REFERENCES users(github_id) ON DELETE CASCADE
+           )`,
+          `CREATE INDEX IF NOT EXISTS idx_growth_scan_subscriptions_due
+             ON growth_scan_subscriptions(status, last_scanned_at)`,
           `CREATE TABLE IF NOT EXISTS profile_comments (
              id                TEXT PRIMARY KEY,
              target_username   TEXT NOT NULL,
@@ -471,6 +502,20 @@ export interface LeaderboardEntry {
   delta?: number;
 }
 
+export interface GrowthLeaderboardEntry {
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  final_score: number;
+  tier: Tier;
+  contribution_delta: number;
+  merged_pr_delta: number;
+  impact_commit_delta: number;
+  growth_score: number;
+  latest_snapshot_at: number;
+  previous_snapshot_at: number | null;
+}
+
 /**
  * Count one successful public lookup for a GitHub account.
  *
@@ -591,12 +636,16 @@ export async function recordScore(entry: ScoreEntry): Promise<void> {
  * Fire-and-forget: any failure is logged and swallowed so it never blocks the
  * scoring/roast flow (mirrors {@link recordScore} / {@link updateRoast}).
  */
-export async function recordProfileSnapshot(scan: ScanResult): Promise<void> {
+export async function recordProfileSnapshot(
+  scan: ScanResult,
+  options: ProfileSnapshotOptions = {},
+): Promise<void> {
   const db = getClient();
   if (!db) return;
   try {
     await ensureSchema(db);
     const username = scan.metrics.username.toLowerCase();
+    const scannedAt = Date.now();
     await db.execute({
       sql: `INSERT INTO profile_snapshots
               (id, username, scanned_at, top_repos, impact_repos, verified_prs,
@@ -605,7 +654,7 @@ export async function recordProfileSnapshot(scan: ScanResult): Promise<void> {
       args: [
         randomUUID(),
         username,
-        Date.now(),
+        scannedAt,
         JSON.stringify(scan.top_repos ?? []),
         JSON.stringify(scan.impact_repos ?? []),
         JSON.stringify(scan.verified_impact_prs ?? []),
@@ -615,6 +664,39 @@ export async function recordProfileSnapshot(scan: ScanResult): Promise<void> {
         SCORE_CACHE_VERSION,
       ],
     });
+    if (Array.isArray(scan.contribution_days)) {
+      const contributionDays = scan.contribution_days.filter(
+        (day) =>
+          /^\d{4}-\d{2}-\d{2}$/.test(day.date) &&
+          Number.isFinite(day.contribution_count) &&
+          day.contribution_count > 0,
+      );
+      const growthFinalScore = options.growthFinalScore ?? scan.scoring.final_score;
+      if (isGrowthEligible(scan, contributionDays, growthFinalScore, scannedAt)) {
+        for (const day of contributionDays) {
+          await db.execute({
+            sql: `INSERT INTO github_contribution_days
+                    (username, contribution_date, contribution_count, scanned_at, source)
+                  VALUES (?, ?, ?, ?, 'github_commit_contributions')
+                  ON CONFLICT(username, contribution_date) DO UPDATE SET
+                    contribution_count = excluded.contribution_count,
+                    scanned_at = MAX(github_contribution_days.scanned_at, excluded.scanned_at),
+                    source = excluded.source`,
+            args: [
+              username,
+              day.date,
+              Math.max(0, Math.floor(day.contribution_count)),
+              scannedAt,
+            ],
+          });
+        }
+      } else {
+        await db.execute({
+          sql: `DELETE FROM github_contribution_days WHERE username = ?`,
+          args: [username],
+        });
+      }
+    }
     // Derive + persist the discovery facets from the same scan, so every path
     // that sediments a snapshot also refreshes the /developers directory. Kept
     // inside the same best-effort try (independent statement — a facet failure is
@@ -1292,6 +1374,363 @@ export async function getProgressLeaderboard(
   }
 }
 
+function metricNumber(metrics: Record<string, unknown>, key: string): number {
+  const value = metrics[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function parseMetricsObject(raw: unknown): Record<string, unknown> {
+  if (typeof raw !== "string" || !raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function growthFromMetrics(
+  latestMetrics: Record<string, unknown>,
+  previousMetrics: Record<string, unknown>,
+  hasPrevious: boolean,
+) {
+  const latestContrib = metricNumber(latestMetrics, "last_year_contributions");
+  const previousContrib = metricNumber(previousMetrics, "last_year_contributions");
+  const latestMergedPr = metricNumber(latestMetrics, "recent_merged_pr_sample");
+  const previousMergedPr = metricNumber(previousMetrics, "recent_merged_pr_sample");
+  const latestImpactCommits = metricNumber(latestMetrics, "impact_commit_count");
+  const previousImpactCommits = metricNumber(previousMetrics, "impact_commit_count");
+
+  const contributionDelta = hasPrevious
+    ? Math.max(0, latestContrib - previousContrib)
+    : Math.min(latestContrib, 30);
+  const mergedPrDelta = hasPrevious
+    ? Math.max(0, latestMergedPr - previousMergedPr)
+    : Math.min(latestMergedPr, 10);
+  const impactCommitDelta = hasPrevious
+    ? Math.max(0, latestImpactCommits - previousImpactCommits)
+    : Math.min(latestImpactCommits, 20);
+
+  return {
+    contributionDelta,
+    mergedPrDelta,
+    impactCommitDelta,
+    growthScore: contributionDelta + mergedPrDelta * 3 + impactCommitDelta * 0.5,
+  };
+}
+
+/** Growth board sorted by recent public contribution gains, not all-time score.
+ * Uses the latest two profile snapshots as a pragmatic baseline. When a user has
+ * only one snapshot, a capped slice of current public contribution activity lets
+ * new entrants appear without letting all-time giants dominate. */
+export async function getContributionGrowthLeaderboard(
+  limit = 100,
+  window: LeaderboardWindow = "30d",
+): Promise<GrowthLeaderboardEntry[]> {
+  const db = getClient();
+  if (!db) return [];
+  try {
+    await ensureSchema(db);
+    const now = Date.now();
+    const windowCutoff =
+      window === "all" ? 0 : now - LEADERBOARD_WINDOW_MS[window];
+    const cutoffDate =
+      window === "all"
+        ? "0000-01-01"
+        : new Date(windowCutoff).toISOString().slice(0, 10);
+    const res = await db.execute({
+      sql: `WITH ranked_snapshots AS (
+              SELECT username, scanned_at, metrics,
+                     ROW_NUMBER() OVER (PARTITION BY username ORDER BY scanned_at DESC) AS rn
+              FROM profile_snapshots
+            ),
+            daily AS (
+              SELECT username,
+                     SUM(contribution_count) AS window_contribution_count,
+                     MAX(contribution_date) AS latest_contribution_date
+              FROM github_contribution_days
+              WHERE contribution_date >= ?
+              GROUP BY username
+            )
+            SELECT s.username, s.display_name, s.avatar_url, s.final_score, s.tier,
+                   latest.metrics AS latest_metrics,
+                   latest.scanned_at AS latest_snapshot_at,
+                   previous.metrics AS previous_metrics,
+                   previous.scanned_at AS previous_snapshot_at,
+                   daily.window_contribution_count AS window_contribution_count,
+                   daily.latest_contribution_date AS latest_contribution_date
+            FROM scores AS s
+            JOIN ranked_snapshots AS latest
+              ON latest.username = s.username AND latest.rn = 1
+            LEFT JOIN ranked_snapshots AS previous
+              ON previous.username = s.username AND previous.rn = 2
+            JOIN daily ON daily.username = s.username
+            WHERE s.hidden = 0
+              AND s.final_score > ?
+              AND COALESCE(s.bot_score, 0) < ?
+              AND latest.scanned_at >= ?
+            LIMIT ?`,
+      args: [
+        cutoffDate,
+        GROWTH_MIN_FINAL_SCORE,
+        GROWTH_MAX_SPAM_BOT_SCORE,
+        windowCutoff,
+        Math.max(limit * 4, limit),
+      ],
+    });
+
+    return res.rows
+      .map((r) => {
+        const previousSnapshotAt =
+          r.previous_snapshot_at == null ? null : Number(r.previous_snapshot_at);
+        const growth = growthFromMetrics(
+          parseMetricsObject(r.latest_metrics),
+          parseMetricsObject(r.previous_metrics),
+          previousSnapshotAt !== null,
+        );
+        const windowContributionCount = Math.max(
+          0,
+          Math.floor(Number(r.window_contribution_count) || 0),
+        );
+        return {
+          username: String(r.username),
+          display_name: (r.display_name as string | null) ?? null,
+          avatar_url: (r.avatar_url as string | null) ?? null,
+          final_score: Number(r.final_score),
+          tier: String(r.tier) as Tier,
+          contribution_delta: windowContributionCount,
+          merged_pr_delta: growth.mergedPrDelta,
+          impact_commit_delta: growth.impactCommitDelta,
+          growth_score: windowContributionCount,
+          latest_snapshot_at: Number(r.latest_snapshot_at),
+          previous_snapshot_at: previousSnapshotAt,
+        };
+      })
+      .filter((entry) => entry.growth_score > 0)
+      .sort((a, b) => b.growth_score - a.growth_score || b.latest_snapshot_at - a.latest_snapshot_at)
+      .slice(0, limit);
+  } catch (e) {
+    console.error("getContributionGrowthLeaderboard failed:", e);
+    return [];
+  }
+}
+
+/** One score reading in a user's trajectory: score at a point in time. */
+export interface GrowthTrajectoryStep {
+  /** generated_at (ms epoch) of the score snapshot */
+  t: number;
+  /** final_score at that time */
+  score: number;
+}
+
+export interface GrowthTimelinePoint {
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  band: string;
+  final_score: number;
+  growth_score: number;
+  contribution_delta: number;
+  merged_pr_delta: number;
+  impact_commit_delta: number;
+  /** Contribution event date (ms epoch) — where the avatar node sits. */
+  snapshot_at: number;
+  contribution_count: number;
+  primary_language: string | null;
+  primary_repo: string | null;
+  /** Daily contribution events within the window. Keeps the chart tied to
+ *  public commit dates instead of scan dates. */
+  steps: GrowthTrajectoryStep[];
+}
+
+export interface ProfileSnapshotOptions {
+  /**
+   * Optional final score after the roast-time AI adjustment. Cron and deterministic
+   * scans omit this and use `scan.scoring.final_score`.
+   */
+  growthFinalScore?: number;
+}
+
+function hasRecentContributionDay(
+  days: { date: string; contribution_count: number }[],
+  now: number,
+): boolean {
+  const cutoff = new Date(now - GROWTH_RECENT_WINDOW_MS).toISOString().slice(0, 10);
+  return days.some(
+    (day) => day.date >= cutoff && Math.floor(day.contribution_count) > 0,
+  );
+}
+
+function isGrowthEligible(scan: ScanResult, days: { date: string; contribution_count: number }[], finalScore: number, now: number): boolean {
+  if (!(finalScore > GROWTH_MIN_FINAL_SCORE)) return false;
+  if (!hasRecentContributionDay(days, now)) return false;
+  if (spamBotScore(scan.metrics) >= GROWTH_MAX_SPAM_BOT_SCORE) return false;
+  return !scan.scoring.red_flags.some((flag) => GROWTH_FARMING_FLAGS.has(flag.flag));
+}
+
+function contributionDateToMs(date: string): number {
+  const [year, month, day] = date.split("-").map((part) => Number(part));
+  if (!year || !month || !day) return 0;
+  return new Date(year, month - 1, day).getTime();
+}
+
+/** Growth timeline data. The X axis is the GitHub contribution date, persisted
+ *  from commit contributions during scan, not when ghsphere scanned the account.
+ *  Users are still ranked/filtered by recent contribution growth so
+ *  only genuinely-growing accounts appear. */
+export async function getGrowthTimeline(
+  limit = 120,
+  window: LeaderboardWindow = "30d",
+): Promise<GrowthTimelinePoint[]> {
+  const db = getClient();
+  if (!db) return [];
+  try {
+    await ensureSchema(db);
+    const now = Date.now();
+    const windowCutoff =
+      window === "all" ? 0 : now - LEADERBOARD_WINDOW_MS[window];
+    const cutoffDate =
+      window === "all"
+        ? "0000-01-01"
+        : new Date(windowCutoff).toISOString().slice(0, 10);
+
+    // 1) Rank qualifying users by recent growth (latest vs previous profile
+    //    snapshot) — decides who appears and their growth_score / deltas /
+    //    primary repo+language.
+    const rankRes = await db.execute({
+      sql: `WITH ranked_snapshots AS (
+              SELECT username, scanned_at, metrics, top_repos,
+                     ROW_NUMBER() OVER (PARTITION BY username ORDER BY scanned_at DESC) AS rn
+              FROM profile_snapshots
+            ),
+            daily AS (
+              SELECT username,
+                     SUM(contribution_count) AS window_contribution_count,
+                     MAX(contribution_date) AS latest_contribution_date
+              FROM github_contribution_days
+              WHERE contribution_date >= ?
+              GROUP BY username
+            )
+            SELECT s.username, s.display_name, s.avatar_url, s.final_score,
+                   latest.metrics AS latest_metrics,
+                   latest.scanned_at AS latest_snapshot_at,
+                   latest.top_repos AS latest_top_repos,
+                   previous.metrics AS previous_metrics,
+                   previous.scanned_at AS previous_snapshot_at,
+                   daily.window_contribution_count AS window_contribution_count,
+                   daily.latest_contribution_date AS latest_contribution_date
+            FROM scores AS s
+            JOIN ranked_snapshots AS latest
+              ON latest.username = s.username AND latest.rn = 1
+            LEFT JOIN ranked_snapshots AS previous
+              ON previous.username = s.username AND previous.rn = 2
+            JOIN daily ON daily.username = s.username
+            WHERE s.hidden = 0
+              AND s.final_score > ?
+              AND COALESCE(s.bot_score, 0) < ?
+            LIMIT ?`,
+      args: [
+        cutoffDate,
+        GROWTH_MIN_FINAL_SCORE,
+        GROWTH_MAX_SPAM_BOT_SCORE,
+        Math.max(limit * 4, limit),
+      ],
+    });
+
+    const ranked = rankRes.rows
+      .map((r) => {
+        const previousSnapshotAt =
+          r.previous_snapshot_at == null ? null : Number(r.previous_snapshot_at);
+        const growth = growthFromMetrics(
+          parseMetricsObject(r.latest_metrics),
+          parseMetricsObject(r.previous_metrics),
+          previousSnapshotAt !== null,
+        );
+        const topRepos = parseJsonArray<{ name: string; name_with_owner?: string; language?: string | null }>(
+          r.latest_top_repos,
+        );
+        const primaryRepo = topRepos[0]
+          ? (topRepos[0].name_with_owner ?? topRepos[0].name ?? null)
+          : null;
+        const primaryLanguage = topRepos[0]?.language ?? null;
+        const finalScore = Number(r.final_score);
+        const windowContributionCount = Math.max(
+          0,
+          Math.floor(Number(r.window_contribution_count) || 0),
+        );
+        return {
+          username: String(r.username),
+          display_name: (r.display_name as string | null) ?? null,
+          avatar_url: (r.avatar_url as string | null) ?? null,
+          band: bandFor(finalScore),
+          final_score: finalScore,
+          growth_score: windowContributionCount,
+          contribution_delta: windowContributionCount,
+          merged_pr_delta: growth.mergedPrDelta,
+          impact_commit_delta: growth.impactCommitDelta,
+          snapshot_at: Number(r.latest_snapshot_at),
+          primary_language: primaryLanguage,
+          primary_repo: primaryRepo,
+        };
+      })
+      .filter((p) => p.growth_score > 0)
+      .sort((a, b) => b.growth_score - a.growth_score || b.snapshot_at - a.snapshot_at)
+      .slice(0, limit);
+
+    if (ranked.length === 0) return [];
+
+    // 2) Pull each ranked user's public commit contribution dates. This is the
+    //    event time users expect to see on the chart; scan timestamps are not
+    //    used for point placement.
+    const usernames = ranked.map((p) => p.username);
+    const placeholders = usernames.map(() => "?").join(",");
+    const daysRes = await db.execute({
+      sql: `SELECT username, contribution_date, contribution_count
+            FROM github_contribution_days
+            WHERE username IN (${placeholders})
+              AND contribution_date >= ?
+              AND contribution_count > 0
+            ORDER BY contribution_date ASC, username ASC`,
+      args: [...usernames, cutoffDate],
+    });
+
+    const daysByUser = new Map<
+      string,
+      { t: number; count: number; date: string }[]
+    >();
+    for (const row of daysRes.rows) {
+      const u = String(row.username);
+      const date = String(row.contribution_date);
+      const t = contributionDateToMs(date);
+      if (!t) continue;
+      const arr = daysByUser.get(u) ?? [];
+      arr.push({
+        t,
+        count: Math.max(0, Math.floor(Number(row.contribution_count))),
+        date,
+      });
+      daysByUser.set(u, arr);
+    }
+
+    return ranked
+      .flatMap((p) => {
+        const days = daysByUser.get(p.username) ?? [];
+        const steps = days.map((day) => ({ t: day.t, score: p.final_score }));
+        return days.map((day) => ({
+          ...p,
+          snapshot_at: day.t,
+          contribution_count: day.count,
+          steps,
+        }));
+      })
+      .sort((a, b) => b.growth_score - a.growth_score || b.contribution_count - a.contribution_count)
+      .slice(0, limit);
+  } catch (e) {
+    console.error("getGrowthTimeline failed:", e);
+    return [];
+  }
+}
+
 /** One bucket in the /developers directory: a language/org and how many
  *  qualifying (public, at/above the floor) developers it holds. */
 export interface FacetCategory {
@@ -1938,6 +2377,164 @@ export async function upsertUser(u: UserUpsert): Promise<void> {
     });
   } catch (e) {
     console.error("upsertUser failed:", e);
+  }
+}
+
+// ============================================================================
+// Growth Scan Subscriptions
+// ============================================================================
+
+export type GrowthScanSubscriptionStatus = "active" | "inactive";
+
+export interface GrowthScanSubscription {
+  github_id: number;
+  login: string;
+  status: GrowthScanSubscriptionStatus;
+  created_at: number;
+  updated_at: number;
+  last_scanned_at: number | null;
+  last_error: string | null;
+}
+
+function toGrowthScanSubscription(
+  row: Record<string, unknown>,
+): GrowthScanSubscription {
+  return {
+    github_id: Number(row.github_id),
+    login: String(row.login),
+    status: row.status === "inactive" ? "inactive" : "active",
+    created_at: Number(row.created_at),
+    updated_at: Number(row.updated_at),
+    last_scanned_at:
+      row.last_scanned_at == null ? null : Number(row.last_scanned_at),
+    last_error: (row.last_error as string | null) ?? null,
+  };
+}
+
+export async function getGrowthScanSubscription(
+  githubId: number,
+): Promise<GrowthScanSubscription | null> {
+  const db = getClient();
+  if (!db) return null;
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT github_id, login, status, created_at, updated_at,
+                   last_scanned_at, last_error
+            FROM growth_scan_subscriptions
+            WHERE github_id = ?
+            LIMIT 1`,
+      args: [githubId],
+    });
+    const row = res.rows[0];
+    return row ? toGrowthScanSubscription(row as Record<string, unknown>) : null;
+  } catch (e) {
+    console.error("getGrowthScanSubscription failed:", e);
+    return null;
+  }
+}
+
+export async function upsertGrowthScanSubscription(input: {
+  github_id: number;
+  login: string;
+  status?: GrowthScanSubscriptionStatus;
+}): Promise<GrowthScanSubscription | null> {
+  const db = getClient();
+  if (!db) return null;
+  try {
+    await ensureSchema(db);
+    const now = Date.now();
+    const status = input.status ?? "active";
+    await db.execute({
+      sql: `INSERT INTO growth_scan_subscriptions
+              (github_id, login, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(github_id) DO UPDATE SET
+              login      = excluded.login,
+              status     = excluded.status,
+              updated_at = excluded.updated_at,
+              last_error = NULL`,
+      args: [input.github_id, input.login.toLowerCase(), status, now, now],
+    });
+    return getGrowthScanSubscription(input.github_id);
+  } catch (e) {
+    console.error("upsertGrowthScanSubscription failed:", e);
+    return null;
+  }
+}
+
+export async function updateGrowthScanSubscriptionStatus(
+  githubId: number,
+  status: GrowthScanSubscriptionStatus,
+): Promise<GrowthScanSubscription | null> {
+  const db = getClient();
+  if (!db) return null;
+  try {
+    await ensureSchema(db);
+    await db.execute({
+      sql: `UPDATE growth_scan_subscriptions
+            SET status = ?, updated_at = ?
+            WHERE github_id = ?`,
+      args: [status, Date.now(), githubId],
+    });
+    return getGrowthScanSubscription(githubId);
+  } catch (e) {
+    console.error("updateGrowthScanSubscriptionStatus failed:", e);
+    return null;
+  }
+}
+
+export async function listDueGrowthScanSubscriptions(
+  limit = 10,
+  minIntervalMs = 24 * 60 * 60 * 1000,
+): Promise<GrowthScanSubscription[]> {
+  const db = getClient();
+  if (!db) return [];
+  try {
+    await ensureSchema(db);
+    const cutoff = Date.now() - Math.max(0, minIntervalMs);
+    const res = await db.execute({
+      sql: `SELECT github_id, login, status, created_at, updated_at,
+                   last_scanned_at, last_error
+            FROM growth_scan_subscriptions
+            WHERE status = 'active'
+              AND (last_scanned_at IS NULL OR last_scanned_at <= ?)
+            ORDER BY COALESCE(last_scanned_at, 0) ASC, updated_at ASC
+            LIMIT ?`,
+      args: [cutoff, Math.min(50, Math.max(1, limit))],
+    });
+    return res.rows.map((row) =>
+      toGrowthScanSubscription(row as Record<string, unknown>),
+    );
+  } catch (e) {
+    console.error("listDueGrowthScanSubscriptions failed:", e);
+    return [];
+  }
+}
+
+export async function markGrowthScanSubscriptionRun(
+  githubId: number,
+  result: { last_scanned_at?: number; last_error?: string | null },
+): Promise<void> {
+  const db = getClient();
+  if (!db) return;
+  try {
+    await ensureSchema(db);
+    await db.execute({
+      sql: `UPDATE growth_scan_subscriptions
+            SET last_scanned_at = COALESCE(?, last_scanned_at),
+                last_error = ?,
+                updated_at = ?
+            WHERE github_id = ?`,
+      args: [
+        result.last_scanned_at ?? null,
+        result.last_error ? result.last_error.slice(0, 500) : null,
+        Date.now(),
+        githubId,
+      ],
+    });
+  } catch (e) {
+    console.error("markGrowthScanSubscriptionRun failed:", e);
   }
 }
 

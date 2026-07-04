@@ -40,7 +40,7 @@ const RESOURCE_METADATA = `${SITE_URL}/.well-known/oauth-protected-resource`;
 
 /** Build a `WWW-Authenticate: Bearer ...` header pointing at the PRM document. */
 export function wwwAuthenticateHeader(): string {
-  return `Bearer realm="ghfind", resource_metadata="${RESOURCE_METADATA}"`;
+  return `Bearer realm="ghsphere", resource_metadata="${RESOURCE_METADATA}"`;
 }
 
 /**

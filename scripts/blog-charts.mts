@@ -33,7 +33,7 @@ function svgDoc(w: number, h: number, title: string, note: string, body: string)
 <rect width="${w}" height="${h}" fill="${BG}"/>
 <text x="36" y="46" fill="${FG}" font-size="26" font-weight="700">${esc(title)}</text>
 ${body}
-<text x="36" y="${h - 20}" fill="${FAINT}" font-size="14">${esc(note)} · ghfind.com</text>
+<text x="36" y="${h - 20}" fill="${FAINT}" font-size="14">${esc(note)} · ghsphere.com</text>
 </svg>`;
 }
 

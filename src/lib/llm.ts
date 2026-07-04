@@ -174,7 +174,7 @@ export async function* chatStreamEvents(
         "Content-Type": "application/json",
         Authorization: `Bearer ${config.apiKey}`,
         // OpenRouter attribution headers (ignored by other providers).
-        "HTTP-Referer": process.env.PUBLIC_SITE_URL || "https://ghfind.com",
+        "HTTP-Referer": process.env.PUBLIC_SITE_URL || "https://ghsphere.com",
         "X-Title": "GitHub Roast",
       },
       body: JSON.stringify({

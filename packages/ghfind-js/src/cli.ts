@@ -4,10 +4,10 @@
  * Design goals (in priority order):
  *  1. Useful with zero setup: `score` hits the public GET /api/score endpoint,
  *     which needs no auth and is cached + rate-limited on the server.
- *  2. Kind to the ghfind server: `--local` moves the heavy GitHub crawl onto the
- *     caller's own token/machine (see `ghfind/local`); nothing touches ghfind.
+ *  2. Kind to the ghsphere server: `--local` moves the heavy GitHub crawl onto the
+ *     caller's own token/machine (see `ghfind/local`); nothing touches ghsphere.
  *  3. Drives traffic back: human-facing output ends with a profile link, and
- *     `badge --markdown` prints a README-ready snippet that links to ghfind.com.
+ *     `badge --markdown` prints a README-ready snippet that links to ghsphere.com.
  *
  * No LLM is ever bundled. `roast` uses the server's model by default (protected
  * by caching + rate limits); pass `--byo-*` to run it through your own provider.
@@ -21,7 +21,7 @@ import type { ByoKey, ScanResult } from "./types.js";
 import { catalog, DEFAULT_HOST } from "./catalog.js";
 
 const VERSION: string = "0.1.1";
-const DEFAULT_RELEASE_URL = "https://api.github.com/repos/hikariming/ghfind/releases/latest";
+const DEFAULT_RELEASE_URL = "https://api.github.com/repos/MartinKayJr/github-roast/releases/latest";
 const VALID_OUTPUTS = new Set(["json", "pretty", "markdown"]);
 const SUB_SCORE_ORDER = [
   "account_maturity",
@@ -179,7 +179,7 @@ async function localScan(flags: Flags, username: string): Promise<ScanResult> {
   if (!token) {
     fail(
       "--local needs a GitHub token: pass --github-token or set GITHUB_TOKEN.\n" +
-        "Local scoring crawls GitHub on your own machine and quota (ghfind is never called).",
+        "Local scoring crawls GitHub on your own machine and quota (ghsphere is never called).",
     );
   }
   // Loaded lazily so the common remote path never pulls in the heavy engine.
@@ -630,7 +630,7 @@ function printHelp(): void {
   out("  scan <user>           Full evidence payload via POST /api/scan (heavy; needs --api-key in prod). --local supported.");
   out("  roast <user>          Human-facing roast report (LLM). --byo-* to use your own model.");
   out("  vs <a> <b>            Head-to-head verdict (winner deterministic).");
-  out("  exists <user>         Check a GitHub login exists (client-side; never touches ghfind).");
+  out("  exists <user>         Check a GitHub login exists (client-side; never touches ghsphere).");
   out("  search <query>        Prefix autocomplete over scored accounts.");
   out("  leaderboard           Ranked profiles. --view trending|score|heat|progress --window all|24h|7d|30d");
   out("  developers --type T   Discover developers by language|org|repo [--value V].");

@@ -247,6 +247,15 @@ function sanitizeScan(scan: ScanResult): ScanResult {
     })),
     pinned_repos: (scan.pinned_repos ?? []).slice(0, 6).map((r) => r.slice(0, 200)),
     organizations: (scan.organizations ?? []).slice(0, 20).map((o) => o.slice(0, 80)),
+    contribution_days: Array.isArray(scan.contribution_days)
+      ? scan.contribution_days
+          .filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day.date))
+          .slice(-366)
+          .map((day) => ({
+            date: day.date,
+            contribution_count: Math.max(0, Math.floor(day.contribution_count)),
+          }))
+      : undefined,
     scoring: scan.scoring,
   };
 }
@@ -356,7 +365,7 @@ async function computeMeta(
     });
     // Sediment the raw developer profile (the data moat) alongside the score.
     // Fire-and-forget inside recordProfileSnapshot; never blocks the roast.
-    await recordProfileSnapshot(scan);
+    await recordProfileSnapshot(scan, { growthFinalScore: summary.final_score });
     if (scan.metrics.github_id) {
       await ensureCommunityProfileDraft({
         github_id: scan.metrics.github_id,

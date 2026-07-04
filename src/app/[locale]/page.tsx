@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { DeveloperCount } from "@/components/DeveloperCount";
 import { HomeLeaderboard } from "@/components/HomeLeaderboard";
+import { HomeGrowthLeaderboard } from "@/components/HomeGrowthLeaderboard";
 import { Roaster } from "@/components/Roaster";
 import { HomeFaq, getFaqItems } from "@/components/HomeFaq";
 import { HomeIntro } from "@/components/HomeIntro";
@@ -72,7 +73,17 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
           </section>
         }
       >
-        <HomeLeaderboard pageSize={10} />
+        <HomeGrowthLeaderboard />
+      </Suspense>
+
+      <Suspense
+        fallback={
+          <section className="mt-10 w-full max-w-6xl">
+            <div className="h-40 animate-pulse rounded-2xl border border-white/5 bg-white/5" />
+          </section>
+        }
+      >
+        <HomeLeaderboard pageSize={10} compact />
       </Suspense>
 
       <HomeIntro />
@@ -87,8 +98,8 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
           })}
         </p>
         <p className="mt-2">
-          <a href="https://ghfind.com" className="font-bold text-orange-400 hover:text-orange-300">
-            ghfind.com
+          <a href="https://ghsphere.com" className="font-bold text-orange-400 hover:text-orange-300">
+            ghsphere.com
           </a>
         </p>
       </footer>

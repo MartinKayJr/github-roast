@@ -40,6 +40,7 @@ export function HomeLeaderboardClient({
   labels,
   leaderboardLabels,
   pageSize,
+  compact = false,
   scoreEntries,
   trendingEntries,
 }: {
@@ -47,10 +48,11 @@ export function HomeLeaderboardClient({
   labels: HomeLeaderboardLabels;
   leaderboardLabels: LeaderboardLabels;
   pageSize: number;
+  compact?: boolean;
   scoreEntries: LeaderboardClientEntry[];
   trendingEntries: LeaderboardClientEntry[];
 }) {
-  const [view, setView] = useState<LeaderboardView>("trending");
+  const [view, setView] = useState<LeaderboardView>("score");
   const [timeWindow, setTimeWindow] = useState<LeaderboardWindow>("all");
 
   // (view, window) -> entries. Seeded with the SSR'd "all"-window boards so the
@@ -103,7 +105,7 @@ export function HomeLeaderboardClient({
 
   const fullBoardHref = (() => {
     const params = new URLSearchParams();
-    if (view !== "trending") params.set("view", view);
+    params.set("view", view);
     if (timeWindow !== "all") params.set("window", timeWindow);
     const qs = params.toString();
     return qs ? `/leaderboard?${qs}` : "/leaderboard";
@@ -129,7 +131,7 @@ export function HomeLeaderboardClient({
   }));
 
   return (
-    <section className="mt-16 w-full max-w-6xl">
+    <section className={`w-full max-w-6xl ${compact ? "mt-10" : "mt-16"}`}>
       <LeaderboardControls
         frame="panel"
         className="mb-5"

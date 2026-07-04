@@ -208,7 +208,7 @@ export const VsShareCard = forwardRef<
       {/* Footer brand */}
       <div className="flex items-center justify-between gap-2 text-xs">
         <span className="truncate whitespace-nowrap text-zinc-500">{tShare("brand")}</span>
-        <span className="shrink-0 whitespace-nowrap font-black text-orange-400">ghfind.com</span>
+        <span className="shrink-0 whitespace-nowrap font-black text-orange-400">ghsphere.com</span>
       </div>
     </div>
   );

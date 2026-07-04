@@ -29,16 +29,16 @@ def test_host_normalization():
 
 def test_get_score():
     rec = Recorder(lambda *a: (200, json.dumps({"final_score": 99, "tier": "夯"}), {}))
-    gh = GhFind("https://ghfind.com", transport=rec)
+    gh = GhFind("https://ghsphere.com", transport=rec)
     r = gh.get_score("torvalds")
     assert r["final_score"] == 99
-    assert rec.calls[0]["url"] == "https://ghfind.com/api/score/torvalds"
+    assert rec.calls[0]["url"] == "https://ghsphere.com/api/score/torvalds"
     assert rec.calls[0]["method"] == "GET"
 
 
 def test_scan_posts_username_and_turnstile():
     rec = Recorder(lambda *a: (200, json.dumps({"scoring": {"final_score": 42}}), {}))
-    gh = GhFind("https://ghfind.com", turnstile_token="tok", transport=rec)
+    gh = GhFind("https://ghsphere.com", turnstile_token="tok", transport=rec)
     gh.scan("octocat")
     body = json.loads(rec.calls[0]["body"].decode())
     assert body == {"username": "octocat", "turnstileToken": "tok"}
@@ -82,8 +82,8 @@ def test_roast_parses_stream_and_header_meta():
     assert r["progress"] == ["progress..."]
     assert r["report"] == "# Report\nline two\nmore"
     assert [c["url"] for c in rec.calls] == [
-        "https://ghfind.com/api/scan",
-        "https://ghfind.com/api/roast",
+        "https://ghsphere.com/api/scan",
+        "https://ghsphere.com/api/roast",
     ]
 
 
@@ -99,7 +99,7 @@ def test_leaderboard_query_params():
     rec = Recorder(lambda *a: (200, json.dumps({"entries": []}), {}))
     gh = GhFind(transport=rec)
     gh.leaderboard(view="trending", window="7d")
-    assert rec.calls[0]["url"] == "https://ghfind.com/api/leaderboard?view=trending&window=7d"
+    assert rec.calls[0]["url"] == "https://ghsphere.com/api/leaderboard?view=trending&window=7d"
 
 
 def test_get_github_user_null_and_profile():
@@ -141,7 +141,7 @@ def test_verify_exists_short_circuits_when_missing():
     with pytest.raises(GhFindError) as ei:
         gh.get_score("ghost", verify_exists=True)
     assert ei.value.code == "github_user_not_found"
-    assert len(rec.calls) == 1  # ghfind was never called
+    assert len(rec.calls) == 1  # ghsphere was never called
     assert "api.github.com" in rec.calls[0]["url"]
 
 
@@ -157,12 +157,12 @@ def test_verify_exists_proceeds_when_present():
     assert r["final_score"] == 99
     assert [c["url"] for c in rec.calls] == [
         "https://api.github.com/users/torvalds",
-        "https://ghfind.com/api/score/torvalds",
+        "https://ghsphere.com/api/score/torvalds",
     ]
 
 
 def test_image_url_builders():
-    gh = GhFind("https://ghfind.com", transport=lambda *a: (200, "{}", {}))
-    assert gh.badge_url("torvalds", lang="zh") == "https://ghfind.com/api/badge/torvalds?lang=zh"
-    assert gh.card_url("torvalds") == "https://ghfind.com/api/card/torvalds"
-    assert gh.vs_card_url("a", "b") == "https://ghfind.com/api/card/vs/a/b"
+    gh = GhFind("https://ghsphere.com", transport=lambda *a: (200, "{}", {}))
+    assert gh.badge_url("torvalds", lang="zh") == "https://ghsphere.com/api/badge/torvalds?lang=zh"
+    assert gh.card_url("torvalds") == "https://ghsphere.com/api/card/torvalds"
+    assert gh.vs_card_url("a", "b") == "https://ghsphere.com/api/card/vs/a/b"

@@ -1,6 +1,6 @@
 package agentcli
 
-const DefaultHost = "https://ghfind.com"
+const DefaultHost = "https://ghsphere.com"
 
 type CommandInfo struct {
 	Name              string   `json:"name"`
@@ -55,7 +55,7 @@ var commandCatalog = []CommandInfo{
 		Output:  []string{"json", "markdown", "pretty"},
 		ResponseSemantics: "/api/roast returns the website presentation report. It includes writer-layer style: roast tags, roast_line, jokes, sarcasm, and markdown commentary. " +
 			"It also returns meta with final_score, tier, tier_label, delta, and percentile.",
-		AgentGuidance: "Use roast only when you need the same web-facing report a human sees. Do not treat roast prose as independent factual evidence; for factual scoring use scan or score. Pass --byo-* to run the LLM through your own OpenAI-compatible provider instead of ghfind's model.",
+		AgentGuidance: "Use roast only when you need the same web-facing report a human sees. Do not treat roast prose as independent factual evidence; for factual scoring use scan or score. Pass --byo-* to run the LLM through your own OpenAI-compatible provider instead of ghsphere's model.",
 		Auth:          "Production /api/scan checks machine auth or Turnstile before reading scan cache or using the server GitHub token. When Turnstile is enabled, CLI calls need --api-key/GHFIND_API_KEY backed by server-side GITHUB_ROAST_CLI_API_KEY, or a Turnstile token. GITHUB_ROAST_API_KEY remains a compatibility alias.",
 		Args:          []Arg{{Name: "username", Required: true}},
 		Options:       []string{"--host", "--api-key", "--turnstile-token", "--lang", "--byo-base-url", "--byo-api-key", "--byo-model", "-o, --output"},
@@ -78,9 +78,9 @@ var commandCatalog = []CommandInfo{
 		Summary:           "Check whether a GitHub login exists, via GitHub's own public API.",
 		API:               []string{"GET https://api.github.com/users/{username}"},
 		Output:            []string{"json", "pretty"},
-		ResponseSemantics: "Runs on the caller's IP/quota, NOT ghfind's. Returns exists=true/false; a rate-limit surfaces as github_rate_limited so a throttle is never mistaken for 'not found'.",
+		ResponseSemantics: "Runs on the caller's IP/quota, NOT ghsphere's. Returns exists=true/false; a rate-limit surfaces as github_rate_limited so a throttle is never mistaken for 'not found'.",
 		AgentGuidance:     "Use to validate a handle before spending a scoring call. No token needed; pass --github-token/GITHUB_TOKEN to raise GitHub's ~60/h anon limit.",
-		Auth:              "No ghfind auth. Optional --github-token for a higher GitHub rate limit.",
+		Auth:              "No ghsphere auth. Optional --github-token for a higher GitHub rate limit.",
 		Args:              []Arg{{Name: "username", Required: true}},
 		Options:           []string{"--github-token", "-o, --output"},
 	},
@@ -102,7 +102,7 @@ var commandCatalog = []CommandInfo{
 		Summary:           "Print the score badge URL, or a README-ready markdown snippet with --markdown.",
 		API:               []string{"GET /api/badge/{username}"},
 		Output:            []string{"json", "pretty", "markdown"},
-		ResponseSemantics: "Pure URL construction (no request). --markdown emits an image linked to the public profile page — paste it into a README to link back to ghfind.",
+		ResponseSemantics: "Pure URL construction (no request). --markdown emits an image linked to the public profile page — paste it into a README to link back to ghsphere.",
 		AgentGuidance:     "Use --markdown to give a user a badge they can embed. The badge image itself is rendered server-side on demand.",
 		Auth:              "Does not contact the server.",
 		Args:              []Arg{{Name: "username", Required: true}},
@@ -134,7 +134,7 @@ var commandCatalog = []CommandInfo{
 		Name:              "update check",
 		Usage:             "ghfind update check [-o json|pretty]",
 		Summary:           "Check whether this ghfind CLI binary is older than the latest GitHub release.",
-		API:               []string{"GET https://api.github.com/repos/hikariming/ghfind/releases/latest"},
+		API:               []string{"GET https://api.github.com/repos/MartinKayJr/github-roast/releases/latest"},
 		Output:            []string{"json", "pretty"},
 		ResponseSemantics: "Returns current_version, latest_version, update_available, release_url, and status. It only checks for updates; it does not self-modify the binary.",
 		AgentGuidance:     "Use update check before long-running automation to detect stale CLI installs. If update_available is true, tell the user to install the latest ghfind binary/package before relying on new commands.",
@@ -146,7 +146,7 @@ var commandCatalog = []CommandInfo{
 		Name:              "update install",
 		Usage:             "ghfind update install [--method binary|npm|pip|brew] [--dry-run] [-o json|pretty]",
 		Summary:           "Install the latest ghfind CLI using a GitHub release binary or a package manager.",
-		API:               []string{"GET https://api.github.com/repos/hikariming/ghfind/releases/latest", "GET release asset"},
+		API:               []string{"GET https://api.github.com/repos/MartinKayJr/github-roast/releases/latest", "GET release asset"},
 		Output:            []string{"json", "pretty"},
 		ResponseSemantics: "With --method binary, downloads the current platform release asset and atomically replaces the local ghfind binary. With --method npm|pip|brew, runs the matching package-manager upgrade command.",
 		AgentGuidance:     "Use --dry-run first to show the exact target asset or package-manager command. Use this only when the user explicitly asks to upgrade the local CLI install.",

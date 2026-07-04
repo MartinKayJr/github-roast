@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:test-driven-development to implement this plan task-by-task.
 
-**Goal:** Route both home-page `@username` links to the localized ghfind user detail page instead of GitHub.
+**Goal:** Route both home-page `@username` links to the localized ghsphere user detail page instead of GitHub.
 
 **Architecture:** Replace the two external anchors with the existing locale-aware `Link` from `@/i18n/navigation`. Preserve all current classes and layering so only navigation behavior changes.
 

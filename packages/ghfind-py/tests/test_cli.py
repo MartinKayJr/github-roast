@@ -21,14 +21,14 @@ def test_version(capsys):
 
 
 def test_badge_markdown(capsys):
-    assert _cli.main(["badge", "torvalds", "--markdown", "--host", "https://ghfind.com"]) == 0
+    assert _cli.main(["badge", "torvalds", "--markdown", "--host", "https://ghsphere.com"]) == 0
     out = capsys.readouterr().out.strip()
-    assert out == "[![ghfind score](https://ghfind.com/api/badge/torvalds)](https://ghfind.com/u/torvalds)"
+    assert out == "[![ghfind score](https://ghsphere.com/api/badge/torvalds)](https://ghsphere.com/u/torvalds)"
 
 
 def test_card(capsys):
-    assert _cli.main(["card", "torvalds", "--host", "https://ghfind.com"]) == 0
-    assert capsys.readouterr().out.strip() == "https://ghfind.com/api/card/torvalds"
+    assert _cli.main(["card", "torvalds", "--host", "https://ghsphere.com"]) == 0
+    assert capsys.readouterr().out.strip() == "https://ghsphere.com/api/card/torvalds"
 
 
 def test_commands_lists_get_score_first(capsys):
@@ -48,7 +48,7 @@ def _fake_client(payload, headers=None):
     def transport(method, url, hdrs, body):
         return 200, json.dumps(payload), headers or {}
 
-    return GhFind(host="https://ghfind.com", transport=transport)
+    return GhFind(host="https://ghsphere.com", transport=transport)
 
 
 def test_score_pretty_formatting(capsys, monkeypatch):
@@ -75,7 +75,7 @@ def test_score_pretty_formatting(capsys, monkeypatch):
     # sub-scores print in the canonical order, not dict order
     assert out.index("account_maturity") < out.index("activity_authenticity")
     assert "beats 98.4% of 18000 scored accounts" in out
-    assert "→ https://ghfind.com/u/torvalds" in out
+    assert "→ https://ghsphere.com/u/torvalds" in out
 
 
 def test_score_json(capsys, monkeypatch):
@@ -89,7 +89,7 @@ def test_api_error_exit_code(capsys, monkeypatch):
     def transport(method, url, hdrs, body):
         return 404, json.dumps({"error": "account_not_found"}), {}
 
-    monkeypatch.setattr(_cli, "_client", lambda args: GhFind(host="https://ghfind.com", transport=transport))
+    monkeypatch.setattr(_cli, "_client", lambda args: GhFind(host="https://ghsphere.com", transport=transport))
     assert _cli.main(["score", "nope"]) == 1
     assert "account_not_found" in capsys.readouterr().err
 

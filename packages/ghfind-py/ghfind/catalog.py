@@ -1,4 +1,4 @@
-"""Machine-readable catalog of ghfind's atomic capabilities.
+"""Machine-readable catalog of ghsphere's atomic capabilities.
 
 Mirrors the JS SDK catalog and /openapi.json so an agent can introspect what the
 SDK does — including whether a capability is deterministic or uses an LLM.
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import List, TypedDict
 
-DEFAULT_HOST = "https://ghfind.com"
+DEFAULT_HOST = "https://ghsphere.com"
 
 
 class Capability(TypedDict):
@@ -41,7 +41,7 @@ CATALOG: List[Capability] = [
         "llm": False,
         "response_semantics": (
             "Basic public GitHub profile, or None if the login does not exist. Runs on the "
-            "caller's IP/quota, NOT ghfind's. No token needed (optional token raises the anon limit)."
+            "caller's IP/quota, NOT ghsphere's. No token needed (optional token raises the anon limit)."
         ),
         "agent_guidance": (
             "Validate a handle before spending a scoring call. Pass verify_exists=True to "

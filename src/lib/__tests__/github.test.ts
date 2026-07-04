@@ -188,6 +188,23 @@ ${"Useful project detail. ".repeat(50)}
       if (url === "https://api.github.com/graphql") {
         const body = JSON.parse(String(init?.body ?? "{}")) as { query?: string };
         const query = body.query ?? "";
+        if (query.includes("contributions(first: 100)")) {
+          return jsonResponse({
+            data: {
+              user: {
+                contributionsCollection: {
+                  commitContributionsByRepository: [
+                    {
+                      contributions: {
+                        nodes: [{ occurredAt: "2026-06-15T12:00:00Z" }],
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          });
+        }
         if (query.includes("contributionsCollection(from:")) {
           const repo = {
             nameWithOwner: "acme/core",
@@ -312,6 +329,18 @@ ${"Useful project detail. ".repeat(50)}
             return jsonResponse({ data: { user: { organizations: { nodes: [] } } } });
           }
 
+          if (query.includes("contributions(first: 100)")) {
+            return jsonResponse({
+              data: {
+                user: {
+                  contributionsCollection: {
+                    commitContributionsByRepository: [],
+                  },
+                },
+              },
+            });
+          }
+
           if (query.includes("contributionsCollection(from:")) {
             expect(query).not.toContain("pullRequestContributionsByRepository");
             return jsonResponse({
@@ -419,6 +448,7 @@ ${"Useful project detail. ".repeat(50)}
     expect(result.metrics.impact_pr_count).toBe(0);
     expect(result.metrics.max_impact_repo_stars).toBe(0);
     expect(result.impact_repos).toEqual([]);
+    expect(result.contribution_days).toEqual([]);
   });
 
   it("degrades gracefully when organization lookup lacks read:org scope", async () => {
@@ -456,6 +486,18 @@ ${"Useful project detail. ".repeat(50)}
           const body = JSON.parse(String(init?.body ?? "{}")) as {
             query?: string;
           };
+
+          if (body.query?.includes("contributions(first: 100)")) {
+            return jsonResponse({
+              data: {
+                user: {
+                  contributionsCollection: {
+                    commitContributionsByRepository: [],
+                  },
+                },
+              },
+            });
+          }
 
           if (body.query?.includes("organizations(first: 20)")) {
             return jsonResponse({

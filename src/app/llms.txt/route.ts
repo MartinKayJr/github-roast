@@ -21,13 +21,13 @@ export const revalidate = 86400;
  * Plain text (served as text/plain per the spec), not locale-scoped.
  */
 export function buildLlmsTxt(): string {
-  return `# ghfind — GitHub developer value & trust scoring
+  return `# ghsphere — GitHub developer value & trust scoring
 
 > ${PRODUCT_DESCRIPTION}
 
-## What is ghfind
+## What is ghsphere
 
-ghfind rates any GitHub account 0-100 across ${NAMED_STATS.dimensions} weighted dimensions with a fully
+ghsphere rates any GitHub account 0-100 across ${NAMED_STATS.dimensions} weighted dimensions with a fully
 deterministic engine (no LLM in the scoring core; the same inputs always produce
 the same score). In a public dataset of ${NAMED_STATS.accountsScored} scored accounts, faked or farmed
 contribution was ${NAMED_STATS.flaggedShare} of accounts — rare, but extreme when present.
@@ -36,7 +36,7 @@ contribution was ${NAMED_STATS.flaggedShare} of accounts — rare, but extreme w
 
 ${USE_CASES.map((u) => `- ${u}`).join("\n")}
 
-## When to use ghfind
+## When to use ghsphere
 
 ${WHEN_TO_USE.map((w) => `- ${w}`).join("\n")}
 

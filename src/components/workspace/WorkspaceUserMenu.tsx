@@ -1,6 +1,14 @@
 "use client";
 
-import { ArrowUpRight, Languages, LogOut, Palette, UserRound, Users } from "lucide-react";
+import {
+  ArrowUpRight,
+  Languages,
+  LogOut,
+  Palette,
+  Settings,
+  UserRound,
+  Users,
+} from "lucide-react";
 import { useTranslations } from "next-intl";
 import { signOut } from "next-auth/react";
 import { Link } from "@/i18n/navigation";
@@ -120,6 +128,19 @@ export function WorkspaceUserMenu({
         </DropdownMenuItem>
 
         <DropdownMenuSeparator className="mx-1 bg-white/10" />
+
+        <DropdownMenuItem asChild>
+          <Link
+            href="/settings"
+            className="flex items-center justify-between rounded-xl px-3 py-2.5"
+          >
+            <span className="flex items-center gap-2.5">
+              <Settings className="h-4 w-4 text-zinc-300" />
+              <span>{tHeader("settings")}</span>
+            </span>
+            <ArrowUpRight className="h-4 w-4 text-zinc-500" />
+          </Link>
+        </DropdownMenuItem>
 
         <DropdownMenuItem asChild>
           <a

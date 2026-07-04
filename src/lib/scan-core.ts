@@ -26,6 +26,7 @@ export async function buildScanResult(username: string): Promise<ScanResult> {
     verified_impact_prs,
     pinned_repos,
     organizations,
+    contribution_days,
   } = await collect(username);
   return {
     metrics,
@@ -36,6 +37,7 @@ export async function buildScanResult(username: string): Promise<ScanResult> {
     verified_impact_prs,
     pinned_repos,
     organizations,
+    contribution_days,
     scoring: score(metrics),
   };
 }

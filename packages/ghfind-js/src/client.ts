@@ -15,7 +15,7 @@ import type {
 
 const ROAST_META_HEADER = "x-roast-meta";
 const FRAME = "\x1f";
-const DEFAULT_HOST = "https://ghfind.com";
+const DEFAULT_HOST = "https://ghsphere.com";
 const GITHUB_API = "https://api.github.com";
 
 export type FetchLike = (
@@ -34,8 +34,8 @@ export type FetchLike = (
 }>;
 
 export interface GhFindOptions {
-  /** Base URL of the ghfind deployment. Defaults to `GHFIND_HOST`, then the
-   * legacy `GITHUB_ROAST_HOST` env var, then `https://ghfind.com`. */
+  /** Base URL of the ghsphere deployment. Defaults to `GHFIND_HOST`, then the
+   * legacy `GITHUB_ROAST_HOST` env var, then `https://ghsphere.com`. */
   host?: string;
   /** Machine API key sent as `Authorization: Bearer <key>` (bypasses Turnstile on
    * POST /api/scan in production). */
@@ -44,7 +44,7 @@ export interface GhFindOptions {
   turnstileToken?: string;
   /** Optional GitHub token for the client-side existence check. Not required —
    * without it, GitHub's public API is used (~60 req/h per IP). With it, the
-   * check runs at your own GitHub rate limit (5000/h). Never sent to ghfind. */
+   * check runs at your own GitHub rate limit (5000/h). Never sent to ghsphere. */
   githubToken?: string;
   /** Custom fetch implementation (for tests / non-standard runtimes). Defaults to
    * the global `fetch`. */
@@ -84,7 +84,7 @@ function decodeMeta(value: string | null): RoastMeta | null {
 }
 
 /**
- * Official client for the ghfind API (https://ghfind.com).
+ * Official client for the ghsphere API (https://ghsphere.com).
  *
  * Every method is an atomic capability backed by one public endpoint. Scoring
  * (`scan`, `score`, `getScore`, `vs` winner) is deterministic and never calls an
@@ -159,13 +159,13 @@ export class GhFind {
     return (await res.json()) as T;
   }
 
-  // ---- GitHub existence check (client-side; does NOT touch ghfind) -----------
+  // ---- GitHub existence check (client-side; does NOT touch ghsphere) -----------
 
   /**
    * Look up a GitHub account directly from GitHub's public API. Returns the basic
    * public profile, or `null` if the login does not exist (HTTP 404).
    *
-   * Runs on the *caller's* IP/quota, not ghfind's — so you can confirm an account
+   * Runs on the *caller's* IP/quota, not ghsphere's — so you can confirm an account
    * is real before spending a call on the (heavier) scoring API. No token needed;
    * pass one (constructor `githubToken` or `opts.token`) to raise GitHub's
    * unauthenticated ~60/h limit to 5000/h. Throws {@link GhFindError} (code
@@ -216,7 +216,7 @@ export class GhFind {
    *
    * Pass `{ verifyExists: true }` to first confirm the account is real via the
    * client-side GitHub check (above), so a typo/nonexistent handle fails fast
-   * without hitting ghfind at all. */
+   * without hitting ghsphere at all. */
   async scan(
     username: string,
     opts: { verifyExists?: boolean; githubToken?: string } = {},
@@ -245,7 +245,7 @@ export class GhFind {
    * login does not exist. The cheapest way to get a score.
    *
    * Pass `{ verifyExists: true }` to confirm the account is real (client-side
-   * GitHub check) before calling ghfind — avoids triggering a live server-side
+   * GitHub check) before calling ghsphere — avoids triggering a live server-side
    * crawl for a handle that doesn't exist. */
   async getScore(
     username: string,

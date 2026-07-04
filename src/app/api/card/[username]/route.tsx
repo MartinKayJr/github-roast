@@ -41,7 +41,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ username: strin
             Not yet rated
           </div>
           <div style={{ display: "flex", fontSize: 26, color: palette.subtle, marginTop: 8 }}>
-            Get roasted at ghfind.com
+            Get roasted at ghsphere.com
           </div>
         </div>
         <Brand palette={palette} />

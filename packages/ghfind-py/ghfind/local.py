@@ -2,14 +2,14 @@
 
 Runs the faithful Python port of the website's open-source scoring core
 (`_github.collect` + `_score.score`) entirely on your machine and GitHub token —
-no ghfind server, no LLM. Results match the website's deterministic score.
+no ghsphere server, no LLM. Results match the website's deterministic score.
 
     from ghfind.local import collect_and_score
     scan = collect_and_score("torvalds", token=os.environ["GITHUB_TOKEN"])
     print(scan["scoring"]["final_score"], scan["scoring"]["red_flags"])
 
 No token? Use the remote client instead: ``GhFind().get_score(username)`` — the
-ghfind server does the crawl + deterministic scoring for you.
+ghsphere server does the crawl + deterministic scoring for you.
 """
 
 from __future__ import annotations

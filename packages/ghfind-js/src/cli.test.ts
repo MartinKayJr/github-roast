@@ -84,16 +84,16 @@ describe("offline commands", () => {
 
   it("badge --markdown emits a README-ready snippet linking to the profile", async () => {
     const out = await captureStdout(() =>
-      run(["badge", "torvalds", "--markdown", "--host", "https://ghfind.com"]),
+      run(["badge", "torvalds", "--markdown", "--host", "https://ghsphere.com"]),
     );
     expect(out.trim()).toBe(
-      "[![ghfind score](https://ghfind.com/api/badge/torvalds)](https://ghfind.com/u/torvalds)",
+      "[![ghfind score](https://ghsphere.com/api/badge/torvalds)](https://ghsphere.com/u/torvalds)",
     );
   });
 
   it("card prints the OG card URL", async () => {
-    const out = await captureStdout(() => run(["card", "torvalds", "--host", "https://ghfind.com"]));
-    expect(out.trim()).toBe("https://ghfind.com/api/card/torvalds");
+    const out = await captureStdout(() => run(["card", "torvalds", "--host", "https://ghsphere.com"]));
+    expect(out.trim()).toBe("https://ghsphere.com/api/card/torvalds");
   });
 
   it("commands lists capabilities with getScore first", async () => {

@@ -19,18 +19,18 @@ export function JsonLd({ data }: { data: Record<string, unknown> }) {
 }
 
 /**
- * Third-party identifiers that let AI disambiguate the ghfind brand from
+ * Third-party identifiers that let AI disambiguate the ghsphere brand from
  * similarly-named entities. Add the Wikidata entity URL here once it exists
  * (see planning/agent-readiness-orank.md) to complete the entity-linking loop.
  */
 export const GHFIND_SAME_AS = [
-  "https://github.com/hikariming/ghfind",
+  "https://github.com/MartinKayJr/github-roast",
   "https://www.npmjs.com/package/@hikariming/ghfind",
   "https://pypi.org/project/ghfind/",
 ];
 
 /** The Organization node, reused as publisher/creator across schemas. */
-export function organizationNode(name = "ghfind") {
+export function organizationNode(name = "ghsphere") {
   return {
     "@type": "Organization",
     "@id": `${SITE_URL}/#organization`,
@@ -47,11 +47,11 @@ export function organizationNode(name = "ghfind") {
 }
 
 /** Standalone Organization JSON-LD (business-legitimacy signals for agents). */
-export function organizationJsonLd(name = "ghfind") {
+export function organizationJsonLd(name = "ghsphere") {
   return { "@context": "https://schema.org", ...organizationNode(name) };
 }
 
-/** WebApplication identity so agents can parse ghfind as a product/tool. */
+/** WebApplication identity so agents can parse ghsphere as a product/tool. */
 export function softwareApplicationJsonLd(opts: { name: string; description: string }) {
   return {
     "@context": "https://schema.org",
@@ -208,13 +208,13 @@ export function articleJsonLd(opts: {
       url: "https://github.com/hikariming",
       sameAs: ["https://github.com/hikariming"],
     },
-    publisher: organizationNode("ghfind"),
+    publisher: organizationNode("ghsphere"),
     speakable: { "@type": "SpeakableSpecification", cssSelector: ["h1"] },
   };
 }
 
 /**
- * Dataset JSON-LD for data-driven research posts — establishes ghfind as the
+ * Dataset JSON-LD for data-driven research posts — establishes ghsphere as the
  * originating source of GitHub-account scoring data (a citable primary source).
  */
 export function datasetJsonLd(opts: {
@@ -236,8 +236,8 @@ export function datasetJsonLd(opts: {
     ...(opts.updated ? { dateModified: opts.updated } : {}),
     license: "https://www.gnu.org/licenses/agpl-3.0.html",
     isAccessibleForFree: true,
-    creator: organizationNode("ghfind"),
-    publisher: organizationNode("ghfind"),
+    creator: organizationNode("ghsphere"),
+    publisher: organizationNode("ghsphere"),
     keywords: ["GitHub", "developer scoring", "open source", "anti-abuse"],
   };
 }

@@ -7,7 +7,7 @@ var (
 )
 
 const (
-	DefaultReleaseURL = "https://api.github.com/repos/hikariming/ghfind/releases/latest"
+	DefaultReleaseURL = "https://api.github.com/repos/MartinKayJr/github-roast/releases/latest"
 )
 
 func VersionString() string {

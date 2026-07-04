@@ -1,7 +1,7 @@
-# ghfind CLI
+# ghsphere CLI (`ghfind`)
 
 Use this skill when an agent needs to score or roast a public GitHub account
-through the official ghfind service.
+through the official ghsphere service.
 
 The CLI is a remote wrapper around the website API. It does not run local
 GitHub scanning, scoring, or LLM logic. Use it instead of importing project
@@ -14,7 +14,7 @@ The CLI command name is `ghfind`.
 The default host is:
 
 ```bash
-https://ghfind.com
+https://ghsphere.com
 ```
 
 Override it for local development:

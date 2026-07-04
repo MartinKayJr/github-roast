@@ -4,24 +4,24 @@ export const dynamic = "force-static";
 export const revalidate = 86400;
 
 /**
- * /openapi.json — machine-readable contract for ghfind's public API, so agents,
+ * /openapi.json — machine-readable contract for ghsphere's public API, so agents,
  * SDK generators, and API directories can discover and call the endpoints.
  *
  * Documents only the public, stable surface. Auth/admin/OAuth internal routes are
  * intentionally omitted. Kept hand-authored (not generated) because the Next.js
- * App Router has no built-in OpenAPI emit; the two official SDKs (`ghfind` on npm
- * and PyPI) wrap exactly these endpoints.
+ * App Router has no built-in OpenAPI emit; the official SDK packages
+ * (`@hikariming/ghfind` on npm and `ghfind` on PyPI) wrap exactly these endpoints.
  */
 export function GET() {
   const spec = {
     openapi: "3.1.0",
     info: {
-      title: "ghfind API",
+      title: "ghsphere API",
       version: "1.2.0",
       description:
         "Score any GitHub account 0-100 for value and trustworthiness with a deterministic engine, " +
         "plus roasts, head-to-head battles, leaderboards, and developer discovery. " +
-        "Official SDKs: `@hikariming/ghfind` on npm and `ghfind` on PyPI.\n\n" +
+        "Official ghsphere SDK packages: `@hikariming/ghfind` on npm and `ghfind` on PyPI.\n\n" +
         "## Errors\n" +
         "All errors return `application/json` shaped as `{ error, message, hint }` — `error` is a " +
         "stable machine code, `message`/`hint` are human-readable. See the `Error` schema.\n\n" +
@@ -35,7 +35,7 @@ export function GET() {
         "announced at least 90 days in advance via the /blog and signalled with `Deprecation` and " +
         "`Sunset` response headers on affected endpoints.",
       termsOfService: `${SITE_URL}/privacy`,
-      contact: { name: "ghfind", url: `${SITE_URL}/contact` },
+      contact: { name: "ghsphere", url: `${SITE_URL}/contact` },
       license: { name: "AGPL-3.0-or-later", url: "https://www.gnu.org/licenses/agpl-3.0.html" },
     },
     servers: [{ url: SITE_URL }],
@@ -489,7 +489,7 @@ export function GET() {
               },
             },
             scanned_at: { type: "integer", description: "Epoch ms of last score" },
-            profile: { type: "string", description: "Human profile URL on ghfind.com" },
+            profile: { type: "string", description: "Human profile URL on ghsphere.com" },
           },
         },
         SubScores: {

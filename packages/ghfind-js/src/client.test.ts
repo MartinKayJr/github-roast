@@ -43,16 +43,16 @@ describe("GhFind", () => {
     const { fetch, calls } = fakeFetch(() => ({
       json: { username: "torvalds", final_score: 99, tier: "夯", tier_key: "god" },
     }));
-    const gh = new GhFind({ host: "https://ghfind.com", fetch });
+    const gh = new GhFind({ host: "https://ghsphere.com", fetch });
     const r = await gh.getScore("torvalds");
     expect(r.final_score).toBe(99);
-    expect(calls[0].url).toBe("https://ghfind.com/api/score/torvalds");
+    expect(calls[0].url).toBe("https://ghsphere.com/api/score/torvalds");
     expect(calls[0].init?.method).toBe("GET");
   });
 
   it("scan POSTs username and turnstile token", async () => {
     const { fetch, calls } = fakeFetch(() => ({ json: { scoring: { final_score: 42 } } }));
-    const gh = new GhFind({ host: "https://ghfind.com", turnstileToken: "tok", fetch });
+    const gh = new GhFind({ host: "https://ghsphere.com", turnstileToken: "tok", fetch });
     await gh.scan("octocat");
     const body = JSON.parse(calls[0].init!.body as string);
     expect(body).toEqual({ username: "octocat", turnstileToken: "tok" });
@@ -96,8 +96,8 @@ describe("GhFind", () => {
     expect(r.report).toBe("# Report\nline two\nmore");
     // scan first, then roast
     expect(calls.map((c) => c.url)).toEqual([
-      "https://ghfind.com/api/scan",
-      "https://ghfind.com/api/roast",
+      "https://ghsphere.com/api/scan",
+      "https://ghsphere.com/api/roast",
     ]);
   });
 
@@ -111,7 +111,7 @@ describe("GhFind", () => {
     const { fetch, calls } = fakeFetch(() => ({ json: { entries: [] } }));
     const gh = new GhFind({ fetch });
     await gh.leaderboard({ view: "trending", window: "7d" });
-    expect(calls[0].url).toBe("https://ghfind.com/api/leaderboard?view=trending&window=7d");
+    expect(calls[0].url).toBe("https://ghsphere.com/api/leaderboard?view=trending&window=7d");
   });
 
   it("getGitHubUser returns null on 404 and profile on 200", async () => {
@@ -139,7 +139,7 @@ describe("GhFind", () => {
     expect(calls[0].init?.headers?.authorization).toBe("Bearer ghp_test");
   });
 
-  it("verifyExists short-circuits before calling ghfind when the user is missing", async () => {
+  it("verifyExists short-circuits before calling ghsphere when the user is missing", async () => {
     const { fetch, calls } = fakeFetch((url) =>
       url.includes("api.github.com") ? { ok: false, status: 404 } : { json: {} },
     );
@@ -148,12 +148,12 @@ describe("GhFind", () => {
       code: "github_user_not_found",
       status: 404,
     });
-    // Only GitHub was called; ghfind was never hit.
+    // Only GitHub was called; ghsphere was never hit.
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toContain("api.github.com");
   });
 
-  it("verifyExists proceeds to ghfind when the user exists", async () => {
+  it("verifyExists proceeds to ghsphere when the user exists", async () => {
     const { fetch, calls } = fakeFetch((url) =>
       url.includes("api.github.com")
         ? { json: { login: "torvalds", id: 1 } }
@@ -164,16 +164,16 @@ describe("GhFind", () => {
     expect(r.final_score).toBe(99);
     expect(calls.map((c) => c.url)).toEqual([
       "https://api.github.com/users/torvalds",
-      "https://ghfind.com/api/score/torvalds",
+      "https://ghsphere.com/api/score/torvalds",
     ]);
   });
 
   it("builds image URLs without a request", () => {
-    const gh = new GhFind({ host: "https://ghfind.com", fetch: (async () => ({}) as never) });
+    const gh = new GhFind({ host: "https://ghsphere.com", fetch: (async () => ({}) as never) });
     expect(gh.badgeUrl("torvalds", { lang: "zh" })).toBe(
-      "https://ghfind.com/api/badge/torvalds?lang=zh",
+      "https://ghsphere.com/api/badge/torvalds?lang=zh",
     );
-    expect(gh.cardUrl("torvalds")).toBe("https://ghfind.com/api/card/torvalds");
-    expect(gh.vsCardUrl("a", "b")).toBe("https://ghfind.com/api/card/vs/a/b");
+    expect(gh.cardUrl("torvalds")).toBe("https://ghsphere.com/api/card/torvalds");
+    expect(gh.vsCardUrl("a", "b")).toBe("https://ghsphere.com/api/card/vs/a/b");
   });
 });

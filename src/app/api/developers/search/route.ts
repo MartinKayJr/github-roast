@@ -139,7 +139,7 @@ function buildMessages({
   return [
     {
       role: "system" as const,
-      content: `You are the AI discovery layer for ghfind, a GitHub developer discovery product.
+      content: `You are the AI discovery layer for ghsphere, a GitHub developer discovery product.
 
 Your job: understand what kind of GitHub users the visitor wants to follow, then choose matching discovery facets from the provided catalog.
 

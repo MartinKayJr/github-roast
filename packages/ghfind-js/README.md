@@ -1,6 +1,6 @@
-# ghfind
+# ghsphere SDK (`@hikariming/ghfind`)
 
-Official JavaScript/TypeScript SDK **and CLI** for **[ghfind.com](https://ghfind.com)** —
+Official JavaScript/TypeScript SDK **and CLI** for **[ghsphere.com](https://ghsphere.com)** —
 score any GitHub account **0–100** for value and trustworthiness, with roasts,
 head-to-head battles, leaderboards, and developer discovery.
 
@@ -10,7 +10,7 @@ head-to-head battles, leaderboards, and developer discovery.
   commentary*. `roast(..., { byoKey })` runs the LLM through your own
   OpenAI-compatible provider — or just take the structured `scan()` output and
   feed your own model.
-- **Score anywhere.** No token → the ghfind server crawls + scores for you. Have a
+- **Score anywhere.** No token → the ghsphere server crawls + scores for you. Have a
   token → `ghfind/local` runs the *same* open-source engine entirely on your
   machine (see below). Same numbers either way.
 - **Zero runtime dependencies.** Uses the global `fetch` (Node 18+, browsers, edge).
@@ -32,13 +32,13 @@ npm install -g @hikariming/ghfind   # or global CLI (exposes the `ghfind` comman
 ghfind score torvalds          # deterministic score (no auth, cached)
 ghfind roast torvalds --lang en
 ghfind vs torvalds octocat
-ghfind badge torvalds --markdown   # a README badge that links back to ghfind
+ghfind badge torvalds --markdown   # a README badge that links back to ghsphere
 ghfind update check                 # check whether the local CLI is stale
 ```
 
 `score` hits the public **`GET /api/score`** endpoint: no auth, edge-cached and
 rate-limited on the server, and it scores never-seen accounts live (still
-deterministic, no LLM). It's the cheapest path for you *and* for ghfind.
+deterministic, no LLM). It's the cheapest path for you *and* for ghsphere.
 
 | Command | What it does | Endpoint | LLM? |
 | --- | --- | --- | --- |
@@ -46,7 +46,7 @@ deterministic, no LLM). It's the cheapest path for you *and* for ghfind.
 | `scan <user>` | Full evidence payload (metrics, signals, red flags). Heavy — needs `--api-key` in prod. | `POST /api/scan` | no |
 | `roast <user>` | Human-facing roast report + AI-adjusted score. | `POST /api/scan` + `/api/roast` | yes\* |
 | `vs <a> <b>` | Head-to-head verdict (winner deterministic). | `POST /api/vs-verdict` | yes\* |
-| `exists <user>` | Does this GitHub login exist? Runs on **your** IP, never touches ghfind. | `api.github.com` | no |
+| `exists <user>` | Does this GitHub login exist? Runs on **your** IP, never touches ghsphere. | `api.github.com` | no |
 | `search <query>` | Prefix autocomplete over scored accounts. | `GET /api/search-users` | no |
 | `leaderboard` | Ranked profiles. `--view` / `--window`. | `GET /api/leaderboard` | no |
 | `developers --type language\|org\|repo` | Discover developers by facet. | `GET /api/developers` | no |
@@ -60,12 +60,12 @@ deterministic, no LLM). It's the cheapest path for you *and* for ghfind.
 
 `*` `roast`/`vs` prose is the only LLM part. Pass `--byo-base-url --byo-api-key
 --byo-model` (or `GHFIND_BYO_*` env vars) to run `roast` through your own model
-instead of ghfind's.
+instead of ghsphere's.
 
 ### Score locally, offline, on your own token
 
 `--local` runs the crawl **and** scoring on your machine with your `GITHUB_TOKEN`
-— the ghfind server is never called, so it scales infinitely and never adds load:
+— the ghsphere server is never called, so it scales infinitely and never adds load:
 
 ```bash
 export GITHUB_TOKEN=ghp_xxx
@@ -74,12 +74,12 @@ ghfind scan torvalds  --local
 ```
 
 Rule of thumb: **have a token → `--local`** (offline, unlimited); **no token →
-plain `score`** (ghfind scores it for you). Output is identical.
+plain `score`** (ghsphere scores it for you). Output is identical.
 
 ### Options & environment
 
 ```
---host <url>          default https://ghfind.com (or GHFIND_HOST)
+--host <url>          default https://ghsphere.com (or GHFIND_HOST)
 --api-key <key>       Authorization: Bearer — bypasses Turnstile on POST /api/scan
                       (or GHFIND_API_KEY)
 --github-token <t>    for --local and exists (or GITHUB_TOKEN)
@@ -111,7 +111,7 @@ ghfind update brew  # brew upgrade ghfind
 ```ts
 import { GhFind } from "@hikariming/ghfind";
 
-const gh = new GhFind(); // defaults to https://ghfind.com
+const gh = new GhFind(); // defaults to https://ghsphere.com
 
 // Cheapest: deterministic score (no LLM), works for ANY account.
 const s = await gh.getScore("torvalds");
@@ -121,10 +121,10 @@ console.log(s.final_score, s.tier, s.percentile, s.source); // "indexed" | "live
 const scan = await gh.scan("torvalds");
 console.log(scan.scoring.final_score, scan.scoring.red_flags);
 
-// Confirm a handle exists first (on your IP, not ghfind's):
+// Confirm a handle exists first (on your IP, not ghsphere's):
 if (await gh.userExists("torvalds")) { /* ... */ }
 
-// Roast with your own model (no ghfind LLM spend):
+// Roast with your own model (no ghsphere LLM spend):
 const roast = await gh.roast({
   username: "torvalds",
   byoKey: { baseURL: "https://api.openai.com/v1", apiKey: process.env.OPENAI_API_KEY!, model: "gpt-4o" },
@@ -149,7 +149,7 @@ dependency-free remote client and never pulls it in.
 
 ---
 
-Machine-readable API spec: <https://ghfind.com/openapi.json> · Agent notes:
-<https://ghfind.com/llms.txt>
+Machine-readable API spec: <https://ghsphere.com/openapi.json> · Agent notes:
+<https://ghsphere.com/llms.txt>
 
-Python SDK/CLI: [`ghfind` on PyPI](https://pypi.org/project/ghfind/). License: AGPL-3.0-or-later.
+ghsphere Python SDK/CLI: [`ghfind` on PyPI](https://pypi.org/project/ghfind/). License: AGPL-3.0-or-later.

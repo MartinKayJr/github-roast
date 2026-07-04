@@ -19,7 +19,7 @@ We ask three questions:
 2. **Structure.** When fabrication occurs, how does it differ statistically from ordinary contribution behavior?
 3. **Composition.** Among accounts that trigger integrity heuristics, what fraction reflect active manipulation versus mere inactivity or absence of original work?
 
-To address them, we score 18,947 public accounts with a deterministic rubric ([ghfind](https://ghfind.com)), whose scoring core is open source under AGPL ([repository](https://github.com/hikariming/ghfind)), and analyze a deep sample of 3,444 accounts for which we retain complete raw-metric snapshots, including PR-level samples, repository quality features, and activity-shape statistics. All aggregate data underlying the figures are published alongside this article ([data.json](/blog/we-scored-19000-github-accounts/data.json)).
+To address them, we score 18,947 public accounts with a deterministic rubric ([ghsphere](https://ghsphere.com)), whose scoring core is open source under AGPL ([repository](https://github.com/MartinKayJr/github-roast)), and analyze a deep sample of 3,444 accounts for which we retain complete raw-metric snapshots, including PR-level samples, repository quality features, and activity-shape statistics. All aggregate data underlying the figures are published alongside this article ([data.json](/blog/we-scored-19000-github-accounts/data.json)).
 
 In summary, fabrication is substantially rarer in this sample than public discourse suggests; when present, it is extreme rather than subtle; and it can be separated from ordinary activity by simple pattern-level thresholds alone.
 
@@ -27,7 +27,7 @@ In summary, fabrication is substantially rarer in this sample than public discou
 
 ### 2.1 Scoring rubric
 
-The engine implements a deterministic rubric over six dimensions summing to 100 points, with additive penalties for red-flag signals. It performs no model calls; scores are fully reproducible from public GitHub data. The same code paths produce the scores used by the ghfind website, the npm/PyPI SDKs, and this analysis.
+The engine implements a deterministic rubric over six dimensions summing to 100 points, with additive penalties for red-flag signals. It performs no model calls; scores are fully reproducible from public GitHub data. The same code paths produce the scores used by the ghsphere website, the npm/PyPI SDKs, and this analysis.
 
 | Dimension | Max | Signal rewarded |
 |---|---|---|
@@ -44,7 +44,7 @@ Twelve deterministic red-flag rules subtract points, including `templated_pr_flo
 
 ### 2.2 Sample construction and known biases
 
-The sample comprises (a) users who voluntarily scored their own accounts through the ghfind website and (b) developers ingested from active open-source organizations. Two properties of this design constrain interpretation. First, the sample is self-selected and skews toward genuine, active developers; every fabrication rate reported below should therefore be read as a **lower bound within an already-filtered population**, not as a GitHub-wide estimate. Second, at 18,947 scored accounts (3,444 with deep metrics), the sample is large enough to characterize distributional shape but is a negligible fraction of GitHub; we report shapes, not a census.
+The sample comprises (a) users who voluntarily scored their own accounts through the ghsphere website and (b) developers ingested from active open-source organizations. Two properties of this design constrain interpretation. First, the sample is self-selected and skews toward genuine, active developers; every fabrication rate reported below should therefore be read as a **lower bound within an already-filtered population**, not as a GitHub-wide estimate. Second, at 18,947 scored accounts (3,444 with deep metrics), the sample is large enough to characterize distributional shape but is a negligible fraction of GitHub; we report shapes, not a census.
 
 ## 3. Results
 
@@ -119,6 +119,6 @@ Guided by these principles, we are building a GitHub App to assist maintainers i
 
 ## 6. Reproducibility
 
-All scoring logic is deterministic and open source (AGPL) at [github.com/hikariming/ghfind](https://github.com/hikariming/ghfind). The identical engine is distributed via `npm install ghfind` and `pip install ghfind`, and can be run either against the public API ([OpenAPI specification](https://ghfind.com/openapi.json)) or fully locally with a user-supplied GitHub token. The aggregate statistics behind every figure in this article are available as [data.json](/blog/we-scored-19000-github-accounts/data.json).
+All scoring logic is deterministic and open source (AGPL) at [github.com/MartinKayJr/github-roast](https://github.com/MartinKayJr/github-roast). The identical engine is distributed via `npm install ghfind` and `pip install ghfind`, and can be run either against the public API ([OpenAPI specification](https://ghsphere.com/openapi.json)) or fully locally with a user-supplied GitHub token. The aggregate statistics behind every figure in this article are available as [data.json](/blog/we-scored-19000-github-accounts/data.json).
 
-*Individual accounts can be scored at [ghfind.com](https://ghfind.com).*
+*Individual accounts can be scored at [ghsphere.com](https://ghsphere.com).*
