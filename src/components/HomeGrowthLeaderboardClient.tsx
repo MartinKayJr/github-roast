@@ -47,6 +47,7 @@ export interface GrowthLabels {
   subscribeAfterLogin: string;
   subscribe: string;
   subscribed: string;
+  unsubscribe: string;
   subscribeFailed: string;
 }
 
@@ -176,7 +177,7 @@ function GrowthSubscriptionButton({ labels }: { labels: GrowthLabels }) {
   const signedIn = Boolean(me?.user);
   const subscribed = Boolean(me?.growthSubscribed);
   const label = subscribed
-    ? labels.subscribed
+    ? labels.unsubscribe
     : signedIn
       ? labels.subscribe
       : labels.subscribeAfterLogin;
@@ -187,11 +188,11 @@ function GrowthSubscriptionButton({ labels }: { labels: GrowthLabels }) {
       void signIn("github");
       return;
     }
-    if (subscribed || subscribing) return;
+    if (subscribing) return;
     setSubscribing(true);
     try {
       const res = await fetch("/api/growth-subscription", {
-        method: "POST",
+        method: subscribed ? "DELETE" : "POST",
         cache: "no-store",
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -214,12 +215,13 @@ function GrowthSubscriptionButton({ labels }: { labels: GrowthLabels }) {
       <button
         type="button"
         onClick={onClick}
-        disabled={subscribed || subscribing}
+        disabled={subscribing}
         className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
           subscribed
-            ? "cursor-default border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
+            ? "border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-100"
             : "border-emerald-400/30 bg-emerald-400/10 text-emerald-200 hover:border-emerald-300/50 hover:bg-emerald-400/15"
-        } disabled:opacity-80`}
+        } disabled:cursor-wait disabled:opacity-80`}
+        title={subscribed ? labels.subscribed : undefined}
       >
         {label}
       </button>

@@ -138,6 +138,7 @@
     "subscribeAfterLogin": "Sign in to subscribe to recent growth",
     "subscribe": "Subscribe to recent growth",
     "subscribed": "Subscribed to recent growth",
+    "unsubscribe": "Unsubscribe",
     "subscribeFailed": "Could not subscribe. Try again later."
   },
   "developers": {

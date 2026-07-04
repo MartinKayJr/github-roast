@@ -75,6 +75,7 @@ export async function HomeGrowthLeaderboard() {
     subscribeAfterLogin: t("subscribeAfterLogin"),
     subscribe: t("subscribe"),
     subscribed: t("subscribed"),
+    unsubscribe: t("unsubscribe"),
     subscribeFailed: t("subscribeFailed"),
   };
 

@@ -138,6 +138,7 @@
     "subscribeAfterLogin": "登录后订阅近期成长",
     "subscribe": "订阅近期成长",
     "subscribed": "已订阅近期成长",
+    "unsubscribe": "取消订阅",
     "subscribeFailed": "订阅失败，稍后再试"
   },
   "developers": {
