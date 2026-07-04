@@ -1,15 +1,7 @@
 "use client";
 
-import { useState, useCallback, useId } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "@/i18n/navigation";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 
 export interface TrajectoryStep {
   t: number;
@@ -44,9 +36,6 @@ export interface TimelineLabels {
   tooltipScan: string;
   tooltipRepo: string;
   tooltipLanguage: string;
-  clusterTitle: string;
-  close: string;
-  overflowMore: string;
 }
 
 interface TooltipState {
@@ -115,11 +104,9 @@ export function GrowthTimelineChart({
   /** Server "now" (ms epoch). Deterministic — avoids Date.now() in render. */
   updatedAt?: number;
 }) {
-  const uid = useId();
   const router = useRouter();
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const [focusedNode, setFocusedNode] = useState<string | null>(null);
-  const [clusterDialog, setClusterDialog] = useState<TimelinePoint[] | null>(null);
 
   const showTooltip = useCallback(
     (cx: number, cy: number, pts: TimelinePoint[]) =>
@@ -175,16 +162,11 @@ export function GrowthTimelineChart({
     (1 - Math.min(100, Math.max(0, score)) / 100) *
       (PLOT_H - SCORE_EDGE_PAD * 2);
 
-  // Endpoint (avatar) coordinates + collision buckets.
-  type NodeSpec =
-    | {
-        kind: "avatar";
-        point: TimelinePoint;
-        cx: number;
-        cy: number;
-        cluster: TimelinePoint[];
-      }
-    | { kind: "overflow"; cx: number; cy: number; n: number; pts: TimelinePoint[] };
+  type NodeSpec = {
+    point: TimelinePoint;
+    cx: number;
+    cy: number;
+  };
 
   // Bucket endpoints by (day column, rounded score) so each date reads as one
   // vertical stack. This matches the product model: X = day, Y = score.
@@ -198,47 +180,23 @@ export function GrowthTimelineChart({
     buckets.set(key, arr);
   }
 
-  const MAX_VISIBLE = 4;
   const nodes: NodeSpec[] = [];
   for (const grp of buckets.values()) {
     const sorted = [...grp].sort((a, b) => b.growth_score - a.growth_score);
-    const baseX = xForTime(sorted[0].snapshot_at);
-    const baseY = yForScore(sorted[0].final_score);
-    const visible = sorted.slice(0, MAX_VISIBLE);
-    const overflow = sorted.length - MAX_VISIBLE;
 
-    visible.forEach((p, i) => {
-      const offsetY = (i - (visible.length - 1) / 2) * (AVATAR_R * 1.25);
+    sorted.forEach((p, i) => {
+      const offsetY = (i - (sorted.length - 1) / 2) * (AVATAR_R * 1.25);
       nodes.push({
-        kind: "avatar",
         point: p,
         cx: xForTime(p.snapshot_at),
         cy: yForScore(p.final_score) + offsetY,
-        cluster: sorted,
       });
     });
-    if (overflow > 0) {
-      const offsetY =
-        (visible.length - (visible.length - 1) / 2) * (AVATAR_R * 1.25);
-      nodes.push({
-        kind: "overflow",
-        cx: baseX,
-        cy: baseY + offsetY,
-        n: overflow,
-        pts: sorted,
-      });
-    }
   }
   const renderNodes = focusedNode
     ? [
-        ...nodes.filter(
-          (node) =>
-            node.kind !== "avatar" || node.point.username !== focusedNode,
-        ),
-        ...nodes.filter(
-          (node) =>
-            node.kind === "avatar" && node.point.username === focusedNode,
-        ),
+        ...nodes.filter((node) => node.point.username !== focusedNode),
+        ...nodes.filter((node) => node.point.username === focusedNode),
       ]
     : nodes;
 
@@ -262,18 +220,6 @@ export function GrowthTimelineChart({
         role="img"
         onMouseLeave={hideTooltip}
       >
-        <defs>
-          {nodes.map((n) => {
-            if (n.kind !== "avatar") return null;
-            const id = `${uid}-clip-${n.point.username}`;
-            return (
-              <clipPath key={id} id={id}>
-                <circle cx={n.cx} cy={n.cy} r={AVATAR_R} />
-              </clipPath>
-            );
-          })}
-        </defs>
-
         {/* Y-axis numeric score ticks + horizontal gridlines */}
         {SCORE_TICKS.map((score) => {
           const y = yForScore(score);
@@ -358,127 +304,62 @@ export function GrowthTimelineChart({
           );
         })}
 
-        {/* Nodes: avatars + overflow bubbles */}
-        {renderNodes.map((n, i) => {
-          if (n.kind === "overflow") {
-            return (
-              <g
-                key={`overflow-${i}`}
-                tabIndex={0}
-                role="button"
-                aria-label={labels.overflowMore.replace("{n}", String(n.n))}
-                style={{ cursor: "pointer" }}
-                onMouseEnter={() => showTooltip(n.cx, n.cy, n.pts)}
-                onFocus={() => showTooltip(n.cx, n.cy, n.pts)}
-                onBlur={hideTooltip}
-                onClick={() => setClusterDialog(n.pts)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setClusterDialog(n.pts);
-                  }
-                }}
-              >
-                <circle cx={n.cx} cy={n.cy} r={MIN_HIT / 2} fill="transparent" />
-                <circle
-                  cx={n.cx}
-                  cy={n.cy}
-                  r={AVATAR_R}
-                  fill="rgba(255,255,255,0.08)"
-                  stroke="rgba(255,255,255,0.2)"
-                  strokeWidth={1.5}
-                />
-                <text
-                  x={n.cx}
-                  y={n.cy + 3}
-                  textAnchor="middle"
-                  fontSize={9}
-                  fontWeight="bold"
-                  fill="rgba(255,255,255,0.6)"
-                >
-                  {n.pts.length}
-                </text>
-              </g>
-            );
-          }
-
+        {/* Nodes: every growth entry is rendered as its own avatar. */}
+        {renderNodes.map((n) => {
           const p = n.point;
-          const clipId = `${uid}-clip-${p.username}`;
           const avatarSrc =
             p.avatar_url ?? `https://github.com/${p.username}.png`;
           const isFocused = focusedNode === p.username;
-          const isClustered = n.cluster.length > 1;
 
           return (
-            <g
+            <foreignObject
               key={p.username}
-              tabIndex={0}
-              role="button"
-              aria-label={`${p.display_name ?? p.username} — ${p.band} ${p.final_score}`}
-              style={{ cursor: "pointer" }}
-              onClick={() => {
-                if (isClustered) {
-                  setClusterDialog(n.cluster);
-                  return;
-                }
-                router.push(`/u/${p.username}`);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  if (isClustered) {
-                    setClusterDialog(n.cluster);
-                    return;
-                  }
-                  router.push(`/u/${p.username}`);
-                }
-              }}
-              onMouseEnter={() => {
-                setFocusedNode(p.username);
-                showTooltip(n.cx, n.cy, [p]);
-              }}
-              onMouseLeave={() => {
-                setFocusedNode(null);
-                hideTooltip();
-              }}
-              onFocus={() => {
-                setFocusedNode(p.username);
-                showTooltip(n.cx, n.cy, [p]);
-              }}
-              onBlur={() => {
-                setFocusedNode(null);
-                hideTooltip();
-              }}
+              x={n.cx - MIN_HIT / 2}
+              y={n.cy - MIN_HIT / 2}
+              width={MIN_HIT}
+              height={MIN_HIT}
+              style={{ overflow: "visible" }}
             >
-              <circle cx={n.cx} cy={n.cy} r={MIN_HIT / 2} fill="transparent" />
-              {isFocused && (
-                <circle
-                  cx={n.cx}
-                  cy={n.cy}
-                  r={AVATAR_R + 3}
-                  fill="none"
-                  stroke="rgba(255,255,255,0.55)"
-                  strokeWidth={2}
+              <button
+                type="button"
+                aria-label={`${p.display_name ?? p.username} — ${p.band} ${p.final_score}`}
+                onClick={() => router.push(`/u/${p.username}`)}
+                onMouseEnter={() => {
+                  setFocusedNode(p.username);
+                  showTooltip(n.cx, n.cy, [p]);
+                }}
+                onMouseLeave={() => {
+                  setFocusedNode(null);
+                  hideTooltip();
+                }}
+                onFocus={() => {
+                  setFocusedNode(p.username);
+                  showTooltip(n.cx, n.cy, [p]);
+                }}
+                onBlur={() => {
+                  setFocusedNode(null);
+                  hideTooltip();
+                }}
+                className={`relative flex size-9 items-center justify-center rounded-full border bg-zinc-800 text-xs font-bold text-zinc-300 shadow-lg transition-transform ${
+                  isFocused
+                    ? "scale-110 border-white/60 ring-2 ring-white/35"
+                    : "border-white/20"
+                }`}
+              >
+                <span>{p.username.slice(0, 1).toUpperCase()}</span>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={avatarSrc}
+                  alt=""
+                  width={AVATAR_R * 2}
+                  height={AVATAR_R * 2}
+                  className="absolute inset-0 m-auto size-8 rounded-full object-cover"
+                  onError={(event) => {
+                    event.currentTarget.style.display = "none";
+                  }}
                 />
-              )}
-              <image
-                href={avatarSrc}
-                x={n.cx - AVATAR_R}
-                y={n.cy - AVATAR_R}
-                width={AVATAR_R * 2}
-                height={AVATAR_R * 2}
-                clipPath={`url(#${clipId})`}
-                preserveAspectRatio="xMidYMid slice"
-              />
-              <circle
-                cx={n.cx}
-                cy={n.cy}
-                r={AVATAR_R}
-                fill="none"
-                stroke="rgba(255,255,255,0.18)"
-                strokeWidth={1.5}
-              />
-            </g>
+              </button>
+            </foreignObject>
           );
         })}
 
@@ -488,90 +369,7 @@ export function GrowthTimelineChart({
           <TooltipForeign tooltip={tooltip} labels={labels} />
         )}
       </svg>
-      <ClusterDialog
-        points={clusterDialog}
-        labels={labels}
-        onOpenChange={(open) => {
-          if (!open) setClusterDialog(null);
-        }}
-      />
     </div>
-  );
-}
-
-function ClusterDialog({
-  points,
-  labels,
-  onOpenChange,
-}: {
-  points: TimelinePoint[] | null;
-  labels: TimelineLabels;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const router = useRouter();
-  const sorted = [...(points ?? [])].sort(
-    (a, b) => b.final_score - a.final_score || b.growth_score - a.growth_score,
-  );
-
-  return (
-    <Dialog open={points !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[82vh] overflow-hidden p-0 sm:max-w-xl">
-        <DialogHeader className="border-b border-white/10 px-5 py-4">
-          <DialogTitle className="text-base text-zinc-100">
-            {labels.clusterTitle.replace("{count}", String(sorted.length))}
-          </DialogTitle>
-          <DialogDescription>
-            {sorted[0] ? formatDate(sorted[0].snapshot_at) : labels.timelineTitle}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="max-h-[60vh] overflow-y-auto px-3 py-2">
-          {sorted.map((p) => (
-            <button
-              key={p.username}
-              type="button"
-              onClick={() => router.push(`/u/${p.username}`)}
-              className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white/[0.06]"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={p.avatar_url ?? `https://github.com/${p.username}.png`}
-                alt=""
-                width={36}
-                height={36}
-                className="size-9 shrink-0 rounded-full object-cover"
-              />
-              <div className="min-w-0 flex-1">
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className="truncate text-sm font-semibold text-zinc-100">
-                    {p.display_name ?? p.username}
-                  </span>
-                  <span className="shrink-0 rounded-full bg-white/5 px-1.5 py-px text-[10px] font-bold text-zinc-300">
-                    {p.band}
-                  </span>
-                </div>
-                <div className="mt-0.5 truncate text-xs text-zinc-500">
-                  @{p.username}
-                  {p.primary_repo ? ` · ${p.primary_repo}` : ""}
-                </div>
-              </div>
-              <div className="shrink-0 text-right">
-                <div className="text-sm font-black text-zinc-100 tabular-nums">
-                  {Math.round(p.final_score)}
-                </div>
-                <div className="text-[10px] text-emerald-400 tabular-nums">
-                  +{p.growth_score.toFixed(1)}
-                </div>
-              </div>
-            </button>
-          ))}
-        </div>
-        <div className="border-t border-white/10 px-5 py-3 text-right">
-          <DialogClose className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-white/10">
-            {labels.close}
-          </DialogClose>
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }
 

@@ -1728,17 +1728,20 @@ export async function getGrowthTimeline(
       daysByUser.set(u, arr);
     }
 
-    return ranked
-      .flatMap((p) => {
-        const days = daysByUser.get(p.username) ?? [];
-        const steps = days.map((day) => ({ t: day.t, score: p.final_score }));
-        return days.map((day) => ({
-          ...p,
-          snapshot_at: day.t,
-          contribution_count: day.count,
-          steps,
-        }));
-      })
+    const timeline: GrowthTimelinePoint[] = [];
+    for (const p of ranked) {
+      const days = daysByUser.get(p.username) ?? [];
+      const latestDay = days[days.length - 1];
+      if (!latestDay) continue;
+      timeline.push({
+        ...p,
+        snapshot_at: latestDay.t,
+        contribution_count: p.contribution_delta,
+        steps: days.map((day) => ({ t: day.t, score: p.final_score })),
+      });
+    }
+
+    return timeline
       .sort((a, b) => b.growth_score - a.growth_score || b.contribution_count - a.contribution_count)
       .slice(0, limit);
   } catch (e) {
