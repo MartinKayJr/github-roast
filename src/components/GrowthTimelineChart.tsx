@@ -162,7 +162,6 @@ export function GrowthTimelineChart({
   type ColumnSpec = {
     key: string;
     cx: number;
-    labelY: number;
     points: TimelinePoint[];
   };
 
@@ -179,11 +178,8 @@ export function GrowthTimelineChart({
   }
 
   const nodes: NodeSpec[] = [];
-  const columns: ColumnSpec[] = [];
-  for (const [key, grp] of buckets.entries()) {
+  for (const grp of buckets.values()) {
     const sorted = [...grp].sort((a, b) => b.growth_score - a.growth_score);
-    const baseY = yForScore(sorted[0].final_score);
-    const topOffset = -((sorted.length - 1) / 2) * (AVATAR_R * 1.25);
 
     sorted.forEach((p, i) => {
       const offsetY = (i - (sorted.length - 1) / 2) * (AVATAR_R * 1.25);
@@ -193,16 +189,24 @@ export function GrowthTimelineChart({
         cy: yForScore(p.final_score) + offsetY,
       });
     });
-
-    if (sorted.length > 1) {
-      columns.push({
-        key,
-        cx: xForTime(sorted[0].snapshot_at),
-        labelY: Math.max(2, baseY + topOffset - MIN_HIT / 2 - 24),
-        points: sorted,
-      });
-    }
   }
+
+  const dayColumns = new Map<number, TimelinePoint[]>();
+  for (const p of points) {
+    const day = startOfDayTs(p.snapshot_at);
+    const arr = dayColumns.get(day) ?? [];
+    arr.push(p);
+    dayColumns.set(day, arr);
+  }
+  const columns: ColumnSpec[] = [...dayColumns.entries()]
+    .map(([day, pts]) => ({
+      key: String(day),
+      cx: xForTime(day),
+      points: [...pts].sort(
+        (a, b) => b.final_score - a.final_score || b.growth_score - a.growth_score,
+      ),
+    }))
+    .filter((column) => column.points.length > 1);
   const renderNodes = focusedNode
     ? [
         ...nodes.filter((node) => node.point.username !== focusedNode),
@@ -357,7 +361,7 @@ export function GrowthTimelineChart({
           <foreignObject
             key={`column-${column.key}`}
             x={column.cx - 30}
-            y={column.labelY}
+            y={2}
             width={60}
             height={22}
             style={{ overflow: "visible" }}
