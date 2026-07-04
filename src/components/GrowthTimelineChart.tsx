@@ -360,22 +360,19 @@ export function GrowthTimelineChart({
         {columns.map((column) => (
           <foreignObject
             key={`column-${column.key}`}
-            x={column.cx - 30}
-            y={2}
-            width={60}
-            height={22}
+            x={column.cx - 14}
+            y={0}
+            width={28}
+            height={34}
             style={{ overflow: "visible" }}
           >
             <button
               type="button"
               onClick={() => setColumnDialog(column.points)}
-              className="flex h-5 w-full items-center justify-center gap-1 rounded-full border border-border bg-card px-2 text-[10px] font-semibold text-card-foreground shadow-lg transition-colors hover:bg-accent"
+              className="flex h-7 w-7 items-center justify-center rounded-full border border-border bg-card pb-1 text-[10px] font-black text-card-foreground shadow-lg transition-colors [clip-path:polygon(50%_100%,36%_78%,20%_74%,8%_60%,8%_36%,20%_16%,38%_6%,62%_6%,80%_16%,92%_36%,92%_60%,80%_74%,64%_78%)] hover:bg-accent"
               aria-label={`${labels.listLabel} ${column.points.length}`}
             >
-              <span>{labels.listLabel}</span>
-              <span className="text-muted-foreground tabular-nums">
-                {column.points.length}
-              </span>
+              <span className="tabular-nums">{column.points.length}</span>
             </button>
           </foreignObject>
         ))}
