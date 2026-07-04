@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { LeaderboardWindow } from "@/lib/db";
-import { getLeaderboardCached } from "@/lib/leaderboard";
+import { getLeaderboardCached, LEADERBOARD_LIMIT } from "@/lib/leaderboard";
+import { paginate, parsePagination } from "@/lib/pagination";
 import type { LeaderboardCacheView } from "@/lib/redis";
 
 export const runtime = "nodejs";
@@ -30,9 +31,15 @@ function leaderboardWindow(req: NextRequest): LeaderboardWindow {
 export async function GET(req: NextRequest) {
   const view = leaderboardView(req);
   const window = leaderboardWindow(req);
+  // Default limit = the full board, so callers that never send limit/offset
+  // (home client, SDKs) keep the exact payload they had before pagination.
+  const page = parsePagination(req, {
+    defaultLimit: LEADERBOARD_LIMIT,
+    maxLimit: LEADERBOARD_LIMIT,
+  });
   const { entries, cached } = await getLeaderboardCached(view, window);
   return NextResponse.json(
-    { entries, cached, view, window },
+    { ...paginate(entries, page), cached, view, window },
     { headers: { "Cache-Control": CDN_CACHE } },
   );
 }

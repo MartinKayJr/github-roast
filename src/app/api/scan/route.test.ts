@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   verifyTurnstile: vi.fn(),
   recordAccountLookup: vi.fn(),
   checkRateLimit: vi.fn(),
+  rateLimitHeaders: vi.fn(),
   coalesceScan: vi.fn(),
   getCachedScan: vi.fn(),
 }));
@@ -31,6 +32,7 @@ vi.mock("@/lib/github", () => {
 
 vi.mock("@/lib/redis", () => ({
   checkRateLimit: mocks.checkRateLimit,
+  rateLimitHeaders: mocks.rateLimitHeaders,
   coalesceScan: mocks.coalesceScan,
   getCachedScan: mocks.getCachedScan,
 }));
@@ -98,6 +100,7 @@ describe("scan route machine auth", () => {
     mocks.verifyTurnstile.mockResolvedValue(false);
     mocks.recordAccountLookup.mockResolvedValue(true);
     mocks.checkRateLimit.mockResolvedValue({ success: true });
+    mocks.rateLimitHeaders.mockReturnValue({});
     mocks.coalesceScan.mockImplementation(async (_username: string, fn: () => unknown) => fn());
     mocks.getCachedScan.mockResolvedValue(null);
   });
@@ -112,7 +115,12 @@ describe("scan route machine auth", () => {
     const response = await POST(request());
 
     expect(response.status).toBe(403);
-    expect(await response.json()).toEqual({ error: "turnstile_failed" });
+    // Structured error shape: stable machine code plus human-readable fields.
+    expect(await response.json()).toEqual({
+      error: "turnstile_failed",
+      message: "turnstile failed",
+      hint: "Complete the browser verification, or call with a Bearer API key.",
+    });
     expect(mocks.verifyTurnstile).toHaveBeenCalledWith(null, "0.0.0.0");
     expect(mocks.collect).not.toHaveBeenCalled();
   });

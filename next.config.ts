@@ -10,9 +10,9 @@ const nextConfig: NextConfig = {
     root: __dirname,
   },
   // NOTE: the agent RFC-8288 Link header is set on the markdown/doc route
-  // responses (src/lib/agent-docs.ts AGENT_LINK_HEADER), not here — the homepage
-  // HTTP Link header is owned by Next's hreflang metadata and can't be extended
-  // via next.config headers(), which the locale rewrite also defeats.
+  // responses (src/lib/agent-docs.ts AGENT_LINK_HEADER) and appended to HTML
+  // pages by the middleware (src/proxy.ts) — not here, because next.config
+  // headers() is defeated by the locale rewrite.
   async rewrites() {
     return [
       // Markdown twin for blog posts: /blog/{slug}.md → the raw-markdown handler.

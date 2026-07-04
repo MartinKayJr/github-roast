@@ -20,6 +20,7 @@ export async function SiteFooter() {
     { label: t("blog"), href: "/blog" },
   ];
   const resources = [
+    { label: t("docs"), href: "/docs" },
     { label: t("methodology"), href: "/methodology" },
     { label: "API", href: "/openapi.json", external: true },
     { label: "llms.txt", href: "/llms.txt", external: true },

@@ -17,7 +17,7 @@ export function GET() {
     openapi: "3.1.0",
     info: {
       title: "ghfind API",
-      version: "1.1.0",
+      version: "1.2.0",
       description:
         "Score any GitHub account 0-100 for value and trustworthiness with a deterministic engine, " +
         "plus roasts, head-to-head battles, leaderboards, and developer discovery. " +
@@ -234,6 +234,8 @@ export function GET() {
           parameters: [
             { name: "view", in: "query", schema: { type: "string", enum: ["trending", "score", "heat", "progress"] } },
             { name: "window", in: "query", schema: { type: "string", enum: ["all", "24h", "7d", "30d"] } },
+            { $ref: "#/components/parameters/Limit" },
+            { $ref: "#/components/parameters/Offset" },
           ],
           responses: {
             "200": {
@@ -251,6 +253,8 @@ export function GET() {
           parameters: [
             { name: "type", in: "query", required: true, schema: { type: "string", enum: ["language", "org", "repo"] } },
             { name: "value", in: "query", schema: { type: "string" }, description: "Facet value; omit to list categories" },
+            { $ref: "#/components/parameters/Limit" },
+            { $ref: "#/components/parameters/Offset" },
           ],
           responses: {
             "200": {
@@ -318,6 +322,20 @@ export function GET() {
         bearerAuth: { type: "http", scheme: "bearer", description: "Machine API key (GITHUB_ROAST_CLI_API_KEY)" },
       },
       parameters: {
+        Limit: {
+          name: "limit",
+          in: "query",
+          required: false,
+          description: "Page size (1-500). Defaults to the full list so legacy callers are unaffected.",
+          schema: { type: "integer", minimum: 1, maximum: 500 },
+        },
+        Offset: {
+          name: "offset",
+          in: "query",
+          required: false,
+          description: "Zero-based index of the first entry to return. Walk pages via `nextOffset`.",
+          schema: { type: "integer", minimum: 0, default: 0 },
+        },
         IdempotencyKey: {
           name: "Idempotency-Key",
           in: "header",
@@ -378,6 +396,10 @@ export function GET() {
             cached: { type: "boolean" },
             view: { type: "string", enum: ["trending", "score", "heat", "progress"] },
             window: { type: "string", enum: ["all", "24h", "7d", "30d"] },
+            total: { type: "integer", description: "Total entries across all pages" },
+            limit: { type: "integer" },
+            offset: { type: "integer" },
+            nextOffset: { type: "integer", nullable: true, description: "Offset for the next page, or null when exhausted" },
           },
         },
         DevelopersResponse: {
@@ -390,6 +412,10 @@ export function GET() {
               type: "array",
               items: { type: "object", properties: { value: { type: "string" }, count: { type: "integer" } } },
             },
+            total: { type: "integer", description: "Total entries (or categories) across all pages" },
+            limit: { type: "integer" },
+            offset: { type: "integer" },
+            nextOffset: { type: "integer", nullable: true, description: "Offset for the next page, or null when exhausted" },
           },
         },
         SearchResponse: {

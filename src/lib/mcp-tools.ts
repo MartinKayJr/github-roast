@@ -106,13 +106,15 @@ export async function compareUsers(rawA: string, rawB: string): Promise<Record<s
   };
 }
 
-/** Ranked developers. */
+/** Ranked developers. `limit` keeps the payload agent-sized (the full board is 500). */
 export async function getLeaderboard(
   view: LeaderboardCacheView = "trending",
   window: LeaderboardWindow = "all",
+  limit = 50,
 ): Promise<Record<string, unknown>> {
   const { entries, cached } = await getLeaderboardCached(view, window);
-  return { view, window, cached, count: entries.length, entries };
+  const page = entries.slice(0, Math.max(1, Math.min(limit, 100)));
+  return { view, window, cached, count: page.length, total: entries.length, entries: page };
 }
 
 /** Prefix search over scored accounts. */

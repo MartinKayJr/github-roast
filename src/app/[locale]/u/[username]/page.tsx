@@ -400,6 +400,7 @@ export default async function AccountPage({
             facetValue={facetRank.facetValue}
             rank={facetRank.rank}
             ahead={facetRank.ahead?.username ?? null}
+            username={d.username}
           />
         )}
         {/* Turn the profile into a transit station: challenge this dev to a PK.

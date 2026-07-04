@@ -129,6 +129,9 @@
     "repoBucketHeading": "{value} · 项目贡献者",
     "orgBucketHeading": "{value} · 组织成员",
     "bucketSubtitle": "按综合评分排名，最多展示前 {limit} 位。",
+    "pinRankLine": "<strong>@{username}</strong> 在本榜排第 <strong>{rank}</strong> 位",
+    "pinChallenge": "挑战上一位 @{username}",
+    "pinTop": "霸榜第一 👑",
     "empty": "这个分类还没有收录开发者。",
     "backToDirectory": "← 返回发现页",
     "metaTitle": "发现开发者",
@@ -373,6 +376,7 @@
     "contact": "联系",
     "privacy": "隐私",
     "methodology": "评分方法",
+    "docs": "API 文档",
     "blog": "研究",
     "source": "GitHub 源码",
     "sectionProduct": "产品",
@@ -410,6 +414,96 @@
         "q": "如何把我的主页从 ghfind 移除？",
         "a": "只有 60 分及以上的账号才会被索引和收录。若想从榜单移除，可使用排行榜底部的移除链接，或在 GitHub 仓库提 issue，主页即会被下架。"
       }
+    ]
+  },
+  "homeIntro": {
+    "whatHeading": "ghfind 是什么？",
+    "whatBody": "ghfind 是一个面向 GitHub 的开发者评分与发现工具。它用一套完全确定性的引擎（开源的 github-account-value skill，AGPL 协议），从账号成熟度、原创项目质量、贡献质量、生态影响力、社区影响力、活跃真实性六个加权维度，为任意账号打出 0–100 分。相同输入永远得到相同分数，大模型不参与打分。在分数之上，还提供可选的 AI 吐槽、开发者对战、按语言和组织的排行榜，以及 README 评分徽章。",
+    "howHeading": "ghfind 如何工作",
+    "steps": [
+      {
+        "title": "1. 扫描公开足迹",
+        "body": "输入任意 GitHub 用户名，引擎会抓取该账号的公开数据——仓库、PR、issue、star、粉丝——生成一份证据快照。不需要登录，不需要任何授权。"
+      },
+      {
+        "title": "2. 六个确定性维度打分",
+        "body": "快照按账号成熟度、原创项目质量、贡献质量、生态影响力、社区影响力、活跃真实性打分，并对刷 PR、刷 star、模板灌水等行为扣分。"
+      },
+      {
+        "title": "3. 得到分数、段位和吐槽",
+        "body": "你会得到一个可复现的 0–100 分、从「拉完了」到「夯」的段位、一份指出短板的分维度报告，以及（只在你主动要求时）一段毒舌 AI 吐槽。"
+      }
+    ],
+    "numbersHeading": "用数字看 ghfind",
+    "numbers": {
+      "accounts": "公开研究数据集已覆盖 {count} 个 GitHub 账号",
+      "snapshots": "已采集并分析 {count} 份完整证据快照",
+      "dimensions": "每个分数背后有 {count} 个加权维度",
+      "flagged": "被标记存在刷量行为的账号不到 1%"
+    },
+    "tableCaption": "ghfind 分数 vs 原始 GitHub 信号",
+    "tableColSignal": "信号",
+    "tableColMeasures": "它衡量什么",
+    "tableColGameable": "容易刷吗？",
+    "tableRows": [
+      {
+        "signal": "GitHub star 数",
+        "measures": "项目的受欢迎程度，而不是作者的贡献质量",
+        "gameable": "容易——star 交易和互 star 团很廉价"
+      },
+      {
+        "signal": "粉丝数",
+        "measures": "受众规模与社交触达",
+        "gameable": "容易——互关和买粉即可"
+      },
+      {
+        "signal": "ghfind 分数",
+        "measures": "六个加权维度下的真实贡献含金量与可信度",
+        "gameable": "难——刷量模式会被识别并扣分"
+      }
+    ]
+  },
+  "docs": {
+    "metaTitle": "ghfind API 文档 — REST API、MCP 服务器、SDK",
+    "metaDescription": "ghfind 开发者文档：GitHub 账号评分 REST 接口、面向 AI Agent 的 ghfind MCP 服务器、认证方式、官方 npm/PyPI SDK，以及机器可读规范（OpenAPI、llms.txt）。",
+    "heading": "ghfind API 文档",
+    "lead": "ghfind 用确定性的开源引擎为任意 GitHub 账号打出 0–100 的真实贡献含金量与可信度评分。站点的全部能力都可以编程调用：公开 REST API、面向 AI Agent 的 MCP 服务器，以及官方 SDK。本页是它们的完整文档。",
+    "restHeading": "ghfind REST API",
+    "restIntro": "Base URL：https://ghfind.com。评分读取接口无需认证。错误为结构化 JSON（{error, message, hint}），响应携带 RateLimit-* 头，列表接口支持 limit/offset 分页。",
+    "endpoints": [
+      { "sig": "GET /api/score/{username}", "desc": "确定性 0–100 分、段位和六维拆解。未见过的账号也能实时评分；无需认证，不经过 LLM。" },
+      { "sig": "POST /api/scan", "desc": "完整的确定性扫描载荷：原始指标、头部仓库、近期 PR、风险标记、子分数。" },
+      { "sig": "POST /api/roast", "desc": "AI 吐槽报告（唯一的 LLM 接口，支持自带 key）。" },
+      { "sig": "POST /api/vs-verdict", "desc": "两个账号的对战裁决。" },
+      { "sig": "GET /api/leaderboard", "desc": "按 trending/score/heat/progress 排序的开发者榜单，支持 limit/offset 分页。" },
+      { "sig": "GET /api/developers", "desc": "按语言、组织或参与仓库的开发者目录，支持分页。" },
+      { "sig": "GET /api/search-users", "desc": "对已评分账号做前缀搜索。" },
+      { "sig": "GET /api/stats", "desc": "平台总量统计（已评分账号数）。" },
+      { "sig": "GET /api/badge/{username}", "desc": "可嵌入 README 的 SVG 评分徽章。" }
+    ],
+    "mcpHeading": "ghfind MCP 服务器",
+    "mcpIntro": "Streamable HTTP 协议的 Model Context Protocol 服务器位于 https://ghfind.com/mcp（无需认证、按 IP 限流、只读）。把它加进 Claude、Cursor 或任意 MCP 客户端，即可在 Agent 内直接评分和对比 GitHub 账号。",
+    "tools": [
+      { "name": "score_user", "desc": "任意 GitHub 账号的 0–100 分、段位和六维拆解。" },
+      { "name": "scan_user", "desc": "完整扫描载荷：指标、头部仓库、近期 PR、风险标记。" },
+      { "name": "compare_users", "desc": "确定性对战比较，给出胜者与分差。" },
+      { "name": "get_leaderboard", "desc": "公开开发者榜单，用于发现。" },
+      { "name": "search_users", "desc": "已评分账号的前缀搜索。" }
+    ],
+    "authHeading": "认证",
+    "authBody": "读取接口全部公开。写入接口（POST /api/scan、POST /api/roast）接受浏览器 Turnstile 验证或 Bearer API key。Agent 请阅读 /auth.md 的机器可读指引。",
+    "sdkHeading": "官方 SDK 与 CLI",
+    "sdks": [
+      { "name": "@hikariming/ghfind (npm)", "desc": "JavaScript / TypeScript SDK 与 CLI：npm install -g @hikariming/ghfind" },
+      { "name": "ghfind (PyPI)", "desc": "Python SDK：pip install --upgrade ghfind" },
+      { "name": "ghfind CLI", "desc": "ghfind score {username} -o json · ghfind scan · ghfind roast · ghfind leaderboard · ghfind stats" }
+    ],
+    "machineHeading": "机器可读入口",
+    "machine": [
+      { "label": "/openapi.json", "desc": "覆盖全部公开接口的 OpenAPI 3.1 规范" },
+      { "label": "/llms.txt", "desc": "面向 Agent 的指南，含所有入口的 markdown 链接" },
+      { "label": "/index.md", "desc": "首页的 markdown 孪生（Accept: text/markdown 时也会返回）" },
+      { "label": "/.well-known/agent-card.json", "desc": "/.well-known/ 下的 A2A agent card、MCP server card、API catalog 与 skills" }
     ]
   },
   "about": {

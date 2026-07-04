@@ -56,6 +56,7 @@ ${toolingMd()}
 ## Docs (markdown)
 
 - Agent homepage: [${SITE_URL}/index.md](${SITE_URL}/index.md)
+- API documentation (HTML): [${SITE_URL}/docs](${SITE_URL}/docs)
 - Authentication: [${SITE_URL}/auth.md](${SITE_URL}/auth.md)
 - Full dump (everything in one file): [${SITE_URL}/llms-full.txt](${SITE_URL}/llms-full.txt)
 - Methodology: [${SITE_URL}/methodology](${SITE_URL}/methodology)

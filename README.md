@@ -64,6 +64,15 @@ browser ─▶ /api/scan ─▶ [Redis cache?] ─▶ lib/github.ts  (GitHub RES
 - 6 dimensions (account maturity / original project quality / contribution quality / ecosystem impact / community influence / activity authenticity) + 10 farming red flags. Weights lean toward **hard-to-fake** signals (PRs merged into real repos, sustained activity) and discount **buyable** ones (stars, followers).
 - The site also includes share cards, README badges, profile comments, and GitHub-authenticated profile reactions.
 
+## ghfind API, MCP server & SDKs
+
+Everything on the site is available programmatically — full reference at **[ghfind API documentation](https://ghfind.com/docs)**:
+
+- **REST API** — `GET https://ghfind.com/api/score/{username}` for a deterministic 0–100 score (no auth, no LLM); OpenAPI 3.1 spec at [ghfind.com/openapi.json](https://ghfind.com/openapi.json)
+- **MCP server** — Streamable HTTP at [ghfind.com/mcp](https://ghfind.com/mcp); add it to Claude, Cursor, or any MCP client to score and compare GitHub accounts from inside the agent
+- **SDKs** — [`@hikariming/ghfind`](https://www.npmjs.com/package/@hikariming/ghfind) (npm) · [`ghfind`](https://pypi.org/project/ghfind/) (PyPI)
+- **For AI agents** — [ghfind.com/llms.txt](https://ghfind.com/llms.txt) links every machine-readable surface
+
 ## Local development
 
 ```bash

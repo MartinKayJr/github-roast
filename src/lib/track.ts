@@ -19,7 +19,13 @@ export type TrackEvent =
   | "similar_dev_click"
   | "leaderboard_vs_click"
   | "facet_rank_click"
+  | "facet_board_vs_click"
   | "modal_cta_click";
+
+type VaWindow = Window & {
+  va?: (...params: unknown[]) => void;
+  vaq?: unknown[][];
+};
 
 /**
  * Thin, typed wrapper over Vercel Analytics `track()`. Client-only (the underlying
@@ -32,6 +38,19 @@ export function trackEvent(
   props?: Record<string, string | number | boolean>,
 ): void {
   try {
+    // Mount-time events (e.g. badge_banner_view in a useEffect) can fire before
+    // <Analytics/> — a root-layout effect that runs AFTER child effects — has
+    // seeded window.va. The package's track() is `window.va?.(…)`, so those
+    // events are silently dropped. Seed the same queue stub initQueue() would,
+    // so early events buffer in window.vaq until the script drains them.
+    if (typeof window !== "undefined") {
+      const w = window as VaWindow;
+      if (!w.va) {
+        w.va = (...params: unknown[]) => {
+          (w.vaq ??= []).push(params);
+        };
+      }
+    }
     track(name, props);
   } catch {
     /* analytics blocked or unavailable */

@@ -6,10 +6,12 @@ import {
   LeaderboardClient,
   type LeaderboardLabels,
 } from "@/components/LeaderboardClient";
+import { FacetBoardPin } from "@/components/FacetBoardPin";
 import { getDevelopersByFacetCached } from "@/lib/developers";
 import { DEVELOPERS_PER_FACET_LIMIT } from "@/lib/db";
 import type { FacetType } from "@/lib/facets";
 import { localeAlternates } from "@/lib/site";
+import { normalizeUsername } from "@/lib/username";
 import { JsonLd, breadcrumbJsonLd } from "@/components/JsonLd";
 
 export const dynamic = "force-dynamic";
@@ -64,8 +66,10 @@ export async function generateMetadata({
 
 export default async function FacetBucketPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string; type: string; value: string[] }>;
+  searchParams: Promise<{ u?: string }>;
 }) {
   const { locale, type: rawType, value: rawValue } = await params;
   const type = parseFacetType(rawType);
@@ -77,6 +81,18 @@ export default async function FacetBucketPage({
   const tl = await getTranslations("leaderboard");
 
   const entries = await getDevelopersByFacetCached(type, value);
+
+  // "?u=<handle>" marks a visitor arriving from a profile's facet-rank link.
+  // If that dev is actually on this board, pin their position + a duel against
+  // the dev one spot above (the loop closer). Off-board or garbage handles just
+  // render the plain board — the canonical URL never carries the param.
+  const fromUser = normalizeUsername((await searchParams)?.u ?? "");
+  const pinIdx = fromUser
+    ? entries.findIndex(
+        (e) => e.username.toLowerCase() === fromUser.toLowerCase(),
+      )
+    : -1;
+  const pinned = pinIdx >= 0 ? entries[pinIdx] : null;
 
   const localePrefix = locale === "en" ? "/en" : "";
   const encodedPath = value.split("/").map(encodeURIComponent).join("/");
@@ -123,6 +139,15 @@ export default async function FacetBucketPage({
           {t("bucketSubtitle", { limit: DEVELOPERS_PER_FACET_LIMIT })}
         </p>
       </header>
+
+      {pinned && (
+        <FacetBoardPin
+          username={pinned.username}
+          rank={pinIdx + 1}
+          ahead={pinIdx > 0 ? entries[pinIdx - 1].username : null}
+          facetValue={value}
+        />
+      )}
 
       <LeaderboardClient
         initialView="score"

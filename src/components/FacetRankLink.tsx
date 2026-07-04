@@ -14,13 +14,16 @@ export function FacetRankLink({
   facetValue,
   rank,
   ahead,
+  username,
 }: {
   facetValue: string;
   rank: number;
   ahead: string | null;
+  /** The profile owner — carried as `?u=` so the board pins their position. */
+  username: string;
 }) {
   const t = useTranslations("detail");
-  const href = `/developers/language/${encodeURIComponent(facetValue)}`;
+  const href = `/developers/language/${encodeURIComponent(facetValue)}?u=${encodeURIComponent(username.toLowerCase())}`;
   return (
     <Link
       href={href}

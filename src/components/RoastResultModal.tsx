@@ -196,7 +196,7 @@ export function RoastResultModal({
           </Link>
           {facetRank && (
             <Link
-              href={`/developers/language/${encodeURIComponent(facetRank.facetValue)}`}
+              href={`/developers/language/${encodeURIComponent(facetRank.facetValue)}?u=${encodeURIComponent(username.toLowerCase())}`}
               prefetch={false}
               onClick={() =>
                 trackEvent("modal_cta_click", {
