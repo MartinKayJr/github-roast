@@ -31,6 +31,7 @@ let verdictMinuteLimiter: Ratelimit | null = null;
 let verdictDayLimiter: Ratelimit | null = null;
 let communityProfileAiMinuteLimiter: Ratelimit | null = null;
 let communityProfileAiDayLimiter: Ratelimit | null = null;
+let radarLimiter: Ratelimit | null = null;
 
 function getRedis(): Redis | null {
   if (redis) return redis;
@@ -39,6 +40,10 @@ function getRedis(): Redis | null {
   if (!url || !token) return null;
   redis = new Redis({ url, token });
   return redis;
+}
+
+export function isRedisConfigured(): boolean {
+  return Boolean(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
 }
 
 const SCAN_TTL_SECONDS = 60 * 60 * 24; // 24h
@@ -734,6 +739,66 @@ export async function clearCachedReactionCounts(target: string): Promise<void> {
   if (!r) return;
   try {
     await r.del(reactionCountsKey(target));
+  } catch {
+    // best-effort
+  }
+}
+
+/** Per-IP rate limiter for /api/community/radar in server LLM mode.
+ * Fails closed (success:false, unavailable:true) on any Redis error so that
+ * a misconfigured or unreachable Redis never silently opens server LLM billing. */
+export async function checkRadarRateLimit(
+  ip: string,
+): Promise<{ success: boolean; unavailable?: boolean }> {
+  const r = getRedis();
+  if (!r) return { success: false, unavailable: true };
+  if (!radarLimiter) {
+    radarLimiter = new Ratelimit({
+      redis: r,
+      limiter: Ratelimit.slidingWindow(20, "60 s"),
+      prefix: "rl:radar",
+      analytics: false,
+    });
+  }
+  try {
+    const { success } = await radarLimiter.limit(ip);
+    return { success };
+  } catch {
+    return { success: false, unavailable: true };
+  }
+}
+
+export interface RadarAiCache {
+  summary: string;
+  facets: { type: string; value: string; reason?: string }[];
+}
+
+const RADAR_AI_TTL_SECONDS = 300; // 5 min
+const radarAiKey = (lang: string, query: string) =>
+  `radar:ai:v1:${lang}:${query.slice(0, 200)}`;
+
+export async function getCachedRadarResult(
+  lang: string,
+  query: string,
+): Promise<RadarAiCache | null> {
+  const r = getRedis();
+  if (!r) return null;
+  try {
+    return (await r.get<RadarAiCache>(radarAiKey(lang, query))) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setCachedRadarResult(
+  lang: string,
+  query: string,
+  value: RadarAiCache,
+): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  try {
+    await r.set(radarAiKey(lang, query), value, { ex: RADAR_AI_TTL_SECONDS });
   } catch {
     // best-effort
   }

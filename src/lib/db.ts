@@ -371,6 +371,29 @@ function ensureSchema(db: Client): Promise<void> {
              ON community_profiles(status, visibility)`,
           `CREATE INDEX IF NOT EXISTS idx_community_profiles_login
              ON community_profiles(login)`,
+          // Email-based circle subscriptions. This is separate from GitHub auth:
+          // users can opt in during a roast without granting OAuth access. Email
+          // is stored because it is needed to send recommendations; email_hash is
+          // the stable primary key used for dedupe and notification logs.
+          `CREATE TABLE IF NOT EXISTS circle_email_subscriptions (
+             email_hash          TEXT PRIMARY KEY,
+             email               TEXT NOT NULL,
+             username            TEXT NOT NULL,
+             status              TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'unsubscribed')),
+             source              TEXT NOT NULL DEFAULT 'roast',
+             consent_version     TEXT NOT NULL,
+             created_at          INTEGER NOT NULL,
+             updated_at          INTEGER NOT NULL,
+             last_recommended_at INTEGER
+           )`,
+          `CREATE INDEX IF NOT EXISTS idx_circle_email_subscriptions_username
+             ON circle_email_subscriptions(username, status)`,
+          `CREATE TABLE IF NOT EXISTS circle_email_recommendation_logs (
+             email_hash TEXT NOT NULL,
+             match_login TEXT NOT NULL,
+             sent_at INTEGER NOT NULL,
+             PRIMARY KEY (email_hash, match_login)
+           )`,
         ],
         "write",
       );
@@ -398,6 +421,13 @@ function ensureSchema(db: Client): Promise<void> {
         } catch {
           // column already exists — ignore
         }
+      }
+      try {
+        await db.execute(
+          `ALTER TABLE circle_email_subscriptions ADD COLUMN unsubscribe_token TEXT`,
+        );
+      } catch {
+        // column already exists — ignore
       }
     })().catch((e) => {
       schemaReady = null; // allow retry on next call
@@ -2199,6 +2229,292 @@ export async function updateCommunityStatus(
   }
 }
 
+// ============================================================================
+// Email-based circle matching
+// ============================================================================
+
+export interface CircleEmailSubscriptionInput {
+  email: string;
+  username: string;
+  source?: string;
+  consentVersion?: string;
+}
+
+export interface CircleEmailRecommendationTarget {
+  emailHash: string;
+  email: string;
+  username: string;
+  matchedFacets: string[];
+}
+
+const CIRCLE_EMAIL_CONSENT_VERSION = "circle-email-v1";
+
+export function normalizeCircleEmail(raw: string): string {
+  return raw.trim().toLowerCase();
+}
+
+export function isValidCircleEmail(raw: string): boolean {
+  const email = normalizeCircleEmail(raw);
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254;
+}
+
+function circleEmailHash(email: string): string {
+  const salt = process.env.AUTH_SECRET ?? "github-roast-circle-email-v1";
+  return createHash("sha256").update(salt).update("\0").update(email).digest("hex");
+}
+
+export async function upsertCircleEmailSubscription({
+  email,
+  username,
+  source = "roast",
+  consentVersion = CIRCLE_EMAIL_CONSENT_VERSION,
+}: CircleEmailSubscriptionInput): Promise<boolean> {
+  const db = getClient();
+  if (!db) return false;
+  const normalizedEmail = normalizeCircleEmail(email);
+  if (!isValidCircleEmail(normalizedEmail)) return false;
+  try {
+    await ensureSchema(db);
+    const now = Date.now();
+    await db.execute({
+      sql: `INSERT INTO circle_email_subscriptions
+              (email_hash, email, username, status, source, consent_version,
+               unsubscribe_token, created_at, updated_at)
+            VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?)
+            ON CONFLICT(email_hash) DO UPDATE SET
+              email              = excluded.email,
+              username           = excluded.username,
+              status             = 'active',
+              source             = excluded.source,
+              consent_version    = excluded.consent_version,
+              unsubscribe_token  = COALESCE(circle_email_subscriptions.unsubscribe_token, excluded.unsubscribe_token),
+              updated_at         = excluded.updated_at`,
+      args: [
+        circleEmailHash(normalizedEmail),
+        normalizedEmail,
+        username.toLowerCase(),
+        source,
+        consentVersion,
+        randomUUID(),
+        now,
+        now,
+      ],
+    });
+    return true;
+  } catch (e) {
+    console.error("upsertCircleEmailSubscription failed:", e);
+    return false;
+  }
+}
+
+async function facetPairsForUsername(username: string): Promise<string[]> {
+  const db = getClient();
+  if (!db) return [];
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT facet_type, facet_value FROM developer_facets
+            WHERE username = ? AND facet_type IN ('language', 'org', 'repo')`,
+      args: [username.toLowerCase()],
+    });
+    return [
+      ...new Set(
+        res.rows.map((r) => `${String(r.facet_type)}:${String(r.facet_value).toLowerCase()}`),
+      ),
+    ];
+  } catch (e) {
+    console.error("facetPairsForUsername failed:", e);
+    return [];
+  }
+}
+
+export async function getCircleEmailTargetsForMember(
+  memberLogin: string,
+  limit = 25,
+): Promise<CircleEmailRecommendationTarget[]> {
+  const db = getClient();
+  if (!db) return [];
+  const member = memberLogin.toLowerCase();
+  const facetPairs = await facetPairsForUsername(member);
+  if (facetPairs.length === 0) return [];
+  try {
+    await ensureSchema(db);
+    const placeholders = facetPairs.map(() => "?").join(", ");
+    const res = await db.execute({
+      sql: `SELECT ces.email_hash, ces.email, ? AS username,
+                   GROUP_CONCAT(DISTINCT df.facet_value) AS matched_facet_list,
+                   COUNT(DISTINCT df.facet_type || ':' || LOWER(df.facet_value)) AS shared_facets
+            FROM circle_email_subscriptions AS ces
+            JOIN developer_facets AS df ON df.username = ces.username
+            WHERE ces.status = 'active'
+              AND ces.username != ?
+              AND df.facet_type IN ('language', 'org', 'repo')
+              AND (df.facet_type || ':' || LOWER(df.facet_value)) IN (${placeholders})
+              AND NOT EXISTS (
+                SELECT 1 FROM circle_email_recommendation_logs AS log
+                WHERE log.email_hash = ces.email_hash
+                  AND log.match_login = ?
+              )
+            GROUP BY ces.email_hash, ces.email
+            ORDER BY shared_facets DESC, ces.updated_at DESC
+            LIMIT ?`,
+      args: [member, member, ...facetPairs, member, limit],
+    });
+    return res.rows.map((r) => ({
+      emailHash: String(r.email_hash),
+      email: String(r.email),
+      username: String(r.username),
+      matchedFacets: String(r.matched_facet_list ?? "")
+        .split(",")
+        .filter(Boolean),
+    }));
+  } catch (e) {
+    console.error("getCircleEmailTargetsForMember failed:", e);
+    return [];
+  }
+}
+
+export async function getCircleEmailTargetsForSubscriber(
+  username: string,
+  limit = 6,
+): Promise<CircleEmailRecommendationTarget[]> {
+  const db = getClient();
+  if (!db) return [];
+  const subscriber = username.toLowerCase();
+  const facetPairs = await facetPairsForUsername(subscriber);
+  if (facetPairs.length === 0) return [];
+  try {
+    await ensureSchema(db);
+    const subRes = await db.execute({
+      sql: `SELECT email_hash, email, username FROM circle_email_subscriptions
+            WHERE username = ? AND status = 'active'
+            ORDER BY updated_at DESC LIMIT 1`,
+      args: [subscriber],
+    });
+    const sub = subRes.rows[0];
+    if (!sub) return [];
+
+    const placeholders = facetPairs.map(() => "?").join(", ");
+    const res = await db.execute({
+      sql: `SELECT ? AS email_hash, ? AS email, cp.login AS username,
+                   GROUP_CONCAT(DISTINCT df.facet_value) AS matched_facet_list,
+                   COUNT(DISTINCT df.facet_type || ':' || LOWER(df.facet_value)) AS shared_facets,
+                   s.final_score
+            FROM community_profiles AS cp
+            JOIN scores AS s ON s.username = cp.login
+            JOIN developer_facets AS df ON df.username = cp.login
+            WHERE cp.status = 'active'
+              AND cp.visibility = 'public'
+              AND cp.login != ?
+              AND s.hidden = 0
+              AND df.facet_type IN ('language', 'org', 'repo')
+              AND (df.facet_type || ':' || LOWER(df.facet_value)) IN (${placeholders})
+              AND NOT EXISTS (
+                SELECT 1 FROM circle_email_recommendation_logs AS log
+                WHERE log.email_hash = ?
+                  AND log.match_login = cp.login
+              )
+            GROUP BY cp.login
+            ORDER BY shared_facets DESC, s.final_score DESC, cp.updated_at DESC
+            LIMIT ?`,
+      args: [
+        String(sub.email_hash),
+        String(sub.email),
+        subscriber,
+        ...facetPairs,
+        String(sub.email_hash),
+        limit,
+      ],
+    });
+    return res.rows.map((r) => ({
+      emailHash: String(r.email_hash),
+      email: String(r.email),
+      username: String(r.username),
+      matchedFacets: String(r.matched_facet_list ?? "")
+        .split(",")
+        .filter(Boolean),
+    }));
+  } catch (e) {
+    console.error("getCircleEmailTargetsForSubscriber failed:", e);
+    return [];
+  }
+}
+
+export async function markCircleEmailRecommendationSent(
+  emailHash: string,
+  matchLogin: string,
+): Promise<void> {
+  const db = getClient();
+  if (!db) return;
+  try {
+    await ensureSchema(db);
+    const now = Date.now();
+    await db.batch(
+      [
+        {
+          sql: `INSERT OR IGNORE INTO circle_email_recommendation_logs
+                  (email_hash, match_login, sent_at)
+                VALUES (?, ?, ?)`,
+          args: [emailHash, matchLogin.toLowerCase(), now],
+        },
+        {
+          sql: `UPDATE circle_email_subscriptions
+                SET last_recommended_at = ?, updated_at = ?
+                WHERE email_hash = ?`,
+          args: [now, now, emailHash],
+        },
+      ],
+      "write",
+    );
+  } catch (e) {
+    console.error("markCircleEmailRecommendationSent failed:", e);
+  }
+}
+
+export async function getUnsubscribeToken(emailHash: string): Promise<string | null> {
+  const db = getClient();
+  if (!db) return null;
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT unsubscribe_token FROM circle_email_subscriptions WHERE email_hash = ?`,
+      args: [emailHash],
+    });
+    const row = res.rows[0];
+    if (!row) return null;
+    if (row.unsubscribe_token) return String(row.unsubscribe_token);
+    // Back-fill token for rows created before this column was added.
+    const token = randomUUID();
+    await db.execute({
+      sql: `UPDATE circle_email_subscriptions SET unsubscribe_token = ? WHERE email_hash = ?`,
+      args: [token, emailHash],
+    });
+    return token;
+  } catch (e) {
+    console.error("getUnsubscribeToken failed:", e);
+    return null;
+  }
+}
+
+export async function unsubscribeByToken(token: string): Promise<boolean> {
+  const db = getClient();
+  if (!db) return false;
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `UPDATE circle_email_subscriptions
+            SET status = 'unsubscribed', updated_at = ?
+            WHERE unsubscribe_token = ? AND status = 'active'`,
+      args: [Date.now(), token],
+    });
+    return (res.rowsAffected ?? 0) > 0;
+  } catch (e) {
+    console.error("unsubscribeByToken failed:", e);
+    return false;
+  }
+}
+
+
 export interface CommunityWaterfallEntry {
   login: string;
   avatar_url: string | null;
@@ -2374,6 +2690,89 @@ export async function getCommunityFeed(limit = 30): Promise<CommunityWaterfallEn
     });
   } catch (e) {
     console.error("getCommunityFeed failed:", e);
+    return [];
+  }
+}
+
+/**
+ * Fetch active public community members that match discovery facets.
+ *
+ * AI search resolves vague intent into facet filters first; this function keeps
+ * the final people results inside the opt-in community layer.
+ */
+export async function getCommunityEntriesByFacets(
+  facets: { type: FacetType; value: string }[],
+  limit = 30,
+): Promise<CommunityWaterfallEntry[]> {
+  const db = getClient();
+  if (!db) return [];
+  const facetPairs = [
+    ...new Set(
+      facets
+        .map((facet) => `${facet.type}:${facet.value.trim().toLowerCase()}`)
+        .filter((key) => !key.endsWith(":")),
+    ),
+  ];
+  if (facetPairs.length === 0) return getCommunityFeed(limit);
+
+  try {
+    await ensureSchema(db);
+    const placeholders = facetPairs.map(() => "?").join(", ");
+    const res = await db.execute({
+      sql: `SELECT login, avatar_url, final_score, tier,
+                   working_on, want_to_meet, matched_facet_list
+            FROM (
+              SELECT cp.login,
+                     s.avatar_url,
+                     s.final_score,
+                     s.tier,
+                     cp.working_on,
+                     cp.want_to_meet,
+                     cp.updated_at,
+                     (
+                       SELECT GROUP_CONCAT(ordered.facet_value)
+                       FROM (
+                         SELECT DISTINCT df2.facet_value
+                         FROM developer_facets AS df2
+                         WHERE df2.username = cp.login
+                           AND df2.facet_type IN ('language', 'org', 'repo')
+                           AND (df2.facet_type || ':' || LOWER(df2.facet_value)) IN (${placeholders})
+                         ORDER BY df2.facet_type, df2.facet_value
+                       ) AS ordered
+                     ) AS matched_facet_list,
+                     (
+                       SELECT COUNT(DISTINCT df.facet_type || ':' || LOWER(df.facet_value))
+                       FROM developer_facets AS df
+                       WHERE df.username = cp.login
+                         AND df.facet_type IN ('language', 'org', 'repo')
+                         AND (df.facet_type || ':' || LOWER(df.facet_value)) IN (${placeholders})
+                     ) AS shared_facets
+              FROM community_profiles AS cp
+              JOIN scores AS s ON s.username = cp.login
+              WHERE cp.status = 'active'
+                AND cp.visibility = 'public'
+                AND s.hidden = 0
+            )
+            WHERE shared_facets > 0
+            ORDER BY shared_facets DESC, final_score DESC, updated_at DESC
+            LIMIT ?`,
+      args: [...facetPairs, ...facetPairs, limit],
+    });
+
+    return res.rows.map((r) => {
+      const raw = (r.matched_facet_list as string | null) ?? "";
+      return {
+        login: String(r.login),
+        avatar_url: (r.avatar_url as string | null) ?? null,
+        final_score: Number(r.final_score),
+        tier: String(r.tier) as Tier,
+        matched_facets: raw ? raw.split(",").filter(Boolean) : [],
+        working_on: parseBilingualField(r.working_on),
+        want_to_meet: parseBilingualField(r.want_to_meet),
+      };
+    });
+  } catch (e) {
+    console.error("getCommunityEntriesByFacets failed:", e);
     return [];
   }
 }

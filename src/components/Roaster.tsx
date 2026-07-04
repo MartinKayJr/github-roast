@@ -17,6 +17,7 @@ import {
   loadByoKey,
 } from "./ByoKeyModal";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { CopyBadge } from "./CopyBadge";
 import { ShareMenu } from "./ShareMenu";
 import { SponsorPill } from "./Sponsor";
@@ -36,6 +37,10 @@ interface Display {
   delta: number;
 }
 
+function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim()) && value.trim().length <= 254;
+}
+
 export function Roaster() {
   const t = useTranslations("roaster");
   const tScan = useTranslations("scanErrors");
@@ -48,6 +53,8 @@ export function Roaster() {
 
   const [username, setUsername] = useState("");
   const [token, setToken] = useState("");
+  const [circleEmail, setCircleEmail] = useState("");
+  const [circleConsent, setCircleConsent] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [roasting, setRoasting] = useState(false);
   // Live progress label streamed from the server during the (slow, reasoning-model)
@@ -167,6 +174,15 @@ export function Roaster() {
         setError(t("errEmpty"));
         return;
       }
+      const wantsCircleMatch = circleConsent || circleEmail.trim().length > 0;
+      if (wantsCircleMatch && !circleConsent) {
+        setError(t("errCircleConsentRequired"));
+        return;
+      }
+      if (circleConsent && !isValidEmail(circleEmail)) {
+        setError(t("errInvalidEmail"));
+        return;
+      }
       if (overrideUser && overrideUser !== username) setUsername(overrideUser);
       if (turnstileEnabled() && !token) {
         setError(t("errNeedTurnstile"));
@@ -185,7 +201,12 @@ export function Roaster() {
         const res = await fetch("/api/scan", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username: uname, turnstileToken: token }),
+          body: JSON.stringify({
+            username: uname,
+            turnstileToken: token,
+            circleEmail: circleConsent ? circleEmail.trim() : undefined,
+            circleConsent,
+          }),
         });
         const data = await res.json();
         if (!res.ok) {
@@ -230,7 +251,18 @@ export function Roaster() {
         setScanning(false);
       }
     },
-    [username, token, scanning, roasting, runRoast, router, t, tScan],
+    [
+      username,
+      token,
+      circleEmail,
+      circleConsent,
+      scanning,
+      roasting,
+      runRoast,
+      router,
+      t,
+      tScan,
+    ],
   );
 
   const beatValue = percentile?.beat == null ? null : percentile.beat.toFixed(1);
@@ -333,8 +365,46 @@ export function Roaster() {
           value={username}
           onChange={setUsername}
           onRoast={(u) => void submit(u)}
-          busy={scanning || roasting}
+          busy={scanning || roasting || (circleConsent && !isValidEmail(circleEmail))}
         />
+        <div className="w-full rounded-xl border border-white/10 bg-white/[0.03] p-3">
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+            <div className="min-w-0">
+              <label
+                htmlFor="circle-email"
+                className="mb-1 block text-xs font-medium text-zinc-300"
+              >
+                {t("circleEmailLabel")}
+                {circleConsent && <span className="ml-0.5 text-rose-500">*</span>}
+              </label>
+              <Input
+                id="circle-email"
+                type="email"
+                value={circleEmail}
+                onChange={(e) => setCircleEmail(e.target.value)}
+                placeholder={t("circleEmailPlaceholder")}
+                disabled={scanning || roasting}
+                className="border-white/10 bg-black/20 text-sm"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+              <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+                {t("circleEmailHint")}
+              </p>
+            </div>
+            <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs leading-relaxed text-zinc-300 md:max-w-xs">
+              <input
+                type="checkbox"
+                checked={circleConsent}
+                onChange={(e) => setCircleConsent(e.target.checked)}
+                disabled={scanning || roasting}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-white/20 bg-zinc-950 accent-orange-500"
+              />
+              <span>{t("circleEmailConsent")}</span>
+            </label>
+          </div>
+        </div>
         <Turnstile onToken={setToken} />
         {error && <p className="text-sm text-rose-400">{error}</p>}
       </div>

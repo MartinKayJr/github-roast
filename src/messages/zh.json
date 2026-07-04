@@ -231,6 +231,10 @@
     "judge": "开始审判",
     "judging": "审判中…",
     "byoLink": "用自己的模型 / API Key",
+    "circleEmailLabel": "圈子推荐邮箱",
+    "circleEmailPlaceholder": "you@example.com",
+    "circleEmailHint": "勾选授权后必填。锐评后用公开 GitHub 信号匹配相近开发者，有合适的人再发推荐邮件。取消勾选则不参与圈子匹配。",
+    "circleEmailConsent": "我授权 ghsphere 保存该邮箱并用于圈子关联和推荐通知。",
     "scanning": "正在扒 {username} 的老底…读 commit、查 PR、数 star、抓刷量痕迹",
     "roastLabel": "🔥 毒舌点评",
     "roastThinking": "AI 正在憋一段毒舌点评，马上端上来…",
@@ -247,6 +251,8 @@
     "shareBeat": "，超越了 {beat}% 的开发者",
     "errEmpty": "请先输入 GitHub 用户名或主页链接。",
     "errNeedTurnstile": "请先完成下方的人机校验。",
+    "errInvalidEmail": "请填写有效邮箱，或清空邮箱并取消圈子授权。",
+    "errCircleConsentRequired": "参与圈子匹配需要先勾选邮箱授权。",
     "errRoastFailed": "毒舌生成失败，稍后再试或换用自己的 Key。",
     "errNetworkRoast": "网络中断，毒舌没说完。",
     "errScanFailed": "扫描失败，稍后再试。",
@@ -257,6 +263,8 @@
   },
   "scanErrors": {
     "invalid_username": "这不像个 GitHub 用户名，检查一下？",
+    "invalid_email": "请填写有效邮箱，或取消圈子匹配授权。",
+    "circle_consent_required": "参与圈子匹配需要先勾选邮箱授权。",
     "account_not_found": "查无此号 —— 拼写没错吧？",
     "turnstile_failed": "人机校验没过，刷新页面重试。",
     "rate_limited": "手速太快了，喘口气，一分钟后再来。",
@@ -638,5 +646,19 @@
     "authUnavailable": "登录未配置",
     "feedHeading": "开发者圈子",
     "feedSub": "公开加入社区的成员，会按最近更新和评分展示。"
+  },
+  "communityRadar": {
+    "title": "圈子雷达",
+    "subtitle": "先给你扫出 6 个公开社区成员；输入想认识的人群后，可以让 AI 按技术栈、项目和组织自动匹配。",
+    "placeholder": "例如：正在做 AI 应用的前端开发者",
+    "aiMatch": "AI 匹配",
+    "matching": "扫描中",
+    "shuffle": "换一批",
+    "reset": "回到公开推荐",
+    "publicMode": "公开推荐 · 每次 6 个",
+    "aiMode": "AI 匹配 · 每次 6 个",
+    "tokenEstimate": "预计消耗 {min}-{max} tokens",
+    "fallback": "AI 暂不可用，已尽量用标签搜索结果展示。",
+    "empty": "雷达暂时没有扫到成员"
   }
 }

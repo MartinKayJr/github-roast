@@ -231,6 +231,10 @@
     "judge": "Judge",
     "judging": "Judging…",
     "byoLink": "Use your own model / API key",
+    "circleEmailLabel": "Circle recommendation email",
+    "circleEmailPlaceholder": "you@example.com",
+    "circleEmailHint": "Required when authorized. After the scan, public GitHub signals match nearby developers; we email only when there is a good fit. Uncheck to opt out.",
+    "circleEmailConsent": "I authorize ghsphere to store this email for circle matching and recommendation notifications.",
     "scanning": "Digging up {username}'s history… reading commits, checking PRs, counting stars, sniffing out farmed activity",
     "roastLabel": "🔥 Roast",
     "roastThinking": "The AI is cooking up a savage roast — coming right up…",
@@ -247,6 +251,8 @@
     "shareBeat": ", beating {beat}% of developers",
     "errEmpty": "Enter a GitHub username or profile URL first.",
     "errNeedTurnstile": "Please complete the verification below first.",
+    "errInvalidEmail": "Enter a valid email, or clear it and disable circle authorization.",
+    "errCircleConsentRequired": "Circle matching requires email authorization first.",
     "errRoastFailed": "Roast generation failed — try again later or use your own key.",
     "errNetworkRoast": "Connection dropped — the roast got cut off.",
     "errScanFailed": "Scan failed, try again later.",
@@ -257,6 +263,8 @@
   },
   "scanErrors": {
     "invalid_username": "That doesn't look like a GitHub username — double-check it?",
+    "invalid_email": "Enter a valid email, or disable circle matching authorization.",
+    "circle_consent_required": "Circle matching requires email authorization first.",
     "account_not_found": "No such account — spelled right?",
     "turnstile_failed": "Verification failed — refresh the page and retry.",
     "rate_limited": "Too fast — take a breath and try again in a minute.",
@@ -638,5 +646,19 @@
     "authUnavailable": "Auth not configured",
     "feedHeading": "Developer Circle",
     "feedSub": "Public community members, ordered by recent profile updates and score."
+  },
+  "communityRadar": {
+    "title": "Circle Radar",
+    "subtitle": "Start with 6 public community members. Describe who you want to meet, and AI can match by stack, projects, and organizations.",
+    "placeholder": "e.g. frontend developers building AI apps",
+    "aiMatch": "AI match",
+    "matching": "Scanning",
+    "shuffle": "Shuffle",
+    "reset": "Back to public picks",
+    "publicMode": "Public picks · 6 at a time",
+    "aiMode": "AI match · 6 at a time",
+    "tokenEstimate": "Estimated {min}-{max} tokens",
+    "fallback": "AI is unavailable, showing the closest tag search results.",
+    "empty": "Radar found no members yet"
   }
 }

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { CommunityJoinEntry } from "@/components/community/CommunityJoinEntry";
+import { CommunityRadar } from "@/components/community/CommunityRadar";
 import { CommunityWaterfall } from "@/components/community/CommunityWaterfall";
 import {
   ensureCommunityProfileDraft,
@@ -11,6 +12,7 @@ import {
 } from "@/lib/db";
 import { auth, authConfigured } from "@/lib/auth";
 import { buildCommunityProfileDraft, sourceFromSnapshot } from "@/lib/community-profile";
+import { resolveAiDiscoveryLlmMode } from "@/lib/discovery";
 import { normLang } from "@/lib/lang";
 import { localeAlternates } from "@/lib/site";
 
@@ -39,6 +41,7 @@ export default async function CommunityPage({
   const { locale } = await params;
   setRequestLocale(locale);
   const t = await getTranslations("communityPage");
+  const lang = normLang(locale);
   const session = authConfigured() ? await auth() : null;
   const login = session?.user?.login || null;
   const githubId = session?.user?.githubId || null;
@@ -82,9 +85,15 @@ export default async function CommunityPage({
         initialProfile={communityProfile}
       />
 
+      <CommunityRadar
+        initialEntries={entries}
+        lang={lang}
+        aiSearchMode={resolveAiDiscoveryLlmMode(process.env.AI_DISCOVERY_LLM_MODE)}
+      />
+
       <CommunityWaterfall
         entries={entries}
-        lang={normLang(locale)}
+        lang={lang}
         heading={t("feedHeading")}
         sub={t("feedSub")}
       />

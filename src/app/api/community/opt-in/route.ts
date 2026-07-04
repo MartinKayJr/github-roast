@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { auth } from "@/lib/auth";
 import { upsertCommunityProfile, updateCommunityStatus, getScoreBrief } from "@/lib/db";
+import { notifyCircleSubscribersForMember } from "@/lib/circle-email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,6 +42,9 @@ export async function POST(req: NextRequest) {
       visibility,
       joined_at: Date.now(),
     });
+    if (visibility === "public") {
+      after(() => notifyCircleSubscribersForMember(session.user.login).catch(() => {}));
+    }
 
     return NextResponse.json({ success: true });
   } catch (e) {

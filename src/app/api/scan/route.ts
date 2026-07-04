@@ -1,5 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
-import { recordAccountLookup } from "@/lib/db";
+import { NextRequest, NextResponse, after } from "next/server";
+import {
+  isValidCircleEmail,
+  recordAccountLookup,
+  recordProfileSnapshot,
+  upsertCircleEmailSubscription,
+} from "@/lib/db";
+import { notifyCircleSubscriber } from "@/lib/circle-email";
 import {
   checkRateLimit,
   coalesceScan,
@@ -13,6 +19,13 @@ import { normalizeUsername } from "@/lib/username";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+interface ScanBody {
+  username?: string;
+  turnstileToken?: string;
+  circleEmail?: string;
+  circleConsent?: boolean;
+}
 
 function clientIp(req: NextRequest): string {
   const fwd = req.headers.get("x-forwarded-for");
@@ -48,10 +61,32 @@ async function recordSuccessfulLookup(username: string, ip: string): Promise<voi
   await recordAccountLookup(username, ip);
 }
 
+async function handleCircleEmailOptIn(
+  scan: Awaited<ReturnType<typeof buildScanResult>>,
+  email: string | undefined,
+  consent: boolean | undefined,
+): Promise<NextResponse | null> {
+  if (!consent) return null;
+  if (!email || !isValidCircleEmail(email)) {
+    return NextResponse.json({ error: "invalid_email" }, { status: 400 });
+  }
+
+  // Persist facets now so the email-only subscription can be matched even if the
+  // user navigates away before the LLM roast stores the usual snapshot.
+  await recordProfileSnapshot(scan);
+  const saved = await upsertCircleEmailSubscription({
+    email,
+    username: scan.metrics.username,
+    source: "roast",
+  });
+  if (saved) after(() => notifyCircleSubscriber(scan.metrics.username).catch(() => {}));
+  return null;
+}
+
 export async function POST(req: NextRequest) {
   const idem = idempotencyHeaders(req);
 
-  let body: { username?: string; turnstileToken?: string };
+  let body: ScanBody;
   try {
     body = await req.json();
   } catch {
@@ -61,6 +96,15 @@ export async function POST(req: NextRequest) {
   const username = normalizeUsername(body.username ?? "");
   if (!username) {
     return apiError("invalid_username", { status: 400, headers: idem });
+  }
+  if (body.circleEmail && !body.circleConsent) {
+    return NextResponse.json(
+      { error: "circle_consent_required" },
+      { status: 400, headers: idem },
+    );
+  }
+  if (body.circleConsent && (!body.circleEmail || !isValidCircleEmail(body.circleEmail))) {
+    return NextResponse.json({ error: "invalid_email" }, { status: 400, headers: idem });
   }
 
   const ip = clientIp(req);
@@ -84,6 +128,12 @@ export async function POST(req: NextRequest) {
   const cached = await getCachedScan(username);
   if (cached) {
     await recordSuccessfulLookup(cached.metrics.username, ip);
+    const optInError = await handleCircleEmailOptIn(
+      cached,
+      body.circleEmail,
+      body.circleConsent,
+    );
+    if (optInError) return optInError;
     return NextResponse.json({ ...cached, cached: true }, { headers: idem });
   }
 
@@ -96,6 +146,12 @@ export async function POST(req: NextRequest) {
   try {
     const result = await coalesceScan(username, () => buildScanResult(username));
     await recordSuccessfulLookup(result.metrics.username, ip);
+    const optInError = await handleCircleEmailOptIn(
+      result,
+      body.circleEmail,
+      body.circleConsent,
+    );
+    if (optInError) return optInError;
     return NextResponse.json(
       { ...result, cached: false },
       { headers: { ...idem, ...rlHeaders } },
