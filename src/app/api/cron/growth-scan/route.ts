@@ -1,19 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  listDueGrowthScanSubscriptions,
-  markGrowthScanSubscriptionRun,
-  recordProfileSnapshot,
-  recordScore,
-} from "@/lib/db";
-import { scanErrorResponse, buildScanResult } from "@/lib/scan-core";
-import { spamBotScore } from "@/lib/score";
+import { listDueGrowthScanSubscriptions } from "@/lib/db";
+import { runGrowthScanForSubscription } from "@/lib/growth-scan";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const EMPTY_TAGS = { zh: [], en: [] };
-const EMPTY_ROAST_LINE = { zh: "", en: "" };
 const DEFAULT_MIN_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 function isAuthorized(req: NextRequest): boolean {
@@ -59,40 +51,15 @@ async function runGrowthScan(req: NextRequest) {
     const subscription = subscriptions[i];
     if (i > 0 && delayMs > 0) await sleep(delayMs);
 
-    const attemptedAt = Date.now();
-    try {
-      const scan = await buildScanResult(subscription.login);
-      await recordScore({
-        username: scan.metrics.username,
-        display_name: scan.metrics.name,
-        avatar_url: scan.metrics.avatar_url,
-        profile_url: scan.metrics.profile_url,
-        final_score: scan.scoring.final_score,
-        tier: scan.scoring.tier,
-        tags: EMPTY_TAGS,
-        roast_line: EMPTY_ROAST_LINE,
-        bot_score: spamBotScore(scan.metrics),
-        sub_scores: scan.scoring.sub_scores,
-        scanned_at: attemptedAt,
-      });
-      await recordProfileSnapshot(scan);
-      await markGrowthScanSubscriptionRun(subscription.github_id, {
-        last_scanned_at: attemptedAt,
-        last_error: null,
-      });
+    const result = await runGrowthScanForSubscription(subscription);
+    if (result.ok) {
       succeeded++;
-    } catch (e) {
-      const mapped = scanErrorResponse(e);
-      const message = mapped.error || (e instanceof Error ? e.message : String(e));
-      await markGrowthScanSubscriptionRun(subscription.github_id, {
-        last_scanned_at: attemptedAt,
-        last_error: message,
-      });
+    } else {
       failed++;
       errors.push({
-        login: subscription.login,
-        error: message,
-        status: mapped.status,
+        login: result.login,
+        error: result.error ?? "scan_failed",
+        status: result.status,
       });
     }
   }

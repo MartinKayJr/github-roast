@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { auth, authConfigured } from "@/lib/auth";
 import {
   getGrowthScanSubscription,
   updateGrowthScanSubscriptionStatus,
   upsertGrowthScanSubscription,
 } from "@/lib/db";
+import { runGrowthScanForSubscription } from "@/lib/growth-scan";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,9 +36,16 @@ export async function POST() {
     login: session.user.login,
     status: "active",
   });
+  after(() =>
+    runGrowthScanForSubscription({
+      github_id: session.user.githubId,
+      login: session.user.login,
+    }).catch(() => {}),
+  );
   return NextResponse.json({
     subscribed: subscription?.status === "active",
     subscription,
+    initialScanQueued: true,
   });
 }
 
