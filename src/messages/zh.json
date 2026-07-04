@@ -132,6 +132,7 @@
     "tooltipScan": "最近扫描",
     "tooltipRepo": "代表仓库",
     "tooltipLanguage": "主要语言",
+    "listLabel": "列表",
     "clusterTitle": "{count} 位开发者",
     "close": "关闭",
     "overflowMore": "+{n} 人",

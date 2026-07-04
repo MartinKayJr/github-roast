@@ -2,6 +2,14 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "@/i18n/navigation";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export interface TrajectoryStep {
   t: number;
@@ -36,6 +44,9 @@ export interface TimelineLabels {
   tooltipScan: string;
   tooltipRepo: string;
   tooltipLanguage: string;
+  listLabel: string;
+  clusterTitle: string;
+  close: string;
 }
 
 interface TooltipState {
@@ -85,6 +96,9 @@ export function GrowthTimelineChart({
   const router = useRouter();
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const [focusedNode, setFocusedNode] = useState<string | null>(null);
+  const [columnDialog, setColumnDialog] = useState<TimelinePoint[] | null>(
+    null,
+  );
 
   const showTooltip = useCallback(
     (cx: number, cy: number, pts: TimelinePoint[]) =>
@@ -145,6 +159,12 @@ export function GrowthTimelineChart({
     cx: number;
     cy: number;
   };
+  type ColumnSpec = {
+    key: string;
+    cx: number;
+    labelY: number;
+    points: TimelinePoint[];
+  };
 
   // Bucket endpoints by (day column, rounded score) so each date reads as one
   // vertical stack. This matches the product model: X = day, Y = score.
@@ -159,8 +179,11 @@ export function GrowthTimelineChart({
   }
 
   const nodes: NodeSpec[] = [];
-  for (const grp of buckets.values()) {
+  const columns: ColumnSpec[] = [];
+  for (const [key, grp] of buckets.entries()) {
     const sorted = [...grp].sort((a, b) => b.growth_score - a.growth_score);
+    const baseY = yForScore(sorted[0].final_score);
+    const topOffset = -((sorted.length - 1) / 2) * (AVATAR_R * 1.25);
 
     sorted.forEach((p, i) => {
       const offsetY = (i - (sorted.length - 1) / 2) * (AVATAR_R * 1.25);
@@ -170,6 +193,15 @@ export function GrowthTimelineChart({
         cy: yForScore(p.final_score) + offsetY,
       });
     });
+
+    if (sorted.length > 1) {
+      columns.push({
+        key,
+        cx: xForTime(sorted[0].snapshot_at),
+        labelY: Math.max(2, baseY + topOffset - MIN_HIT / 2 - 24),
+        points: sorted,
+      });
+    }
   }
   const renderNodes = focusedNode
     ? [
@@ -321,13 +353,119 @@ export function GrowthTimelineChart({
           );
         })}
 
+        {columns.map((column) => (
+          <foreignObject
+            key={`column-${column.key}`}
+            x={column.cx - 30}
+            y={column.labelY}
+            width={60}
+            height={22}
+            style={{ overflow: "visible" }}
+          >
+            <button
+              type="button"
+              onClick={() => setColumnDialog(column.points)}
+              className="flex h-5 w-full items-center justify-center gap-1 rounded-full border border-border bg-card px-2 text-[10px] font-semibold text-card-foreground shadow-lg transition-colors hover:bg-accent"
+              aria-label={`${labels.listLabel} ${column.points.length}`}
+            >
+              <span>{labels.listLabel}</span>
+              <span className="text-muted-foreground tabular-nums">
+                {column.points.length}
+              </span>
+            </button>
+          </foreignObject>
+        ))}
+
         {/* Tooltip rendered inside the SVG (foreignObject) — scales with the
             viewBox and needs no ref/getBoundingClientRect during render. */}
         {tooltip && tooltip.points.length > 0 && (
           <TooltipForeign tooltip={tooltip} labels={labels} />
         )}
       </svg>
+      <ColumnDialog
+        points={columnDialog}
+        labels={labels}
+        onOpenChange={(open) => {
+          if (!open) setColumnDialog(null);
+        }}
+      />
     </div>
+  );
+}
+
+function ColumnDialog({
+  points,
+  labels,
+  onOpenChange,
+}: {
+  points: TimelinePoint[] | null;
+  labels: TimelineLabels;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const router = useRouter();
+  const sorted = [...(points ?? [])].sort(
+    (a, b) => b.growth_score - a.growth_score || b.final_score - a.final_score,
+  );
+
+  return (
+    <Dialog open={points !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[82vh] overflow-hidden p-0 sm:max-w-xl">
+        <DialogHeader className="border-b border-white/10 px-5 py-4">
+          <DialogTitle className="text-base text-zinc-100">
+            {labels.clusterTitle.replace("{count}", String(sorted.length))}
+          </DialogTitle>
+          <DialogDescription>
+            {sorted[0] ? formatDate(sorted[0].snapshot_at) : labels.timelineTitle}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="max-h-[60vh] overflow-y-auto px-3 py-2">
+          {sorted.map((p) => (
+            <button
+              key={p.username}
+              type="button"
+              onClick={() => router.push(`/u/${p.username}`)}
+              className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white/[0.06]"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={p.avatar_url ?? `https://github.com/${p.username}.png`}
+                alt=""
+                width={36}
+                height={36}
+                className="size-9 shrink-0 rounded-full object-cover"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="truncate text-sm font-semibold text-zinc-100">
+                    {p.display_name ?? p.username}
+                  </span>
+                  <span className="shrink-0 rounded-full bg-white/5 px-1.5 py-px text-[10px] font-bold text-zinc-300">
+                    {p.band}
+                  </span>
+                </div>
+                <div className="mt-0.5 truncate text-xs text-zinc-500">
+                  @{p.username}
+                  {p.primary_repo ? ` · ${p.primary_repo}` : ""}
+                </div>
+              </div>
+              <div className="shrink-0 text-right">
+                <div className="text-sm font-black text-zinc-100 tabular-nums">
+                  +{Math.round(p.contribution_count)}
+                </div>
+                <div className="text-[10px] text-zinc-500">
+                  {labels.tooltipCommits}
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+        <div className="border-t border-white/10 px-5 py-3 text-right">
+          <DialogClose className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-white/10">
+            {labels.close}
+          </DialogClose>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

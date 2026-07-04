@@ -41,6 +41,9 @@ export interface GrowthLabels {
   tooltipScan: string;
   tooltipRepo: string;
   tooltipLanguage: string;
+  listLabel: string;
+  clusterTitle: string;
+  close: string;
   subscribeAfterLogin: string;
   subscribe: string;
   subscribed: string;
@@ -299,6 +302,9 @@ export function HomeGrowthLeaderboardClient({
     tooltipScan: labels.tooltipScan,
     tooltipRepo: labels.tooltipRepo,
     tooltipLanguage: labels.tooltipLanguage,
+    listLabel: labels.listLabel,
+    clusterTitle: labels.clusterTitle,
+    close: labels.close,
   };
 
   const entries =

@@ -132,6 +132,7 @@
     "tooltipScan": "Last scan",
     "tooltipRepo": "Top repo",
     "tooltipLanguage": "Main language",
+    "listLabel": "List",
     "clusterTitle": "{count} developers",
     "close": "Close",
     "overflowMore": "+{n} more",
