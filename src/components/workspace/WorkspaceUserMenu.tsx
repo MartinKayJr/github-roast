@@ -5,6 +5,7 @@ import {
   Languages,
   LogOut,
   Palette,
+  ShieldCheck,
   Settings,
   UserRound,
   Users,
@@ -27,6 +28,7 @@ type WorkspaceUserMenuProps = {
   login: string;
   scored: boolean;
   hasCommunityProfile?: boolean;
+  isAdmin?: boolean;
   repoHref: string;
   repoLabel: string;
   repoTitle: string;
@@ -49,6 +51,7 @@ export function WorkspaceUserMenu({
   login,
   scored,
   hasCommunityProfile = false,
+  isAdmin = false,
   repoHref,
   repoLabel,
   repoTitle,
@@ -128,6 +131,21 @@ export function WorkspaceUserMenu({
         </DropdownMenuItem>
 
         <DropdownMenuSeparator className="mx-1 bg-white/10" />
+
+        {isAdmin && (
+          <DropdownMenuItem asChild>
+            <Link
+              href="/admin"
+              className="flex items-center justify-between rounded-xl px-3 py-2.5"
+            >
+              <span className="flex items-center gap-2.5">
+                <ShieldCheck className="h-4 w-4 text-orange-400" />
+                <span>{tHeader("admin")}</span>
+              </span>
+              <ArrowUpRight className="h-4 w-4 text-zinc-500" />
+            </Link>
+          </DropdownMenuItem>
+        )}
 
         <DropdownMenuItem asChild>
           <Link

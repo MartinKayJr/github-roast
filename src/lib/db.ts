@@ -3130,6 +3130,74 @@ export async function unsubscribeByToken(token: string): Promise<boolean> {
   }
 }
 
+export interface AdminRoastEmailStats {
+  totalRoasts: number;
+  roastsWithEmail: number;
+  roastsWithoutEmail: number;
+  activeEmailSubscriptions: number;
+  activeEmailUsernames: number;
+}
+
+export async function getAdminRoastEmailStats(): Promise<AdminRoastEmailStats> {
+  const db = getClient();
+  if (!db) {
+    return {
+      totalRoasts: 0,
+      roastsWithEmail: 0,
+      roastsWithoutEmail: 0,
+      activeEmailSubscriptions: 0,
+      activeEmailUsernames: 0,
+    };
+  }
+
+  try {
+    await ensureSchema(db);
+    const [roastRes, emailRes] = await Promise.all([
+      db.execute({
+        sql: `WITH active_email_usernames AS (
+                SELECT DISTINCT lower(username) AS username
+                FROM circle_email_subscriptions
+                WHERE status = 'active'
+              )
+              SELECT
+                COUNT(*) AS total_roasts,
+                SUM(CASE WHEN a.username IS NOT NULL THEN 1 ELSE 0 END) AS roasts_with_email,
+                SUM(CASE WHEN a.username IS NULL THEN 1 ELSE 0 END) AS roasts_without_email
+              FROM scores AS s
+              LEFT JOIN active_email_usernames AS a
+                ON lower(s.username) = a.username
+              WHERE s.hidden = 0`,
+      }),
+      db.execute({
+        sql: `SELECT
+                COUNT(*) AS active_email_subscriptions,
+                COUNT(DISTINCT lower(username)) AS active_email_usernames
+              FROM circle_email_subscriptions
+              WHERE status = 'active'`,
+      }),
+    ]);
+
+    const roastRow = roastRes.rows[0] ?? {};
+    const emailRow = emailRes.rows[0] ?? {};
+    return {
+      totalRoasts: Number(roastRow.total_roasts ?? 0),
+      roastsWithEmail: Number(roastRow.roasts_with_email ?? 0),
+      roastsWithoutEmail: Number(roastRow.roasts_without_email ?? 0),
+      activeEmailSubscriptions: Number(emailRow.active_email_subscriptions ?? 0),
+      activeEmailUsernames: Number(emailRow.active_email_usernames ?? 0),
+    };
+  } catch (e) {
+    console.error("getAdminRoastEmailStats failed:", e);
+    return {
+      totalRoasts: 0,
+      roastsWithEmail: 0,
+      roastsWithoutEmail: 0,
+      activeEmailSubscriptions: 0,
+      activeEmailUsernames: 0,
+    };
+  }
+}
+
 
 export interface CommunityWaterfallEntry {
   login: string;

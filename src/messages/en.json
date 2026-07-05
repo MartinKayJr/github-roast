@@ -24,7 +24,8 @@
     "myProfile": "My profile",
     "judgeSelf": "Judge myself",
     "communityProfile": "Community Profile",
-    "settings": "Settings"
+    "settings": "Settings",
+    "admin": "Admin"
   },
   "loginNudge": {
     "title": "🔥 Sign in to unlock more",
@@ -57,6 +58,24 @@
     "growthSubscribed": "Subscribed. Scheduled scans will keep your recent growth data updated as your public contributions change.",
     "saving": "Saving…",
     "failed": "Could not save. Try again later."
+  },
+  "admin": {
+    "metaTitle": "Admin | ghsphere",
+    "metaDescription": "View ghsphere operational stats and admin data.",
+    "eyebrow": "Admin",
+    "heading": "Admin panel",
+    "subtitle": "Only GitHub accounts configured in ADMIN_GITHUB_LOGINS can access this page. This first view tracks roast coverage and circle email attachment.",
+    "totalRoasts": "Indexed roasts",
+    "totalRoastsHint": "Total non-hidden scored/roasted GitHub accounts.",
+    "withEmail": "With email",
+    "withEmailHint": "Indexed accounts that have an active circle email subscription.",
+    "withoutEmail": "Without email",
+    "withoutEmailHint": "Indexed accounts that do not yet have an active circle email subscription.",
+    "emailRate": "Email capture rate",
+    "emailRateHint": "Share of indexed roasts with an active email subscription.",
+    "emailSubscriptionsTitle": "Email subscriptions",
+    "activeEmailSubscriptions": "Active email subscriptions",
+    "activeEmailUsernames": "Linked GitHub accounts"
   },
   "repoLink": {
     "label": "Source",

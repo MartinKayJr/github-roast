@@ -24,7 +24,8 @@
     "myProfile": "我的主页",
     "judgeSelf": "检测我自己",
     "communityProfile": "社区档案",
-    "settings": "设置"
+    "settings": "设置",
+    "admin": "管理员"
   },
   "loginNudge": {
     "title": "🔥 登录解锁更多玩法",
@@ -57,6 +58,24 @@
     "growthSubscribed": "已订阅。后续定时任务会按公开贡献变化更新你的近期成长数据。",
     "saving": "保存中…",
     "failed": "保存失败，稍后再试"
+  },
+  "admin": {
+    "metaTitle": "管理员 | ghsphere",
+    "metaDescription": "查看 ghsphere 的运营数据和后台统计。",
+    "eyebrow": "Admin",
+    "heading": "管理员面板",
+    "subtitle": "仅配置在 ADMIN_GITHUB_LOGINS 中的 GitHub 账号可访问。当前先展示锐评与圈子邮箱关联情况。",
+    "totalRoasts": "已收录锐评",
+    "totalRoastsHint": "未隐藏的评分/锐评账号总数。",
+    "withEmail": "已填写邮箱",
+    "withEmailHint": "已收录账号中，存在活跃圈子邮箱订阅的数量。",
+    "withoutEmail": "未填写邮箱",
+    "withoutEmailHint": "已收录账号中，还没有活跃圈子邮箱订阅的数量。",
+    "emailRate": "邮箱填写率",
+    "emailRateHint": "已填写邮箱的锐评账号占比。",
+    "emailSubscriptionsTitle": "邮箱订阅",
+    "activeEmailSubscriptions": "活跃邮箱订阅数",
+    "activeEmailUsernames": "关联 GitHub 账号数"
   },
   "repoLink": {
     "label": "开源",

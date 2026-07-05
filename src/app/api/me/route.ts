@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth, authConfigured } from "@/lib/auth";
+import { isAdminLogin } from "@/lib/admin";
 import {
   getCommunityProfile,
   getGrowthScanSubscription,
@@ -31,6 +32,7 @@ export async function GET() {
       scored: false,
       hasCommunityProfile: false,
       growthSubscribed: false,
+      isAdmin: false,
     });
   }
   const session = await auth();
@@ -41,6 +43,7 @@ export async function GET() {
       scored: false,
       hasCommunityProfile: false,
       growthSubscribed: false,
+      isAdmin: false,
     });
   }
   const brief = await getScoreBrief(user.login);
@@ -51,5 +54,6 @@ export async function GET() {
     scored: Boolean(brief),
     hasCommunityProfile: communityProfile?.status === "active",
     growthSubscribed: growthSubscription?.status === "active",
+    isAdmin: isAdminLogin(user.login),
   });
 }

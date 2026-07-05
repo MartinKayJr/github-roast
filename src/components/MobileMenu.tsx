@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight, Languages, LogOut, Menu, Palette, UserRound, X } from "lucide-react";
+import { ArrowUpRight, Languages, LogOut, Menu, Palette, ShieldCheck, UserRound, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { signIn, signOut } from "next-auth/react";
@@ -19,7 +19,7 @@ import { ThemeToggle } from "./ThemeToggle";
  * (a positioned ancestor), so it spans the full bar width just below it. Closes
  * on Escape and on any nav-link tap.
  */
-type Me = { user: { login: string; image: string | null } | null; scored: boolean };
+type Me = { user: { login: string; image: string | null } | null; scored: boolean; isAdmin?: boolean };
 
 function avatarFallback(login: string) {
   return login.trim().charAt(0).toUpperCase() || "G";
@@ -50,7 +50,7 @@ export function MobileMenu({
         if (alive) setMe(data);
       })
       .catch(() => {
-        if (alive) setMe({ user: null, scored: false });
+        if (alive) setMe({ user: null, scored: false, isAdmin: false });
       });
     return () => {
       alive = false;
@@ -60,6 +60,7 @@ export function MobileMenu({
   const effectiveMe = configured ? me : { user: null, scored: false };
   const user = effectiveMe?.user ?? null;
   const scored = effectiveMe?.scored ?? false;
+  const isAdmin = Boolean(effectiveMe?.isAdmin);
   const targetHref = user
     ? scored
       ? `/u/${user.login}`
@@ -138,6 +139,23 @@ export function MobileMenu({
                   ) : null}
 
                   <div className="h-px bg-white/10" />
+
+                  {isAdmin ? (
+                    <>
+                      <Link
+                        href="/admin"
+                        onClick={close}
+                        className="flex min-h-12 items-center justify-between gap-3 px-4 py-3 text-sm text-zinc-300 transition-colors hover:bg-white/[0.04] hover:text-zinc-100"
+                      >
+                        <span className="flex min-w-0 items-center gap-3">
+                          <ShieldCheck className="h-4 w-4 shrink-0 text-orange-400" />
+                          <span className="truncate">{tHeader("admin")}</span>
+                        </span>
+                        <ArrowUpRight className="h-4 w-4 shrink-0 text-zinc-500" />
+                      </Link>
+                      <div className="h-px bg-white/10" />
+                    </>
+                  ) : null}
                 </>
               ) : configured ? (
                 <div className="px-4 py-4">

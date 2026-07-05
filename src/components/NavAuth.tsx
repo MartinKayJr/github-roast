@@ -22,6 +22,7 @@ type Me = {
   user: { login: string; image: string | null } | null;
   scored: boolean;
   hasCommunityProfile: boolean;
+  isAdmin: boolean;
 };
 
 export function NavAuth({
@@ -47,7 +48,7 @@ export function NavAuth({
         if (alive) setMe(d);
       })
       .catch(() => {
-        if (alive) setMe({ user: null, scored: false, hasCommunityProfile: false });
+        if (alive) setMe({ user: null, scored: false, hasCommunityProfile: false, isAdmin: false });
       });
     return () => {
       alive = false;
@@ -70,6 +71,7 @@ export function NavAuth({
         login={user.login}
         scored={me.scored}
         hasCommunityProfile={me.hasCommunityProfile}
+        isAdmin={me.isAdmin}
         repoHref={repoHref}
         repoLabel={repoLabel}
         repoTitle={repoTitle}
