@@ -7063,6 +7063,17 @@ export async function searchProjectCircleDomains(
 }
 
 export type ProjectCircleListPreset = "all" | "xposed" | "ai" | "security" | "devtools";
+export type ProjectCircleListSort = "relevance" | "score" | "stars" | "recent";
+
+export interface ProjectCircleListFilters {
+  language?: string | null;
+  band?: ProjectBand | null;
+  safetyLevel?: ProjectSafetyAssessment["level"] | null;
+  minScore?: number | null;
+  minStars?: number | null;
+  hasAiSummary?: boolean | null;
+  sort?: ProjectCircleListSort | null;
+}
 
 export interface ProjectCircleListItem {
   full_name: string;
@@ -7135,12 +7146,16 @@ function scoreProjectListItem(
   item: ProjectCircleListItem,
   query: string,
   preset: ProjectCircleListPreset,
+  sort: ProjectCircleListSort = "relevance",
 ): number {
   const effectiveQuery = [projectListPresetQuery(preset), query].filter(Boolean).join(" ");
   const terms = projectListSearchTerms(effectiveQuery);
   const haystack = projectListHaystack(item);
   const hits = terms.filter((term) => haystack.includes(term));
   if (terms.length > 0 && hits.length === 0) return Number.NEGATIVE_INFINITY;
+  if (sort === "score") return item.score;
+  if (sort === "stars") return item.stars;
+  if (sort === "recent") return item.scanned_at;
   let score = item.score * 4 + Math.min(160, item.stars) + Math.min(80, item.forks * 2);
   score += hits.length * 40;
   if (preset === "xposed" && item.full_name.toLowerCase().startsWith("xposed-modules-repo/")) {
@@ -7156,6 +7171,7 @@ export async function listProjectCircleItems(options: {
   query?: string | null;
   preset?: ProjectCircleListPreset | null;
   limit?: number;
+  filters?: ProjectCircleListFilters;
 } = {}): Promise<ProjectCircleListItem[]> {
   const db = getClient();
   if (!db) return [];
@@ -7164,6 +7180,20 @@ export async function listProjectCircleItems(options: {
     const limit = Math.max(1, Math.min(120, options.limit ?? 48));
     const preset = options.preset ?? "all";
     const query = options.query?.trim() ?? "";
+    const filters = options.filters ?? {};
+    const language = filters.language?.trim().toLowerCase() ?? "";
+    const minScore =
+      typeof filters.minScore === "number" && Number.isFinite(filters.minScore)
+        ? Math.max(0, Math.min(100, filters.minScore))
+        : null;
+    const minStars =
+      typeof filters.minStars === "number" && Number.isFinite(filters.minStars)
+        ? Math.max(0, Math.floor(filters.minStars))
+        : null;
+    const band = filters.band ?? null;
+    const safetyLevel = filters.safetyLevel ?? null;
+    const hasAiSummary = filters.hasAiSummary === true;
+    const sort = filters.sort ?? "relevance";
     const terms = projectListSearchTerms(
       [projectListPresetQuery(preset), query].filter(Boolean).join(" "),
     );
@@ -7176,10 +7206,42 @@ export async function listProjectCircleItems(options: {
       COALESCE(ps.ai_summary, '') || ' ' ||
       COALESCE(opc.ai_summary, '')
     )`;
-    const termWhere =
-      terms.length > 0
-        ? `WHERE (${terms.map(() => `${searchableSql} LIKE ? ESCAPE '\\'`).join(" OR ")})`
-        : "";
+    const whereParts: string[] = [];
+    const args: (string | number)[] = [];
+    if (terms.length > 0) {
+      whereParts.push(`(${terms.map(() => `${searchableSql} LIKE ? ESCAPE '\\'`).join(" OR ")})`);
+      args.push(...terms.map(sqlLikePattern));
+    }
+    if (language) {
+      whereParts.push(`LOWER(COALESCE(ps.language, '')) = ?`);
+      args.push(language);
+    }
+    if (band) {
+      whereParts.push(`ps.band = ?`);
+      args.push(band);
+    }
+    if (safetyLevel) {
+      whereParts.push(`opc.safety_level = ?`);
+      args.push(safetyLevel);
+    }
+    if (minScore !== null) {
+      whereParts.push(`ps.score >= ?`);
+      args.push(minScore);
+    }
+    if (minStars !== null) {
+      whereParts.push(`ps.stars >= ?`);
+      args.push(minStars);
+    }
+    if (hasAiSummary) {
+      whereParts.push(`(COALESCE(ps.ai_summary, '') <> '' OR COALESCE(opc.ai_summary, '') <> '')`);
+    }
+    const whereSql = whereParts.length > 0 ? `WHERE ${whereParts.join(" AND ")}` : "";
+    const orderSql =
+      sort === "score"
+        ? "ps.score DESC, ps.stars DESC, ps.scanned_at DESC"
+        : sort === "stars"
+          ? "ps.stars DESC, ps.score DESC, ps.scanned_at DESC"
+          : "ps.scanned_at DESC, ps.score DESC";
     const res = await db.execute({
       sql: `SELECT ps.*,
                    opc.safety_level AS org_safety_level,
@@ -7199,10 +7261,10 @@ export async function listProjectCircleItems(options: {
               )
               WHERE rn = 1
             ) AS opc ON opc.full_name = ps.full_name
-            ${termWhere}
-            ORDER BY ps.scanned_at DESC, ps.score DESC
+            ${whereSql}
+            ORDER BY ${orderSql}
             LIMIT ?`,
-      args: [...terms.map(sqlLikePattern), Math.max(1000, limit * 12)],
+      args: [...args, Math.max(1000, limit * 12)],
     });
     const items = res.rows.map((row): ProjectCircleListItem => {
       const owner = String(row.owner);
@@ -7245,7 +7307,7 @@ export async function listProjectCircleItems(options: {
     return items
       .map((item) => ({
         item,
-        score: scoreProjectListItem(item, query, preset),
+        score: scoreProjectListItem(item, query, preset, sort),
       }))
       .filter((entry) => Number.isFinite(entry.score))
       .sort(

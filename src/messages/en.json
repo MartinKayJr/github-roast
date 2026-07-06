@@ -967,7 +967,25 @@
     "back": "Back to circle",
     "placeholder": "Refine, e.g. notifications, ads, detection hiding, permissions",
     "search": "Filter",
+    "reset": "Reset",
     "empty": "No matching projects.",
+    "resultCount": "{count} projects shown",
+    "filters": {
+      "language": "Language",
+      "band": "Quality band",
+      "safety": "Safety",
+      "sort": "Sort",
+      "minScore": "Minimum score",
+      "minStars": "Minimum stars",
+      "aiSummary": "Only with AI summary",
+      "any": "Any"
+    },
+    "sorts": {
+      "relevance": "Relevance",
+      "score": "Highest score",
+      "stars": "Most stars",
+      "recent": "Recently scanned"
+    },
     "presets": {
       "xposed": "Xposed modules",
       "ai": "AI apps",

@@ -672,6 +672,116 @@ describe("community project domains", () => {
     const projects = await db.listProjectCircleItems({ preset: "xposed", limit: 5 });
     expect(projects.some((project) => project.full_name === "xposed-modules-repo/old-visible-module")).toBe(true);
   });
+
+  it("applies project reading mode filters before ranking", async () => {
+    const client = createClient({ url: process.env.TURSO_DATABASE_URL! });
+    const now = Date.now();
+    const common = {
+      breakdown: JSON.stringify({
+        activity: 1,
+        quality: 1,
+        collaboration: 1,
+        impact: 1,
+        authenticity: 1,
+      }),
+      roast: JSON.stringify({ zh: "筛选测试", en: "filter test" }),
+      readme: JSON.stringify(null),
+      languages: JSON.stringify([]),
+      aiSummary: JSON.stringify({
+        zh: {
+          summary: "通知增强模块",
+          target: "Android 用户",
+          use_case: "筛选通知模块",
+          safety: "可复核",
+          roast: "测试",
+        },
+        en: {
+          summary: "Notification module",
+          target: "Android users",
+          use_case: "Filter notification modules",
+          safety: "Reviewable",
+          roast: "test",
+        },
+        keywords: ["notification", "xposed"],
+        category_hints: ["Xposed module"],
+        source: "llm",
+        generated_at: now,
+      }),
+    };
+    await client.batch(
+      [
+        {
+          sql: `INSERT INTO project_scores
+                  (full_name, owner, repo, html_url, description, language, topics,
+                   stars, forks, score, band, breakdown, roast_line, ai_summary,
+                   readme, languages, scanned_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [
+            "filter-suite/kotlin-keeper",
+            "filter-suite",
+            "kotlin-keeper",
+            "https://github.com/filter-suite/kotlin-keeper",
+            "A maintained Xposed notification module",
+            "Kotlin",
+            JSON.stringify(["xposed", "notification"]),
+            80,
+            2,
+            72,
+            "A",
+            common.breakdown,
+            common.roast,
+            common.aiSummary,
+            common.readme,
+            common.languages,
+            now,
+          ],
+        },
+        {
+          sql: `INSERT INTO project_scores
+                  (full_name, owner, repo, html_url, description, language, topics,
+                   stars, forks, score, band, breakdown, roast_line, ai_summary,
+                   readme, languages, scanned_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [
+            "filter-suite/java-small",
+            "filter-suite",
+            "java-small",
+            "https://github.com/filter-suite/java-small",
+            "A small Xposed module",
+            "Java",
+            JSON.stringify(["xposed"]),
+            3,
+            0,
+            54,
+            "B",
+            common.breakdown,
+            common.roast,
+            null,
+            common.readme,
+            common.languages,
+            now - 1,
+          ],
+        },
+      ],
+      "write",
+    );
+    client.close();
+
+    const projects = await db.listProjectCircleItems({
+      preset: "all",
+      query: "notification",
+      limit: 5,
+      filters: {
+        language: "kotlin",
+        band: "A",
+        minStars: 50,
+        hasAiSummary: true,
+        sort: "stars",
+      },
+    });
+    expect(projects.map((project) => project.full_name)).toContain("filter-suite/kotlin-keeper");
+    expect(projects.map((project) => project.full_name)).not.toContain("filter-suite/java-small");
+  });
 });
 
 describe("getRank", () => {

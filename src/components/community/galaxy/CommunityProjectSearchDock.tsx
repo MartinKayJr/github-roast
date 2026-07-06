@@ -1,6 +1,6 @@
 "use client";
 
-import { LoaderCircle, Search, Sparkles, X } from "lucide-react";
+import { BookOpen, LoaderCircle, Search, Sparkles, X } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useState } from "react";
 import { ByoKeyModal, loadByoKey, type ByoKeyConfig } from "@/components/ByoKeyModal";
@@ -91,6 +91,7 @@ export function CommunityProjectSearchDock({
   if (!open) {
     return (
       <div className="fixed inset-x-0 bottom-5 z-40 flex justify-center px-4">
+        <div className="flex max-w-full items-center gap-2">
         <Button
           type="button"
           onClick={() => setOpen(true)}
@@ -100,6 +101,14 @@ export function CommunityProjectSearchDock({
           <Search className="h-4 w-4" />
           {t("open")}
         </Button>
+          <Link
+            href="/community/projects?preset=xposed"
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-cyan-200/20 bg-slate-950/78 px-4 text-sm font-semibold text-cyan-100 shadow-[0_0_26px_rgba(34,211,238,0.18)] backdrop-blur-xl transition hover:border-cyan-200/35 hover:bg-cyan-300/10"
+          >
+            <BookOpen className="h-4 w-4" />
+            {t("readMode")}
+          </Link>
+        </div>
       </div>
     );
   }

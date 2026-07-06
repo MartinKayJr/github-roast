@@ -967,7 +967,25 @@
     "back": "返回圈子",
     "placeholder": "继续精确筛选，例如：通知、广告、隐藏检测、权限",
     "search": "筛选",
+    "reset": "重置",
     "empty": "没有找到匹配项目。",
+    "resultCount": "当前显示 {count} 个项目",
+    "filters": {
+      "language": "语言",
+      "band": "质量分段",
+      "safety": "安全等级",
+      "sort": "排序",
+      "minScore": "最低评分",
+      "minStars": "最低星标",
+      "aiSummary": "只看已补 AI 摘要",
+      "any": "不限"
+    },
+    "sorts": {
+      "relevance": "相关度",
+      "score": "评分最高",
+      "stars": "星标最多",
+      "recent": "最近扫描"
+    },
     "presets": {
       "xposed": "Xposed 模块",
       "ai": "AI 应用",
