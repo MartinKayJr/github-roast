@@ -2,6 +2,7 @@
 
 import {
   ArrowUpRight,
+  Inbox,
   Languages,
   LogOut,
   Palette,
@@ -28,6 +29,7 @@ type WorkspaceUserMenuProps = {
   login: string;
   scored: boolean;
   hasCommunityProfile?: boolean;
+  inboxUnread?: number;
   isAdmin?: boolean;
   repoHref: string;
   repoLabel: string;
@@ -51,6 +53,7 @@ export function WorkspaceUserMenu({
   login,
   scored,
   hasCommunityProfile = false,
+  inboxUnread = 0,
   isAdmin = false,
   repoHref,
   repoLabel,
@@ -131,6 +134,26 @@ export function WorkspaceUserMenu({
         </DropdownMenuItem>
 
         <DropdownMenuSeparator className="mx-1 bg-white/10" />
+
+        <DropdownMenuItem asChild>
+          <Link
+            href="/inbox"
+            className="flex items-center justify-between rounded-xl px-3 py-2.5"
+          >
+            <span className="flex items-center gap-2.5">
+              <Inbox className="h-4 w-4 text-zinc-300" />
+              <span>{tHeader("inbox")}</span>
+            </span>
+            <span className="flex items-center gap-2">
+              {inboxUnread > 0 && (
+                <span className="min-w-5 rounded-full bg-red-500 px-1.5 py-0.5 text-center text-[11px] font-bold leading-none text-white">
+                  {inboxUnread > 99 ? "99+" : inboxUnread}
+                </span>
+              )}
+              <ArrowUpRight className="h-4 w-4 text-zinc-500" />
+            </span>
+          </Link>
+        </DropdownMenuItem>
 
         {isAdmin && (
           <DropdownMenuItem asChild>

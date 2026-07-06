@@ -13,11 +13,16 @@ import {
 } from "@/lib/discovery";
 import type { Lang } from "@/lib/lang";
 import { CommunityWaterfallCard } from "./CommunityWaterfallCard";
+import {
+  CommunityOrbitRadar,
+  type CommunityOrbitSubject,
+} from "./CommunityOrbitRadar";
 
 interface CommunityRadarProps {
   initialEntries: CommunityWaterfallEntry[];
   lang: Lang;
   aiSearchMode: AiDiscoveryLlmMode;
+  subject: CommunityOrbitSubject;
 }
 
 interface AiSearchResponse {
@@ -40,6 +45,7 @@ export function CommunityRadar({
   initialEntries,
   lang,
   aiSearchMode,
+  subject,
 }: CommunityRadarProps) {
   const t = useTranslations("communityRadar");
   const locale = useLocale();
@@ -171,11 +177,14 @@ export function CommunityRadar({
       {visibleEntries.length === 0 ? (
         <p className="mt-6 text-sm text-zinc-500">{t("empty")}</p>
       ) : (
-        <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {visibleEntries.map((entry) => (
-            <CommunityWaterfallCard key={entry.login} entry={entry} lang={lang} />
-          ))}
-        </div>
+        <>
+          <CommunityOrbitRadar subject={subject} entries={visibleEntries} />
+          <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {visibleEntries.map((entry) => (
+              <CommunityWaterfallCard key={entry.login} entry={entry} lang={lang} />
+            ))}
+          </div>
+        </>
       )}
 
       <ByoKeyModal

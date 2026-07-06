@@ -694,16 +694,40 @@ html[data-theme="light"] .dimension-star-radar[data-tone="trash"] {
   letter-spacing: 0;
 }
 
+.galaxy-avatar-reveal {
+  transform-origin: center;
+  will-change: opacity, filter, transform;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .floating-comment-bubble,
   .mobile-danmaku-comment,
   .profile-reaction-bump,
-  .dimension-star-radar-dot {
+  .dimension-star-radar-dot,
+  .galaxy-avatar-reveal {
     animation: none;
   }
 
   .profile-reaction-button {
     transition: none;
+  }
+}
+
+@keyframes galaxy-avatar-reveal {
+  0% {
+    opacity: 0;
+    filter: blur(9px) brightness(1.8);
+    transform: scale(0.16);
+  }
+  48% {
+    opacity: 0.78;
+    filter: blur(3px) brightness(1.45);
+    transform: scale(0.72);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0) brightness(1);
+    transform: scale(1);
   }
 }
 

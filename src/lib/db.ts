@@ -51,7 +51,8 @@ import type {
 } from "./types";
 import type { LeaderboardWindow } from "./leaderboardWindow";
 import { bandFor } from "./band";
-import { spamBotScore } from "./score";
+import { clampScore, logRatio, spamBotScore } from "./score";
+import type { ProjectBand, ProjectScanResult } from "./project-scan";
 
 const EMPTY_TAGS: Tags = { zh: [], en: [] };
 const HEAT_LOOKUP_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -301,6 +302,24 @@ function ensureSchema(db: Client): Promise<void> {
              last_login  INTEGER NOT NULL
            )`,
           `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_login ON users(login)`,
+          `CREATE TABLE IF NOT EXISTS inbox_messages (
+             id                  TEXT PRIMARY KEY,
+             recipient_github_id INTEGER NOT NULL,
+             recipient_login     TEXT NOT NULL,
+             sender_kind         TEXT NOT NULL CHECK(sender_kind IN ('system', 'user')),
+             sender_github_id    INTEGER,
+             sender_login        TEXT,
+             title               TEXT NOT NULL,
+             body                TEXT NOT NULL,
+             action_href         TEXT,
+             read_at             INTEGER,
+             created_at          INTEGER NOT NULL,
+             FOREIGN KEY (recipient_github_id) REFERENCES users(github_id) ON DELETE CASCADE
+           )`,
+          `CREATE INDEX IF NOT EXISTS idx_inbox_messages_recipient_created
+             ON inbox_messages(recipient_github_id, created_at DESC)`,
+          `CREATE INDEX IF NOT EXISTS idx_inbox_messages_recipient_read
+             ON inbox_messages(recipient_github_id, read_at)`,
           `CREATE TABLE IF NOT EXISTS growth_scan_subscriptions (
              github_id       INTEGER PRIMARY KEY,
              login           TEXT NOT NULL,
@@ -313,6 +332,75 @@ function ensureSchema(db: Client): Promise<void> {
            )`,
           `CREATE INDEX IF NOT EXISTS idx_growth_scan_subscriptions_due
              ON growth_scan_subscriptions(status, last_scanned_at)`,
+          `CREATE TABLE IF NOT EXISTS project_scores (
+             full_name         TEXT PRIMARY KEY,
+             owner             TEXT NOT NULL,
+             repo              TEXT NOT NULL,
+             html_url          TEXT NOT NULL,
+             owner_avatar_url  TEXT,
+             description       TEXT,
+             homepage          TEXT,
+             language          TEXT,
+             topics            TEXT,
+             license           TEXT,
+             stars             INTEGER NOT NULL DEFAULT 0,
+             forks             INTEGER NOT NULL DEFAULT 0,
+             watchers          INTEGER NOT NULL DEFAULT 0,
+             open_issues       INTEGER NOT NULL DEFAULT 0,
+             size              INTEGER NOT NULL DEFAULT 0,
+             default_branch    TEXT,
+             created_at_iso    TEXT,
+             pushed_at_iso     TEXT,
+             latest_release_at TEXT,
+             score             REAL NOT NULL,
+             band              TEXT NOT NULL,
+             breakdown         TEXT NOT NULL,
+             roast_line        TEXT NOT NULL,
+             readme            TEXT,
+             languages         TEXT,
+             scanned_at        INTEGER NOT NULL
+           )`,
+          `CREATE UNIQUE INDEX IF NOT EXISTS idx_project_scores_owner_repo
+             ON project_scores(owner, repo)`,
+          `CREATE INDEX IF NOT EXISTS idx_project_scores_score
+             ON project_scores(score DESC, scanned_at DESC)`,
+          `CREATE TABLE IF NOT EXISTS project_snapshots (
+             id           TEXT PRIMARY KEY,
+             full_name    TEXT NOT NULL,
+             owner        TEXT NOT NULL,
+             repo         TEXT NOT NULL,
+             scanned_at   INTEGER NOT NULL,
+             project_json TEXT NOT NULL,
+             contributors TEXT NOT NULL
+           )`,
+          `CREATE INDEX IF NOT EXISTS idx_project_snapshots_project_scanned
+             ON project_snapshots(full_name, scanned_at DESC)`,
+          `CREATE TABLE IF NOT EXISTS project_contributors (
+             full_name     TEXT NOT NULL,
+             owner         TEXT NOT NULL,
+             repo          TEXT NOT NULL,
+             login         TEXT NOT NULL,
+             avatar_url    TEXT,
+             html_url      TEXT,
+             contributions INTEGER NOT NULL DEFAULT 0,
+             role          TEXT NOT NULL DEFAULT 'contributor',
+             scanned_at    INTEGER NOT NULL,
+             PRIMARY KEY(full_name, login)
+           )`,
+          `CREATE INDEX IF NOT EXISTS idx_project_contributors_project_contrib
+             ON project_contributors(full_name, contributions DESC)`,
+          `CREATE INDEX IF NOT EXISTS idx_project_contributors_login
+             ON project_contributors(login)`,
+          `CREATE TABLE IF NOT EXISTS project_scan_jobs (
+             id          TEXT PRIMARY KEY,
+             full_name   TEXT NOT NULL,
+             status      TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'running', 'done', 'failed')),
+             created_at  INTEGER NOT NULL,
+             updated_at  INTEGER NOT NULL,
+             last_error  TEXT
+           )`,
+          `CREATE INDEX IF NOT EXISTS idx_project_scan_jobs_status
+             ON project_scan_jobs(status, created_at)`,
           `CREATE TABLE IF NOT EXISTS profile_comments (
              id                TEXT PRIMARY KEY,
              target_username   TEXT NOT NULL,
@@ -426,6 +514,59 @@ function ensureSchema(db: Client): Promise<void> {
              match_login TEXT NOT NULL,
              sent_at INTEGER NOT NULL,
              PRIMARY KEY (email_hash, match_login)
+           )`,
+          // Community galaxy domains — the "planet" waterfall on /community. A
+          // domain is a facet-derived (Phase 1) or AI-merged (Phase 2) people
+          // bucket: "top Rust developers", "huggingface org", etc. Rebuilt
+          // wholesale by the domain-rebuild backfill from developer_facets +
+          // community_profiles, so it self-heals as scores/facets refresh.
+          // `source` records provenance; `slug` is a URL-safe canonical key
+          // derived from "type:value" so a rebuild is idempotent.
+          `CREATE TABLE IF NOT EXISTS circle_domains (
+             slug          TEXT PRIMARY KEY,
+             name_zh       TEXT NOT NULL,
+             name_en       TEXT,
+             description_zh TEXT,
+             description_en TEXT,
+             source        TEXT NOT NULL DEFAULT 'facet' CHECK(source IN ('facet', 'ai', 'admin')),
+             status        TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'hidden')),
+             member_count  INTEGER NOT NULL DEFAULT 0,
+             heat_score    REAL NOT NULL DEFAULT 0,
+             created_at    INTEGER NOT NULL,
+             updated_at    INTEGER NOT NULL
+           )`,
+          // Waterfall ordering: active domains sorted by heat then size. One
+          // seek covers the WHERE status = 'active' ORDER BY heat_score DESC read.
+          `CREATE INDEX IF NOT EXISTS idx_circle_domains_active_heat
+             ON circle_domains(status, heat_score DESC, member_count DESC)`,
+          // Which community members belong to a domain, with a per-member weight
+          // (facet share / AI confidence) and an optional bilingual match reason.
+          // (domain_slug, login) is the PK; the reverse index serves "which
+          // domains is this user in" for the future profile view.
+          `CREATE TABLE IF NOT EXISTS circle_domain_members (
+             domain_slug TEXT NOT NULL,
+             login       TEXT NOT NULL,
+             weight      REAL NOT NULL DEFAULT 0,
+             reason_zh   TEXT,
+             reason_en   TEXT,
+             created_at  INTEGER NOT NULL,
+             updated_at  INTEGER NOT NULL,
+             PRIMARY KEY(domain_slug, login)
+           )`,
+          `CREATE INDEX IF NOT EXISTS idx_circle_domain_members_domain_weight
+             ON circle_domain_members(domain_slug, weight DESC)`,
+          `CREATE INDEX IF NOT EXISTS idx_circle_domain_members_login
+             ON circle_domain_members(login)`,
+          // Domain-to-domain relations for future cross-domain navigation and the
+          // galaxy graph. Written by the AI merge phase; unused by the Phase A read
+          // path but created up front so the schema is stable.
+          `CREATE TABLE IF NOT EXISTS circle_domain_edges (
+             from_slug  TEXT NOT NULL,
+             to_slug    TEXT NOT NULL,
+             weight     REAL NOT NULL DEFAULT 0,
+             reason     TEXT,
+             updated_at INTEGER NOT NULL,
+             PRIMARY KEY(from_slug, to_slug)
            )`,
         ],
         "write",
@@ -1928,6 +2069,151 @@ export interface ScoreBrief {
   tier: Tier;
 }
 
+export interface ProjectContributorEntry {
+  login: string;
+  avatar_url: string | null;
+  html_url: string | null;
+  contributions: number;
+  role: "owner" | "maintainer" | "contributor";
+  profile_score: number | null;
+  profile_tier: Tier | null;
+  profile_display_name: string | null;
+}
+
+export interface ProjectScoreDetail {
+  owner: string;
+  repo: string;
+  full_name: string;
+  html_url: string;
+  owner_avatar_url: string | null;
+  description: string | null;
+  homepage: string | null;
+  language: string | null;
+  topics: string[];
+  license: string | null;
+  stars: number;
+  forks: number;
+  watchers: number;
+  open_issues: number;
+  size: number;
+  default_branch: string | null;
+  created_at: string | null;
+  pushed_at: string | null;
+  latest_release_at: string | null;
+  score: number;
+  band: ProjectBand;
+  breakdown: ProjectScanResult["breakdown"];
+  roast_line: ProjectScanResult["roast_line"];
+  readme: ProjectScanResult["readme"];
+  languages: { name: string; size: number }[];
+  contributors: ProjectContributorEntry[];
+  scanned_at: number;
+  domain_slug: string;
+}
+
+function parseProjectJson<T>(raw: unknown, fallback: T): T {
+  if (typeof raw !== "string" || !raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+export function projectDomainSlug(owner: string, repo: string): string {
+  return facetDomainSlug("repo", `${owner}/${repo}`);
+}
+
+function projectDisplayName(fullName: string): { zh: string; en: string } {
+  const repo = fullName.split("/").pop() || fullName;
+  return {
+    zh: `${repo} 项目圈`,
+    en: `${repo} project circle`,
+  };
+}
+
+function projectBandFromScore(score: number): ProjectBand {
+  if (score >= 92) return "S+";
+  if (score >= 84) return "S";
+  if (score >= 76) return "A+";
+  if (score >= 68) return "A";
+  if (score >= 58) return "B+";
+  if (score >= 48) return "B";
+  if (score >= 36) return "C+";
+  return "C";
+}
+
+function daysSinceIso(value: string | null | undefined, now = Date.now()): number | null {
+  if (!value) return null;
+  const ts = Date.parse(value);
+  if (!Number.isFinite(ts)) return null;
+  return Math.max(0, Math.floor((now - ts) / HEAT_LOOKUP_WINDOW_MS));
+}
+
+function normalizeSnapshotRepo(repo: TopRepo): {
+  owner: string;
+  repo: string;
+  fullName: string;
+} | null {
+  const nameWithOwner =
+    typeof repo.name_with_owner === "string" ? repo.name_with_owner.trim() : "";
+  const owner = (repo.owner_login || nameWithOwner.split("/")[0] || "").trim();
+  const name = (repo.name || nameWithOwner.split("/")[1] || "").replace(/\.git$/i, "").trim();
+  const nameRe = /^[A-Za-z0-9_.-]+$/;
+  if (!owner || !name || !nameRe.test(owner) || !nameRe.test(name)) return null;
+  return { owner, repo: name, fullName: `${owner}/${name}` };
+}
+
+function scoreSnapshotProject(repo: TopRepo, developerScore: number): {
+  score: number;
+  band: ProjectBand;
+  breakdown: ProjectScanResult["breakdown"];
+} {
+  const readme = repo.readme?.features;
+  const pushedDays = daysSinceIso(repo.pushed_at);
+  const activity = clampScore(
+    (pushedDays === null ? 1 : pushedDays <= 14 ? 10 : pushedDays <= 60 ? 7 : pushedDays <= 180 ? 4 : 1) +
+      logRatio((repo.open_issues || 0) + (repo.forks || 0), 2000) * 5,
+  );
+  const quality = clampScore(
+    (readme?.content_depth_score ?? 0) * 9 +
+      (readme ? Math.max(0, 1 - readme.placeholder_score) * 3 : 0) +
+      (repo.topics?.length ? Math.min(3, repo.topics.length * 0.75) : 0) +
+      (repo.languages?.length ? 3 : repo.language ? 1.5 : 0) +
+      logRatio(repo.size || 0, 200000) * 4,
+  );
+  const collaboration = clampScore(
+    logRatio(repo.forks || 0, 5000) * 7 +
+      ((repo.open_issues || 0) > 0 ? logRatio(repo.open_issues || 0, 5000) * 4 : 1),
+  );
+  const impact = clampScore(
+    logRatio(repo.stars || 0, 50000) * 16 + logRatio(repo.forks || 0, 12000) * 6,
+  );
+  const authenticity = clampScore(
+    10 +
+      Math.min(5, Math.max(0, developerScore - 50) / 10) -
+      ((readme?.placeholder_score ?? 0) >= 0.6 ? 4 : 0) -
+      ((repo.stars || 0) >= 100 && (repo.forks || 0) <= Math.max(1, (repo.stars || 0) * 0.006)
+        ? 3
+        : 0),
+  );
+  const breakdown = {
+    activity: Math.round(activity * 100) / 100,
+    quality: Math.round(quality * 100) / 100,
+    collaboration: Math.round(collaboration * 100) / 100,
+    impact: Math.round(impact * 100) / 100,
+    authenticity: Math.round(authenticity * 100) / 100,
+  };
+  const score = clampScore(
+    breakdown.activity +
+      breakdown.quality +
+      breakdown.collaboration +
+      breakdown.impact +
+      breakdown.authenticity,
+  );
+  return { score, band: projectBandFromScore(score), breakdown };
+}
+
 /** Minimal score lookup for the SVG badge — avoids fetching the heavy roast text. */
 export async function getScoreBrief(username: string): Promise<ScoreBrief | null> {
   const db = getClient();
@@ -1951,6 +2237,514 @@ export async function getScoreBrief(username: string): Promise<ScoreBrief | null
     };
   } catch (e) {
     console.error("getScoreBrief failed:", e);
+    return null;
+  }
+}
+
+export async function recordProjectScan(project: ProjectScanResult): Promise<void> {
+  const db = getClient();
+  if (!db) return;
+  try {
+    await ensureSchema(db);
+    const fullName = project.full_name.toLowerCase();
+    const owner = project.owner.toLowerCase();
+    const repo = project.repo.toLowerCase();
+    const now = project.scanned_at || Date.now();
+    const domainSlug = projectDomainSlug(project.owner, project.repo);
+    const domainName = projectDisplayName(project.full_name);
+    const description = JSON.stringify({ tag: project.full_name, project: true });
+    const scoredContributorLogins = project.contributors.map((c) => c.login.toLowerCase());
+
+    await db.batch(
+      [
+        {
+          sql: `INSERT INTO project_scores
+                  (full_name, owner, repo, html_url, owner_avatar_url, description,
+                   homepage, language, topics, license, stars, forks, watchers,
+                   open_issues, size, default_branch, created_at_iso, pushed_at_iso,
+                   latest_release_at, score, band, breakdown, roast_line, readme,
+                   languages, scanned_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(full_name) DO UPDATE SET
+                  owner = excluded.owner,
+                  repo = excluded.repo,
+                  html_url = excluded.html_url,
+                  owner_avatar_url = excluded.owner_avatar_url,
+                  description = excluded.description,
+                  homepage = excluded.homepage,
+                  language = excluded.language,
+                  topics = excluded.topics,
+                  license = excluded.license,
+                  stars = excluded.stars,
+                  forks = excluded.forks,
+                  watchers = excluded.watchers,
+                  open_issues = excluded.open_issues,
+                  size = excluded.size,
+                  default_branch = excluded.default_branch,
+                  created_at_iso = excluded.created_at_iso,
+                  pushed_at_iso = excluded.pushed_at_iso,
+                  latest_release_at = excluded.latest_release_at,
+                  score = excluded.score,
+                  band = excluded.band,
+                  breakdown = excluded.breakdown,
+                  roast_line = excluded.roast_line,
+                  readme = excluded.readme,
+                  languages = excluded.languages,
+                  scanned_at = excluded.scanned_at`,
+          args: [
+            fullName,
+            owner,
+            repo,
+            project.html_url,
+            project.owner_avatar_url,
+            project.description,
+            project.homepage,
+            project.language,
+            JSON.stringify(project.topics),
+            project.license,
+            project.stars,
+            project.forks,
+            project.watchers,
+            project.open_issues,
+            project.size,
+            project.default_branch,
+            project.created_at,
+            project.pushed_at,
+            project.latest_release_at,
+            project.score,
+            project.band,
+            JSON.stringify(project.breakdown),
+            JSON.stringify(project.roast_line),
+            JSON.stringify(project.readme),
+            JSON.stringify(project.languages),
+            now,
+          ],
+        },
+        {
+          sql: `INSERT INTO project_snapshots
+                  (id, full_name, owner, repo, scanned_at, project_json, contributors)
+                VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          args: [
+            randomUUID(),
+            fullName,
+            owner,
+            repo,
+            now,
+            JSON.stringify(project),
+            JSON.stringify(project.contributors),
+          ],
+        },
+        {
+          sql: `DELETE FROM project_contributors WHERE full_name = ?`,
+          args: [fullName],
+        },
+        ...project.contributors.map((c) => ({
+          sql: `INSERT INTO project_contributors
+                  (full_name, owner, repo, login, avatar_url, html_url, contributions, role, scanned_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [
+            fullName,
+            owner,
+            repo,
+            c.login.toLowerCase(),
+            c.avatar_url,
+            c.html_url,
+            c.contributions,
+            c.role,
+            now,
+          ] as (string | number | null)[],
+        })),
+        {
+          sql: `INSERT INTO circle_domains
+                  (slug, name_zh, name_en, description_zh, description_en,
+                   source, status, member_count, heat_score, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 'admin', 'active', ?, ?, ?, ?)
+                ON CONFLICT(slug) DO UPDATE SET
+                  name_zh = excluded.name_zh,
+                  name_en = excluded.name_en,
+                  description_zh = excluded.description_zh,
+                  description_en = excluded.description_en,
+                  source = 'admin',
+                  status = 'active',
+                  member_count = excluded.member_count,
+                  heat_score = excluded.heat_score,
+                  updated_at = excluded.updated_at`,
+          args: [
+            domainSlug,
+            domainName.zh,
+            domainName.en,
+            description,
+            description,
+            project.contributors.length,
+            Math.round(project.score * 10 + project.stars + project.forks * 2),
+            now,
+            now,
+          ],
+        },
+        {
+          sql: `DELETE FROM circle_domain_members WHERE domain_slug = ?`,
+          args: [domainSlug],
+        },
+        ...scoredContributorLogins.map((login, index) => ({
+          sql: `INSERT INTO circle_domain_members
+                  (domain_slug, login, weight, reason_zh, reason_en, created_at, updated_at)
+                SELECT ?, s.username, ?, ?, ?, ?, ?
+                FROM scores AS s
+                WHERE s.username = ? AND s.hidden = 0`,
+          args: [
+            domainSlug,
+            Math.max(1, (project.contributors[index]?.contributions ?? 0) || 1),
+            `${project.full_name} 贡献者`,
+            `${project.full_name} contributor`,
+            now,
+            now,
+            login,
+          ] as (string | number)[],
+        })),
+      ],
+      "write",
+    );
+  } catch (e) {
+    console.error("recordProjectScan failed:", e);
+  }
+}
+
+export interface ProjectCircleBackfillOptions {
+  limit?: number;
+  offset?: number;
+  minDeveloperScore?: number;
+  minProjectScore?: number;
+  minStars?: number;
+  dryRun?: boolean;
+}
+
+export interface ProjectCircleBackfillSummary {
+  dryRun: boolean;
+  scannedDevelopers: number;
+  candidateProjects: number;
+  writtenProjects: number;
+  skippedProjects: number;
+  nextOffset: number | null;
+  projects: {
+    full_name: string;
+    score: number;
+    band: ProjectBand;
+    stars: number;
+    contributors: number;
+  }[];
+}
+
+type SnapshotProjectContributor = {
+  login: string;
+  avatar_url: string | null;
+  html_url: string | null;
+  score: number;
+  contributionWeight: number;
+};
+
+type SnapshotProjectCandidate = {
+  repo: TopRepo;
+  owner: string;
+  name: string;
+  fullName: string;
+  bestDeveloperScore: number;
+  candidateScore: number;
+  contributors: Map<string, SnapshotProjectContributor>;
+};
+
+function snapshotProjectToScanResult(candidate: SnapshotProjectCandidate): ProjectScanResult {
+  const { repo, owner, name, fullName } = candidate;
+  const scored = scoreSnapshotProject(repo, candidate.bestDeveloperScore);
+  const contributors = [...candidate.contributors.values()]
+    .sort((a, b) => b.contributionWeight - a.contributionWeight || b.score - a.score)
+    .slice(0, 12)
+    .map((c): ProjectScanResult["contributors"][number] => ({
+      login: c.login,
+      avatar_url: c.avatar_url,
+      html_url: c.html_url,
+      contributions: Math.max(1, Math.round(c.contributionWeight)),
+      role: c.login.toLowerCase() === owner.toLowerCase() ? "owner" : "contributor",
+    }));
+  const readme = repo.readme?.features
+    ? {
+        length: repo.readme.features.length,
+        heading_count: repo.readme.features.heading_count,
+        content_depth_score: repo.readme.features.content_depth_score,
+        placeholder_score: repo.readme.features.placeholder_score,
+        prompt_summary: repo.readme.features.prompt_summary,
+      }
+    : null;
+  const languages =
+    repo.languages && repo.languages.length > 0
+      ? repo.languages
+      : repo.language
+        ? [{ name: repo.language, size: Math.max(1, repo.size || 1) }]
+        : [];
+  const htmlUrl = `https://github.com/${fullName}`;
+
+  return {
+    owner,
+    repo: name,
+    full_name: fullName,
+    html_url: htmlUrl,
+    owner_avatar_url: null,
+    description: repo.description ?? null,
+    homepage: null,
+    language: repo.language,
+    topics: (repo.topics ?? []).slice(0, 12),
+    license: null,
+    stars: Math.max(0, Number(repo.stars) || 0),
+    forks: Math.max(0, Number(repo.forks) || 0),
+    watchers: Math.max(0, Number(repo.stars) || 0),
+    open_issues: Math.max(0, Number(repo.open_issues) || 0),
+    size: Math.max(0, Number(repo.size) || 0),
+    default_branch: "main",
+    created_at: null,
+    pushed_at: repo.pushed_at ?? null,
+    latest_release_at: null,
+    contributors,
+    languages,
+    readme,
+    score: scored.score,
+    band: scored.band,
+    breakdown: scored.breakdown,
+    roast_line: {
+      zh: `${fullName} 已经从开发者锐评里浮出来，适合作为一个项目维度的圈子入口。`,
+      en: `${fullName} surfaced from developer scans and is ready to become a project circle.`,
+    },
+    scanned_at: Date.now(),
+  };
+}
+
+/**
+ * Seed project circles from already-roasted developers. This reads the persisted
+ * profile snapshots only: no GitHub calls and no LLM calls. It picks the best
+ * repositories from high-scoring developers, dedupes by owner/repo, then records
+ * them as project circles with any already-scored developers attached as members.
+ */
+export async function backfillProjectCirclesFromSnapshots(
+  options: ProjectCircleBackfillOptions = {},
+): Promise<ProjectCircleBackfillSummary> {
+  const db = getClient();
+  const dryRun = options.dryRun === true;
+  const limit = Math.max(1, Math.min(2000, options.limit ?? 500));
+  const offset = Math.max(0, options.offset ?? 0);
+  const minDeveloperScore = Math.max(0, Math.min(100, options.minDeveloperScore ?? 60));
+  const minProjectScore = Math.max(0, Math.min(100, options.minProjectScore ?? 48));
+  const minStars = Math.max(0, options.minStars ?? 5);
+  if (!db) {
+    return {
+      dryRun,
+      scannedDevelopers: 0,
+      candidateProjects: 0,
+      writtenProjects: 0,
+      skippedProjects: 0,
+      nextOffset: null,
+      projects: [],
+    };
+  }
+
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT ps.username, ps.top_repos, s.avatar_url, s.profile_url, s.final_score
+            FROM profile_snapshots AS ps
+            JOIN (
+              SELECT username, MAX(scanned_at) AS scanned_at
+              FROM profile_snapshots
+              GROUP BY username
+            ) AS latest
+              ON latest.username = ps.username AND latest.scanned_at = ps.scanned_at
+            JOIN scores AS s ON s.username = ps.username
+            WHERE s.hidden = 0 AND s.final_score >= ?
+            ORDER BY s.final_score DESC, ps.scanned_at DESC
+            LIMIT ? OFFSET ?`,
+      args: [minDeveloperScore, limit, offset],
+    });
+
+    const candidates = new Map<string, SnapshotProjectCandidate>();
+    for (const row of res.rows) {
+      const username = String(row.username).toLowerCase();
+      const developerScore = Number(row.final_score) || 0;
+      const repos = parseJsonArray<TopRepo>(row.top_repos);
+      for (const repo of repos) {
+        const normalized = normalizeSnapshotRepo(repo);
+        if (!normalized) continue;
+        if (
+          normalized.owner.toLowerCase() === username &&
+          normalized.repo.toLowerCase() === username &&
+          !repo.attributed_original
+        ) {
+          continue;
+        }
+        if ((Number(repo.stars) || 0) < minStars && !repo.attributed_original) continue;
+
+        const scored = scoreSnapshotProject(repo, developerScore);
+        if (scored.score < minProjectScore) continue;
+
+        const key = normalized.fullName.toLowerCase();
+        const existing = candidates.get(key);
+        const candidateScore =
+          scored.score * 100 +
+          Math.min(5000, Number(repo.stars) || 0) +
+          Math.min(2000, Number(repo.forks) || 0) * 2 +
+          developerScore;
+        const candidate =
+          existing ??
+          ({
+            repo,
+            owner: normalized.owner,
+            name: normalized.repo,
+            fullName: normalized.fullName,
+            bestDeveloperScore: developerScore,
+            candidateScore,
+            contributors: new Map<string, SnapshotProjectContributor>(),
+          } satisfies SnapshotProjectCandidate);
+        if (!existing || candidateScore > existing.candidateScore) {
+          candidate.repo = repo;
+          candidate.owner = normalized.owner;
+          candidate.name = normalized.repo;
+          candidate.fullName = normalized.fullName;
+          candidate.bestDeveloperScore = developerScore;
+          candidate.candidateScore = candidateScore;
+        }
+        const contributionWeight =
+          Math.max(1, developerScore) +
+          Math.min(500, Number(repo.stars) || 0) / 10 +
+          (repo.attributed_original ? 25 : 0);
+        const current = candidate.contributors.get(username);
+        if (!current || contributionWeight > current.contributionWeight) {
+          candidate.contributors.set(username, {
+            login: username,
+            avatar_url: (row.avatar_url as string | null) ?? null,
+            html_url: (row.profile_url as string | null) ?? `https://github.com/${username}`,
+            score: developerScore,
+            contributionWeight,
+          });
+        }
+        candidates.set(key, candidate);
+      }
+    }
+
+    const selected = [...candidates.values()]
+      .sort((a, b) => b.candidateScore - a.candidateScore)
+      .slice(0, Math.min(100, limit))
+      .map(snapshotProjectToScanResult);
+
+    let writtenProjects = 0;
+    for (const project of selected) {
+      if (!dryRun) await recordProjectScan(project);
+      writtenProjects++;
+    }
+
+    return {
+      dryRun,
+      scannedDevelopers: res.rows.length,
+      candidateProjects: candidates.size,
+      writtenProjects,
+      skippedProjects: Math.max(0, candidates.size - selected.length),
+      nextOffset: res.rows.length === limit ? offset + limit : null,
+      projects: selected.slice(0, 30).map((project) => ({
+        full_name: project.full_name,
+        score: project.score,
+        band: project.band,
+        stars: project.stars,
+        contributors: project.contributors.length,
+      })),
+    };
+  } catch (e) {
+    console.error("backfillProjectCirclesFromSnapshots failed:", e);
+    return {
+      dryRun,
+      scannedDevelopers: 0,
+      candidateProjects: 0,
+      writtenProjects: 0,
+      skippedProjects: 0,
+      nextOffset: null,
+      projects: [],
+    };
+  }
+}
+
+export async function getProjectScore(
+  ownerInput: string,
+  repoInput: string,
+): Promise<ProjectScoreDetail | null> {
+  const db = getClient();
+  if (!db) return null;
+  try {
+    await ensureSchema(db);
+    const owner = ownerInput.toLowerCase();
+    const repo = repoInput.toLowerCase();
+    const res = await db.execute({
+      sql: `SELECT * FROM project_scores
+            WHERE owner = ? AND repo = ?
+            LIMIT 1`,
+      args: [owner, repo],
+    });
+    const row = res.rows[0];
+    if (!row) return null;
+    const fullName = String(row.full_name);
+    const contributorRes = await db.execute({
+      sql: `SELECT pc.login, pc.avatar_url, pc.html_url, pc.contributions, pc.role,
+                   s.display_name, s.final_score, s.tier
+            FROM project_contributors AS pc
+            LEFT JOIN scores AS s ON s.username = pc.login AND s.hidden = 0
+            WHERE pc.full_name = ?
+            ORDER BY pc.contributions DESC, pc.login ASC`,
+      args: [fullName],
+    });
+    const displayFullName = `${String(row.owner)}/${String(row.repo)}`;
+    return {
+      owner: String(row.owner),
+      repo: String(row.repo),
+      full_name: displayFullName,
+      html_url: String(row.html_url),
+      owner_avatar_url: (row.owner_avatar_url as string | null) ?? null,
+      description: (row.description as string | null) ?? null,
+      homepage: (row.homepage as string | null) ?? null,
+      language: (row.language as string | null) ?? null,
+      topics: parseProjectJson<string[]>(row.topics, []),
+      license: (row.license as string | null) ?? null,
+      stars: Number(row.stars) || 0,
+      forks: Number(row.forks) || 0,
+      watchers: Number(row.watchers) || 0,
+      open_issues: Number(row.open_issues) || 0,
+      size: Number(row.size) || 0,
+      default_branch: (row.default_branch as string | null) ?? null,
+      created_at: (row.created_at_iso as string | null) ?? null,
+      pushed_at: (row.pushed_at_iso as string | null) ?? null,
+      latest_release_at: (row.latest_release_at as string | null) ?? null,
+      score: Number(row.score) || 0,
+      band: String(row.band) as ProjectBand,
+      breakdown: parseProjectJson<ProjectScanResult["breakdown"]>(row.breakdown, {
+        activity: 0,
+        quality: 0,
+        collaboration: 0,
+        impact: 0,
+        authenticity: 0,
+      }),
+      roast_line: parseProjectJson<ProjectScanResult["roast_line"]>(row.roast_line, {
+        zh: "",
+        en: "",
+      }),
+      readme: parseProjectJson<ProjectScanResult["readme"]>(row.readme, null),
+      languages: parseProjectJson<{ name: string; size: number }[]>(row.languages, []),
+      contributors: contributorRes.rows.map((r) => ({
+        login: String(r.login),
+        avatar_url: (r.avatar_url as string | null) ?? null,
+        html_url: (r.html_url as string | null) ?? null,
+        contributions: Number(r.contributions) || 0,
+        role: String(r.role) as ProjectContributorEntry["role"],
+        profile_score: r.final_score == null ? null : Number(r.final_score),
+        profile_tier: r.tier == null ? null : (String(r.tier) as Tier),
+        profile_display_name: (r.display_name as string | null) ?? null,
+      })),
+      scanned_at: Number(row.scanned_at) || 0,
+      domain_slug: projectDomainSlug(String(row.owner), String(row.repo)),
+    };
+  } catch (e) {
+    console.error("getProjectScore failed:", e);
     return null;
   }
 }
@@ -2396,6 +3190,231 @@ export async function upsertUser(u: UserUpsert): Promise<void> {
     });
   } catch (e) {
     console.error("upsertUser failed:", e);
+  }
+}
+
+// ============================================================================
+// Inbox
+// ============================================================================
+
+export type InboxSenderKind = "system" | "user";
+
+export interface InboxMessage {
+  id: string;
+  recipient_github_id: number;
+  recipient_login: string;
+  sender_kind: InboxSenderKind;
+  sender_github_id: number | null;
+  sender_login: string | null;
+  title: string;
+  body: string;
+  action_href: string | null;
+  read_at: number | null;
+  created_at: number;
+}
+
+export interface CreateInboxMessageInput {
+  recipient_github_id: number;
+  recipient_login: string;
+  sender_kind?: InboxSenderKind;
+  sender_github_id?: number | null;
+  sender_login?: string | null;
+  title: string;
+  body: string;
+  action_href?: string | null;
+  created_at?: number;
+}
+
+function toInboxMessage(row: Record<string, unknown>): InboxMessage {
+  return {
+    id: String(row.id),
+    recipient_github_id: Number(row.recipient_github_id),
+    recipient_login: String(row.recipient_login),
+    sender_kind: row.sender_kind === "user" ? "user" : "system",
+    sender_github_id:
+      row.sender_github_id == null ? null : Number(row.sender_github_id),
+    sender_login:
+      typeof row.sender_login === "string" && row.sender_login
+        ? row.sender_login
+        : null,
+    title: String(row.title),
+    body: String(row.body),
+    action_href:
+      typeof row.action_href === "string" && row.action_href
+        ? row.action_href
+        : null,
+    read_at: row.read_at == null ? null : Number(row.read_at),
+    created_at: Number(row.created_at),
+  };
+}
+
+function normalizeInboxActionHref(href: string | null | undefined): string | null {
+  const value = href?.trim();
+  if (!value) return null;
+  if (value.startsWith("/") && !value.startsWith("//")) return value;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getInboxSummary(
+  githubId: number,
+): Promise<{ unread: number }> {
+  const db = getClient();
+  if (!db || !validGithubId(githubId)) return { unread: 0 };
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT COUNT(*) AS unread
+            FROM inbox_messages
+            WHERE recipient_github_id = ? AND read_at IS NULL`,
+      args: [githubId],
+    });
+    return { unread: Number(res.rows[0]?.unread) || 0 };
+  } catch (e) {
+    console.error("getInboxSummary failed:", e);
+    return { unread: 0 };
+  }
+}
+
+export async function listInboxMessages(
+  githubId: number,
+  limit = 50,
+): Promise<InboxMessage[]> {
+  const db = getClient();
+  if (!db || !validGithubId(githubId)) return [];
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT id, recipient_github_id, recipient_login, sender_kind,
+                   sender_github_id, sender_login, title, body, action_href,
+                   read_at, created_at
+            FROM inbox_messages
+            WHERE recipient_github_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?`,
+      args: [githubId, Math.max(1, Math.min(100, limit))],
+    });
+    return res.rows.map((row) => toInboxMessage(row as Record<string, unknown>));
+  } catch (e) {
+    console.error("listInboxMessages failed:", e);
+    return [];
+  }
+}
+
+export async function createInboxMessage(
+  input: CreateInboxMessageInput,
+): Promise<InboxMessage | null> {
+  const db = getClient();
+  const recipientLogin = normalizeGitHubUsername(input.recipient_login);
+  const senderLogin = input.sender_login
+    ? normalizeGitHubUsername(input.sender_login)
+    : null;
+  const title = input.title.trim().slice(0, 160);
+  const body = input.body.trim().slice(0, 4000);
+  const senderKind = input.sender_kind === "user" ? "user" : "system";
+  const actionHref = normalizeInboxActionHref(input.action_href);
+  if (
+    !db ||
+    !validGithubId(input.recipient_github_id) ||
+    !recipientLogin ||
+    !title ||
+    !body
+  ) {
+    return null;
+  }
+
+  const id = randomUUID();
+  const now = input.created_at ?? Date.now();
+  try {
+    await ensureSchema(db);
+    await db.execute({
+      sql: `INSERT INTO inbox_messages
+              (id, recipient_github_id, recipient_login, sender_kind,
+               sender_github_id, sender_login, title, body, action_href,
+               created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        id,
+        input.recipient_github_id,
+        recipientLogin,
+        senderKind,
+        senderKind === "user" ? input.sender_github_id ?? null : null,
+        senderKind === "user" ? senderLogin : null,
+        title,
+        body,
+        actionHref,
+        now,
+      ],
+    });
+    return {
+      id,
+      recipient_github_id: input.recipient_github_id,
+      recipient_login: recipientLogin,
+      sender_kind: senderKind,
+      sender_github_id: senderKind === "user" ? input.sender_github_id ?? null : null,
+      sender_login: senderKind === "user" ? senderLogin : null,
+      title,
+      body,
+      action_href: actionHref,
+      read_at: null,
+      created_at: now,
+    };
+  } catch (e) {
+    console.error("createInboxMessage failed:", e);
+    return null;
+  }
+}
+
+export async function markInboxMessageRead(
+  githubId: number,
+  id: string,
+): Promise<boolean> {
+  const db = getClient();
+  const messageId = id.trim();
+  if (!db || !validGithubId(githubId) || !messageId) return false;
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `UPDATE inbox_messages
+            SET read_at = COALESCE(read_at, ?)
+            WHERE recipient_github_id = ? AND id = ?`,
+      args: [Date.now(), githubId, messageId],
+    });
+    if (Number(res.rowsAffected ?? 0) > 0) return true;
+    const existing = await db.execute({
+      sql: `SELECT id FROM inbox_messages
+            WHERE recipient_github_id = ? AND id = ?
+            LIMIT 1`,
+      args: [githubId, messageId],
+    });
+    return existing.rows.length > 0;
+  } catch (e) {
+    console.error("markInboxMessageRead failed:", e);
+    return false;
+  }
+}
+
+export async function markAllInboxMessagesRead(
+  githubId: number,
+): Promise<number> {
+  const db = getClient();
+  if (!db || !validGithubId(githubId)) return 0;
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `UPDATE inbox_messages
+            SET read_at = ?
+            WHERE recipient_github_id = ? AND read_at IS NULL`,
+      args: [Date.now(), githubId],
+    });
+    return Number(res.rowsAffected ?? 0);
+  } catch (e) {
+    console.error("markAllInboxMessagesRead failed:", e);
+    return 0;
   }
 }
 
@@ -3458,6 +4477,573 @@ export async function getCommunityEntriesByFacets(
   } catch (e) {
     console.error("getCommunityEntriesByFacets failed:", e);
     return [];
+  }
+}
+
+/** A representative member node rendered inside a domain planet card. */
+export interface CircleDomainMember {
+  login: string;
+  avatar_url: string | null;
+  tier: Tier;
+  final_score: number;
+}
+
+/** One domain planet in the community galaxy waterfall. Bilingual name/description
+ *  are resolved to the viewer's language in the API/page layer (mirrors the
+ *  {@link CommunityWaterfallEntry} convention). */
+export interface CircleDomain {
+  slug: string;
+  name: { zh: string; en: string };
+  description: { zh: string; en: string } | null;
+  source: "facet" | "ai" | "admin";
+  member_count: number;
+  heat_score: number;
+  /** Facet-derived tag hints for the card (e.g. the facet type). */
+  tags: string[];
+  members: CircleDomainMember[];
+}
+
+/** A page of the domain waterfall plus the opaque cursor for the next page. */
+export interface CircleDomainPage {
+  domains: CircleDomain[];
+  nextCursor: string | null;
+}
+
+/** Minimum members a facet bucket needs before it becomes a public domain — a
+ *  1-2 person "domain" is just a card, not a planet, and floods the waterfall. */
+const MIN_DOMAIN_MEMBERS = 3;
+const FALLBACK_MIN_DOMAIN_MEMBERS = 2;
+/** Cap on member rows stored per domain. The card shows 3-6; the extra rows let
+ *  the future detail page and shuffling pick from a deeper pool without a re-query. */
+const MAX_DOMAIN_MEMBERS_STORED = 60;
+/** How many representative members each waterfall card carries. */
+const DOMAIN_CARD_MEMBERS = 6;
+
+/** Human-readable bilingual name for a facet-derived domain. Kept deterministic
+ *  so a rebuild never churns names. `repo` values are "owner/name" — we surface
+ *  the repo name (the recognizable half) but keep the full slug as the key. */
+function facetDomainName(
+  type: FacetType,
+  value: string,
+): { name: { zh: string; en: string }; tag: string } {
+  if (type === "language") {
+    return { name: { zh: `${value} 开发者`, en: `${value} developers` }, tag: value };
+  }
+  if (type === "org") {
+    return { name: { zh: `${value} 圈子`, en: `${value} circle` }, tag: value };
+  }
+  // repo — "owner/name"
+  const repoName = value.includes("/") ? value.slice(value.indexOf("/") + 1) : value;
+  return { name: { zh: `${repoName} 贡献者`, en: `${repoName} contributors` }, tag: repoName };
+}
+
+function facetDomainSlug(type: FacetType, value: string): string {
+  const normalized = `${type}:${value.trim().toLowerCase()}`;
+  const readable =
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 72) || "domain";
+  const suffix = createHash("sha256").update(normalized).digest("hex").slice(0, 8);
+  return `${type}:${readable}-${suffix}`;
+}
+
+/**
+ * Rebuild the facet-derived community domains (Phase 1) from `developer_facets`
+ * joined to the opt-in `community_profiles` + `scores`. Makes no external calls:
+ * it reads the local data moat and rewrites the `source = 'facet'` domains and
+ * their member rows wholesale in one transaction, so it self-heals as scores and
+ * facets refresh and is safe to re-run. AI-merged domains (source = 'ai') are
+ * left untouched. No-op without Turso; best-effort like the rest of this module.
+ *
+ * Returns a small summary for the admin backfill route.
+ */
+export async function rebuildCircleDomainsFromFacets(): Promise<{
+  domains: number;
+  members: number;
+}> {
+  const db = getClient();
+  if (!db) return { domains: 0, members: 0 };
+  try {
+    await ensureSchema(db);
+    // Every (facet, member) pair for active public community members that have a
+    // score. One index-driven scan; the community layer is opt-in so this set is
+    // small (hundreds), making the in-JS grouping below cheap.
+    const res = await db.execute({
+      sql: `SELECT df.facet_type  AS facet_type,
+                   df.facet_value AS facet_value,
+                   df.weight      AS weight,
+                   cp.login       AS login,
+                   s.avatar_url   AS avatar_url,
+                   s.final_score  AS final_score,
+                   s.tier         AS tier
+            FROM developer_facets AS df
+            JOIN community_profiles AS cp ON cp.login = df.username
+            JOIN scores AS s ON s.username = df.username
+            WHERE df.facet_type IN ('language', 'org', 'repo')
+              AND cp.status = 'active'
+              AND cp.visibility = 'public'
+              AND s.hidden = 0`,
+      args: [],
+    });
+
+    type Bucket = {
+      type: FacetType;
+      value: string;
+      members: {
+        login: string;
+        weight: number;
+        avatar_url: string | null;
+        final_score: number;
+        tier: Tier;
+      }[];
+      scoreSum: number;
+    };
+    const buckets = new Map<string, Bucket>();
+    for (const r of res.rows) {
+      const type = String(r.facet_type) as FacetType;
+      const value = String(r.facet_value);
+      const slug = facetDomainSlug(type, value);
+      let bucket = buckets.get(slug);
+      if (!bucket) {
+        bucket = { type, value, members: [], scoreSum: 0 };
+        buckets.set(slug, bucket);
+      }
+      const finalScore = Number(r.final_score) || 0;
+      bucket.members.push({
+        login: String(r.login),
+        weight: Number(r.weight) || 0,
+        avatar_url: (r.avatar_url as string | null) ?? null,
+        final_score: finalScore,
+        tier: String(r.tier) as Tier,
+      });
+      bucket.scoreSum += finalScore;
+    }
+
+    const now = Date.now();
+    const domainStatements: { sql: string; args: (string | number)[] }[] = [];
+    const memberStatements: { sql: string; args: (string | number)[] }[] = [];
+    let memberCount = 0;
+
+    for (const [slug, bucket] of buckets) {
+      if (bucket.members.length < MIN_DOMAIN_MEMBERS) continue;
+      const size = bucket.members.length;
+      const avgScore = size > 0 ? bucket.scoreSum / size : 0;
+      // Heat blends reach (member count) with quality (avg score) so a big bucket
+      // of strong developers floats to the top of the waterfall.
+      const heatScore = Math.round(size * 100 + avgScore);
+      const { name, tag } = facetDomainName(bucket.type, bucket.value);
+
+      domainStatements.push({
+        sql: `INSERT INTO circle_domains
+                (slug, name_zh, name_en, description_zh, description_en,
+                 source, status, member_count, heat_score, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, 'facet', 'active', ?, ?, ?, ?)
+              ON CONFLICT(slug) DO UPDATE SET
+                name_zh = excluded.name_zh,
+                name_en = excluded.name_en,
+                member_count = excluded.member_count,
+                heat_score = excluded.heat_score,
+                status = 'active',
+                updated_at = excluded.updated_at`,
+        args: [
+          slug,
+          name.zh,
+          name.en,
+          JSON.stringify({ tag }),
+          JSON.stringify({ tag }),
+          size,
+          heatScore,
+          now,
+          now,
+        ],
+      });
+
+      const topMembers = [...bucket.members]
+        .sort((a, b) => b.weight - a.weight || b.final_score - a.final_score)
+        .slice(0, MAX_DOMAIN_MEMBERS_STORED);
+      for (const m of topMembers) {
+        memberStatements.push({
+          sql: `INSERT INTO circle_domain_members
+                  (domain_slug, login, weight, reason_zh, reason_en, created_at, updated_at)
+                VALUES (?, ?, ?, NULL, NULL, ?, ?)
+                ON CONFLICT(domain_slug, login) DO UPDATE SET
+                  weight = excluded.weight,
+                  updated_at = excluded.updated_at`,
+          args: [slug, m.login, m.weight, now, now],
+        });
+        memberCount += 1;
+      }
+    }
+
+    // Rewrite the facet-source domains wholesale: drop the old facet domains and
+    // their member rows first (so a bucket that fell below the floor disappears),
+    // then reinsert. AI-source domains are never touched.
+    await db.batch(
+      [
+        {
+          sql: `DELETE FROM circle_domain_members
+                WHERE domain_slug IN (
+                  SELECT slug FROM circle_domains WHERE source = 'facet'
+                )`,
+          args: [],
+        },
+        { sql: `DELETE FROM circle_domains WHERE source = 'facet'`, args: [] },
+        ...domainStatements,
+        ...memberStatements,
+      ],
+      "write",
+    );
+
+    return { domains: domainStatements.length, members: memberCount };
+  } catch (e) {
+    console.error("rebuildCircleDomainsFromFacets failed:", e);
+    return { domains: 0, members: 0 };
+  }
+}
+
+/** Parse the domain description blob, which today stores only a `{tag}` hint. */
+function parseDomainTags(raw: unknown): string[] {
+  if (typeof raw !== "string" || !raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && typeof parsed.tag === "string") {
+      return [parsed.tag];
+    }
+  } catch {
+    // legacy/plain string — ignore
+  }
+  return [];
+}
+
+function domainFromFacetRows(rows: unknown[]): CircleDomain[] {
+  type Bucket = {
+    type: FacetType;
+    value: string;
+    members: CircleDomainMember[];
+    scoreSum: number;
+    weightSum: number;
+  };
+  const buckets = new Map<string, Bucket>();
+  for (const row of rows as Record<string, unknown>[]) {
+    const type = String(row.facet_type) as FacetType;
+    if (type !== "language" && type !== "org" && type !== "repo") continue;
+    const value = String(row.facet_value ?? "").trim();
+    if (!value) continue;
+    const slug = facetDomainSlug(type, value);
+    let bucket = buckets.get(slug);
+    if (!bucket) {
+      bucket = { type, value, members: [], scoreSum: 0, weightSum: 0 };
+      buckets.set(slug, bucket);
+    }
+    const finalScore = Number(row.final_score) || 0;
+    const weight = Number(row.weight) || 0;
+    bucket.members.push({
+      login: String(row.login),
+      avatar_url: (row.avatar_url as string | null) ?? null,
+      final_score: finalScore,
+      tier: String(row.tier) as Tier,
+    });
+    bucket.scoreSum += finalScore;
+    bucket.weightSum += weight;
+  }
+
+  const domains: CircleDomain[] = [];
+  for (const [slug, bucket] of buckets) {
+    if (bucket.members.length < FALLBACK_MIN_DOMAIN_MEMBERS) continue;
+    const size = bucket.members.length;
+    const avgScore = size > 0 ? bucket.scoreSum / size : 0;
+    const { name, tag } = facetDomainName(bucket.type, bucket.value);
+    domains.push({
+      slug,
+      name,
+      description: null,
+      source: "facet",
+      member_count: size,
+      heat_score: Math.round(size * 100 + avgScore + bucket.weightSum),
+      tags: [tag],
+      members: bucket.members
+        .sort((a, b) => b.final_score - a.final_score)
+        .slice(0, DOMAIN_CARD_MEMBERS),
+    });
+  }
+  return domains.sort(
+    (a, b) =>
+      b.heat_score - a.heat_score ||
+      b.member_count - a.member_count ||
+      a.slug.localeCompare(b.slug),
+  );
+}
+
+async function getCommunityDomainsFromFacets(
+  db: Client,
+  limit: number,
+  offset: number,
+): Promise<CircleDomainPage> {
+  const rowLimit = Math.min(2000, Math.max(200, (offset + limit + 1) * 80));
+  const res = await db.execute({
+    sql: `SELECT df.facet_type,
+                 df.facet_value,
+                 df.weight,
+                 s.username AS login,
+                 s.avatar_url,
+                 s.final_score,
+                 s.tier
+          FROM developer_facets AS df
+          JOIN scores AS s ON s.username = df.username
+          LEFT JOIN community_profiles AS cp ON cp.login = df.username
+          WHERE df.facet_type IN ('language', 'org', 'repo')
+            AND s.hidden = 0
+            AND (
+              cp.github_id IS NULL
+              OR (cp.status = 'active' AND cp.visibility = 'public')
+            )
+          ORDER BY
+            CASE WHEN cp.status = 'active' AND cp.visibility = 'public' THEN 1 ELSE 0 END DESC,
+            df.weight DESC,
+            s.final_score DESC
+          LIMIT ?`,
+    args: [rowLimit],
+  });
+
+  const domains = domainFromFacetRows(res.rows);
+  const page = domains.slice(offset, offset + limit);
+  const hasMore = domains.length > offset + limit;
+  return {
+    domains: page,
+    nextCursor: hasMore ? String(offset + limit) : null,
+  };
+}
+
+async function getCommunityDomainFromFacets(
+  db: Client,
+  slug: string,
+): Promise<CircleDomain | null> {
+  const type = slug.split(":", 1)[0] as FacetType;
+  if (type !== "language" && type !== "org" && type !== "repo") return null;
+
+  const valuesRes = await db.execute({
+    sql: `SELECT DISTINCT df.facet_value
+          FROM developer_facets AS df
+          JOIN scores AS s ON s.username = df.username
+          LEFT JOIN community_profiles AS cp ON cp.login = df.username
+          WHERE df.facet_type = ?
+            AND s.hidden = 0
+            AND (
+              cp.github_id IS NULL
+              OR (cp.status = 'active' AND cp.visibility = 'public')
+            )
+          LIMIT 5000`,
+    args: [type],
+  });
+  const value = valuesRes.rows
+    .map((r) => String(r.facet_value ?? "").trim())
+    .find((v) => v && facetDomainSlug(type, v) === slug);
+  if (!value) return null;
+
+  const statsRes = await db.execute({
+    sql: `SELECT COUNT(*) AS member_count,
+                 AVG(s.final_score) AS avg_score,
+                 SUM(df.weight) AS weight_sum
+          FROM developer_facets AS df
+          JOIN scores AS s ON s.username = df.username
+          LEFT JOIN community_profiles AS cp ON cp.login = df.username
+          WHERE df.facet_type = ?
+            AND df.facet_value = ?
+            AND s.hidden = 0
+            AND (
+              cp.github_id IS NULL
+              OR (cp.status = 'active' AND cp.visibility = 'public')
+            )`,
+    args: [type, value],
+  });
+  const stats = statsRes.rows[0] ?? {};
+  const memberCount = Number(stats.member_count) || 0;
+  if (memberCount < FALLBACK_MIN_DOMAIN_MEMBERS) return null;
+
+  const memberRes = await db.execute({
+    sql: `SELECT df.username AS login,
+                 s.avatar_url,
+                 s.final_score,
+                 s.tier
+          FROM developer_facets AS df
+          JOIN scores AS s ON s.username = df.username
+          LEFT JOIN community_profiles AS cp ON cp.login = df.username
+          WHERE df.facet_type = ?
+            AND df.facet_value = ?
+            AND s.hidden = 0
+            AND (
+              cp.github_id IS NULL
+              OR (cp.status = 'active' AND cp.visibility = 'public')
+            )
+          ORDER BY df.weight DESC, s.final_score DESC
+          LIMIT ?`,
+    args: [type, value, MAX_DOMAIN_MEMBERS_STORED],
+  });
+  const { name, tag } = facetDomainName(type, value);
+  const avgScore = Number(stats.avg_score) || 0;
+  const weightSum = Number(stats.weight_sum) || 0;
+
+  return {
+    slug,
+    name,
+    description: null,
+    source: "facet",
+    member_count: memberCount,
+    heat_score: Math.round(memberCount * 100 + avgScore + weightSum),
+    tags: [tag],
+    members: memberRes.rows.map((r) => ({
+      login: String(r.login),
+      avatar_url: (r.avatar_url as string | null) ?? null,
+      final_score: Number(r.final_score),
+      tier: String(r.tier) as Tier,
+    })),
+  };
+}
+
+/**
+ * One page of the community galaxy waterfall: active domains ordered by heat,
+ * each with its top {@link DOMAIN_CARD_MEMBERS} representative members. The
+ * cursor is an opaque numeric offset; a rebuild is infrequent enough that offset
+ * paging won't visibly skip/dup during a scroll. No-op-safe without Turso.
+ */
+export async function getCommunityDomains(options: {
+  cursor?: string | null;
+  limit?: number;
+} = {}): Promise<CircleDomainPage> {
+  const db = getClient();
+  if (!db) return { domains: [], nextCursor: null };
+  try {
+    await ensureSchema(db);
+    const limit = Math.max(1, Math.min(24, options.limit ?? 8));
+    const offset = Math.max(0, Number(options.cursor) || 0);
+
+    // Fetch one extra row to know whether a next page exists.
+    const domainRes = await db.execute({
+      sql: `SELECT slug, name_zh, name_en, description_zh, source,
+                   member_count, heat_score
+            FROM circle_domains
+            WHERE status = 'active'
+            ORDER BY heat_score DESC, member_count DESC, slug ASC
+            LIMIT ? OFFSET ?`,
+      args: [limit + 1, offset],
+    });
+
+    const pageRows = domainRes.rows.slice(0, limit);
+    const hasMore = domainRes.rows.length > limit;
+    if (pageRows.length === 0) {
+      return getCommunityDomainsFromFacets(db, limit, offset);
+    }
+
+    const slugs = pageRows.map((r) => String(r.slug));
+    const placeholders = slugs.map(() => "?").join(", ");
+
+    // Top members for every domain on this page in one round trip. ROW_NUMBER
+    // partitions per domain so we cap at DOMAIN_CARD_MEMBERS without N queries.
+    const memberRes = await db.execute({
+      sql: `SELECT domain_slug, login, avatar_url, final_score, tier
+            FROM (
+              SELECT dm.domain_slug,
+                     dm.login,
+                     s.avatar_url,
+                     s.final_score,
+                     s.tier,
+                     ROW_NUMBER() OVER (
+                       PARTITION BY dm.domain_slug
+                       ORDER BY dm.weight DESC, s.final_score DESC
+                     ) AS rn
+              FROM circle_domain_members AS dm
+              JOIN scores AS s ON s.username = dm.login
+              WHERE dm.domain_slug IN (${placeholders})
+                AND s.hidden = 0
+            )
+            WHERE rn <= ?`,
+      args: [...slugs, DOMAIN_CARD_MEMBERS],
+    });
+
+    const membersBySlug = new Map<string, CircleDomainMember[]>();
+    for (const r of memberRes.rows) {
+      const slug = String(r.domain_slug);
+      const list = membersBySlug.get(slug) ?? [];
+      list.push({
+        login: String(r.login),
+        avatar_url: (r.avatar_url as string | null) ?? null,
+        final_score: Number(r.final_score),
+        tier: String(r.tier) as Tier,
+      });
+      membersBySlug.set(slug, list);
+    }
+
+    const domains: CircleDomain[] = pageRows.map((r) => {
+      const slug = String(r.slug);
+      return {
+        slug,
+        name: { zh: String(r.name_zh), en: String(r.name_en ?? r.name_zh) },
+        description: null,
+        source: String(r.source) as CircleDomain["source"],
+        member_count: Number(r.member_count),
+        heat_score: Number(r.heat_score),
+        tags: parseDomainTags(r.description_zh),
+        members: membersBySlug.get(slug) ?? [],
+      };
+    });
+
+    return { domains, nextCursor: hasMore ? String(offset + limit) : null };
+  } catch (e) {
+    console.error("getCommunityDomains failed:", e);
+    return { domains: [], nextCursor: null };
+  }
+}
+
+/** Full detail for a single domain: metadata plus its stored member pool ranked
+ *  by weight then score. Used by the domain detail page. */
+export async function getCommunityDomain(
+  slug: string,
+): Promise<CircleDomain | null> {
+  const db = getClient();
+  if (!db || !slug) return null;
+  try {
+    await ensureSchema(db);
+    const domainRes = await db.execute({
+      sql: `SELECT slug, name_zh, name_en, description_zh, source,
+                   member_count, heat_score
+            FROM circle_domains
+            WHERE slug = ? AND status = 'active'`,
+      args: [slug],
+    });
+    const row = domainRes.rows[0];
+    if (!row) return getCommunityDomainFromFacets(db, slug);
+
+    const memberRes = await db.execute({
+      sql: `SELECT dm.login, s.avatar_url, s.final_score, s.tier
+            FROM circle_domain_members AS dm
+            JOIN scores AS s ON s.username = dm.login
+            WHERE dm.domain_slug = ? AND s.hidden = 0
+            ORDER BY dm.weight DESC, s.final_score DESC
+            LIMIT ?`,
+      args: [slug, MAX_DOMAIN_MEMBERS_STORED],
+    });
+
+    return {
+      slug: String(row.slug),
+      name: { zh: String(row.name_zh), en: String(row.name_en ?? row.name_zh) },
+      description: null,
+      source: String(row.source) as CircleDomain["source"],
+      member_count: Number(row.member_count),
+      heat_score: Number(row.heat_score),
+      tags: parseDomainTags(row.description_zh),
+      members: memberRes.rows.map((r) => ({
+        login: String(r.login),
+        avatar_url: (r.avatar_url as string | null) ?? null,
+        final_score: Number(r.final_score),
+        tier: String(r.tier) as Tier,
+      })),
+    };
+  } catch (e) {
+    console.error("getCommunityDomain failed:", e);
+    return null;
   }
 }
 

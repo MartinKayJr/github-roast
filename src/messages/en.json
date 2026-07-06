@@ -13,6 +13,7 @@
     "leaderboard": "Leaderboard",
     "developers": "Discover",
     "community": "Circle",
+    "projects": "Projects",
     "versus": "Versus",
     "blog": "Research",
     "openMenu": "Open menu",
@@ -24,6 +25,7 @@
     "myProfile": "My profile",
     "judgeSelf": "Judge myself",
     "communityProfile": "Community Profile",
+    "inbox": "Inbox",
     "settings": "Settings",
     "admin": "Admin"
   },
@@ -58,6 +60,26 @@
     "growthSubscribed": "Subscribed. Scheduled scans will keep your recent growth data updated as your public contributions change.",
     "saving": "Saving…",
     "failed": "Could not save. Try again later."
+  },
+  "inbox": {
+    "metaTitle": "Inbox | ghsphere",
+    "metaDescription": "View ghsphere circle recommendations, system notices, and future chat messages.",
+    "eyebrow": "Inbox",
+    "heading": "Inbox",
+    "subtitle": "Circle recommendations, system notices, and future chat messages stay here even if you do not provide an email.",
+    "signInTitle": "Sign in to view your inbox",
+    "signInBody": "Inbox messages are tied to your signed-in GitHub identity. Use the GitHub sign-in entry in the top-right first.",
+    "authDisabledBody": "GitHub OAuth is not enabled for this deployment, so inbox is currently unavailable.",
+    "emptyTitle": "No inbox messages yet",
+    "emptyBody": "When ghsphere finds a relevant circle recommendation, or when future in-site chat reaches you, it will appear here.",
+    "systemSender": "System",
+    "unread": "Unread",
+    "read": "Read",
+    "allRead": "All read",
+    "unreadCount": "{count} unread",
+    "markRead": "Mark read",
+    "markAllRead": "Mark all read",
+    "openAction": "Open"
   },
   "admin": {
     "metaTitle": "Admin | ghsphere",
@@ -801,8 +823,9 @@
     "empty": "No community members yet"
   },
   "communityPage": {
-    "heading": "Circle",
-    "subtitle": "Find GitHub developers working on related things and looking for similar people.",
+    "eyebrow": "Community Galaxy",
+    "heading": "Find your circle in the developer galaxy",
+    "subtitle": "Each planet is a domain or people cluster. As you scroll, dust forms a circle and members emerge from its orbit.",
     "joinTitle": "Join the Circle",
     "joinDesc": "Claim your roast identity, build a community profile, or let AI draft one from your GitHub roast and public projects.",
     "joinedDesc": "You are already in the circle. Keep your community profile fresh so the right people can find you.",
@@ -811,6 +834,9 @@
     "joinButton": "Fill and join",
     "editProfile": "Edit profile",
     "authUnavailable": "Auth not configured",
+    "orbitUserSub": "Current planet",
+    "orbitGuestSubject": "Circle Radar",
+    "orbitGuestSub": "Public orbit",
     "feedHeading": "Developer Circle",
     "feedSub": "Public community members, ordered by recent profile updates and score."
   },
@@ -827,5 +853,57 @@
     "tokenEstimate": "Estimated {min}-{max} tokens",
     "fallback": "AI is unavailable, showing the closest tag search results.",
     "empty": "Radar found no members yet"
+  },
+  "communityGalaxy": {
+    "heading": "Domain Galaxy",
+    "sub": "Scroll to explore developer domains. Each planet forms from the members orbiting it.",
+    "empty": "No domains yet — check back once more developers join the circle.",
+    "loading": "Forming more planets…",
+    "memberCount": "{count} members",
+    "explore": "Explore domain"
+  },
+  "communityDomain": {
+    "back": "← Back to the circle",
+    "notFound": "Domain not found",
+    "domain": "Domain planet",
+    "memberCount": "{count} members",
+    "membersHeading": "Members",
+    "empty": "No visible members in this domain yet.",
+    "exploreMore": "Explore more",
+    "challenge": "Member duel",
+    "aiFind": "AI finder"
+  },
+  "projects": {
+    "metaTitle": "Project Galaxy",
+    "metaDescription": "Scan a GitHub open-source project, score the project, and map its contributor circle.",
+    "eyebrow": "Project Galaxy",
+    "heading": "Scan an open-source project",
+    "subtitle": "A project becomes a domain planet: project quality at the core, contributors in orbit, and scored developers joining the project circle.",
+    "placeholder": "Enter a GitHub repo, e.g. vercel/next.js",
+    "scan": "Scan project",
+    "scanning": "Scanning",
+    "projectPlanet": "Project planet",
+    "openCircle": "Open project circle",
+    "aiFind": "AI finder",
+    "pendingUser": "pending",
+    "noScoredContributors": "No contributors from this project are scored yet. Batch contributor scans can attach here next.",
+    "back": "Back to project scan",
+    "notFound": "Project not scanned yet",
+    "breakdown": {
+      "activity": "Activity",
+      "quality": "Quality",
+      "collaboration": "Collab",
+      "impact": "Impact",
+      "authenticity": "Realness"
+    },
+    "errors": {
+      "invalid_project": "Enter a valid GitHub repo URL or owner/repo.",
+      "project_not_found": "GitHub could not find that project.",
+      "github_rate_limited": "GitHub API is rate-limited right now. Try again shortly.",
+      "github_unavailable": "GitHub data is temporarily unavailable. Try again later.",
+      "rate_limited": "Too many requests. Try again shortly.",
+      "project_scan_failed": "Project scan failed. Try again later.",
+      "invalid_body": "Invalid request body."
+    }
   }
 }

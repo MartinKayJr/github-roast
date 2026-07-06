@@ -4,6 +4,7 @@ import { isAdminLogin } from "@/lib/admin";
 import {
   getCommunityProfile,
   getGrowthScanSubscription,
+  getInboxSummary,
   getScoreBrief,
 } from "@/lib/db";
 
@@ -32,6 +33,7 @@ export async function GET() {
       scored: false,
       hasCommunityProfile: false,
       growthSubscribed: false,
+      inboxUnread: 0,
       isAdmin: false,
     });
   }
@@ -43,17 +45,23 @@ export async function GET() {
       scored: false,
       hasCommunityProfile: false,
       growthSubscribed: false,
+      inboxUnread: 0,
       isAdmin: false,
     });
   }
-  const brief = await getScoreBrief(user.login);
-  const communityProfile = await getCommunityProfile(user.githubId);
-  const growthSubscription = await getGrowthScanSubscription(user.githubId);
+  const [brief, communityProfile, growthSubscription, inboxSummary] =
+    await Promise.all([
+      getScoreBrief(user.login),
+      getCommunityProfile(user.githubId),
+      getGrowthScanSubscription(user.githubId),
+      getInboxSummary(user.githubId),
+    ]);
   return NextResponse.json({
     user: { login: user.login, image: user.image ?? null },
     scored: Boolean(brief),
     hasCommunityProfile: communityProfile?.status === "active",
     growthSubscribed: growthSubscription?.status === "active",
+    inboxUnread: inboxSummary.unread,
     isAdmin: isAdminLogin(user.login),
   });
 }
