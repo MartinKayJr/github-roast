@@ -9,6 +9,7 @@ import { checkRateLimit, coalesceScan, rateLimitHeaders } from "@/lib/redis";
 import { parseProjectInput, scanProject, type ProjectScanResult } from "@/lib/project-scan";
 import { buildScanResult, scanErrorResponse } from "@/lib/scan-core";
 import { spamBotScore } from "@/lib/score";
+import { getGitHubAuthTokens } from "@/lib/github-token-pool";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,7 +41,7 @@ async function autoRecordTopContributorProfiles(
   contributors: ProjectScanResult["contributors"],
 ): Promise<AutoContributorProfileResult[]> {
   if (!process.env.TURSO_DATABASE_URL) return [];
-  if (!process.env.GITHUB_TOKEN) {
+  if ((await getGitHubAuthTokens(1)).length === 0) {
     return contributors.slice(0, AUTO_SCAN_CONTRIBUTOR_LIMIT).map((c) => ({
       login: c.login,
       status: "skipped" as const,

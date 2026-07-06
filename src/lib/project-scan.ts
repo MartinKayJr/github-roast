@@ -4,6 +4,13 @@ import {
   GitHubRateLimitError,
   parseReadmeFeatures,
 } from "./github";
+import {
+  getGitHubAuthTokens,
+  githubHeaders,
+  reportGitHubTokenFailure,
+  reportGitHubTokenSuccess,
+  type GitHubAuthToken,
+} from "./github-token-pool";
 import { logRatio, clampScore } from "./score";
 
 const GITHUB_API = "https://api.github.com";
@@ -122,46 +129,57 @@ interface RestContentFile {
   download_url?: string | null;
 }
 
-function authHeaders(useToken = true): Record<string, string> {
-  const token = useToken ? process.env.GITHUB_TOKEN : undefined;
-  const headers: Record<string, string> = {
-    Accept: "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-    "User-Agent": "ghsphere",
-  };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return headers;
-}
-
 async function restGetWithHeaders<T>(path: string): Promise<{ data: T | null; headers: Headers }> {
-  const request = (useToken: boolean) =>
+  const request = (token: GitHubAuthToken | null) =>
     fetch(`${GITHUB_API}/${path}`, {
-      headers: authHeaders(useToken),
+      headers: githubHeaders(token?.token),
       cache: "no-store",
     });
-  let res: Response;
-  try {
-    res = await request(true);
-    // A stale/revoked operator token must not break public project scans. Retry
-    // anonymously; public repo endpoints still work, just with a lower quota.
-    if (res.status === 401 && process.env.GITHUB_TOKEN) {
-      res = await request(false);
+  const tokens = await getGitHubAuthTokens(5);
+  const attempts: (GitHubAuthToken | null)[] = [...tokens, null];
+  let sawRateLimit = false;
+  let sawUnavailable = false;
+
+  for (const token of attempts) {
+    let res: Response;
+    try {
+      res = await request(token);
+    } catch {
+      sawUnavailable = true;
+      await reportGitHubTokenFailure(token, "network_error", 60_000);
+      continue;
     }
-  } catch {
-    throw new GitHubDataUnavailableError("GitHub REST request failed.");
+    if (res.status === 404) throw new AccountNotFoundError();
+    if (res.status === 401) {
+      sawUnavailable = true;
+      await reportGitHubTokenFailure(token, "unauthorized", 60 * 60_000);
+      continue;
+    }
+    if (res.status === 403 || res.status === 429) {
+      const remaining = res.headers.get("x-ratelimit-remaining");
+      sawRateLimit = sawRateLimit || remaining === "0" || res.status === 429;
+      await reportGitHubTokenFailure(
+        token,
+        sawRateLimit ? "rate_limited" : `github_http_${res.status}`,
+        sawRateLimit ? 30 * 60_000 : 10 * 60_000,
+      );
+      continue;
+    }
+    if (!res.ok) {
+      sawUnavailable = true;
+      await reportGitHubTokenFailure(token, `github_http_${res.status}`, 5 * 60_000);
+      continue;
+    }
+    await reportGitHubTokenSuccess(token);
+    try {
+      return { data: (await res.json()) as T, headers: res.headers };
+    } catch {
+      return { data: null, headers: res.headers };
+    }
   }
-  if (res.status === 404) throw new AccountNotFoundError();
-  if (res.status === 403 || res.status === 429) {
-    const remaining = res.headers.get("x-ratelimit-remaining");
-    if (remaining === "0") throw new GitHubRateLimitError();
-    throw new GitHubDataUnavailableError(`GitHub REST HTTP ${res.status}.`);
-  }
-  if (!res.ok) throw new GitHubDataUnavailableError(`GitHub REST HTTP ${res.status}.`);
-  try {
-    return { data: (await res.json()) as T, headers: res.headers };
-  } catch {
-    return { data: null, headers: res.headers };
-  }
+  if (sawRateLimit) throw new GitHubRateLimitError();
+  if (sawUnavailable) throw new GitHubDataUnavailableError("GitHub REST request failed.");
+  throw new GitHubDataUnavailableError("GitHub REST request failed.");
 }
 
 async function restGet<T>(path: string): Promise<T | null> {

@@ -113,7 +113,49 @@
     "orgScanResultSkipped": "{count} skipped by stars",
     "orgScanSafety": "Safety {level}",
     "orgScanResolvedFrom": "via registry repo {repo}",
-    "orgScanNext": "Continue with page {page}"
+    "orgScanNext": "Continue with page {page}",
+    "orgScanJobsTitle": "Organization scan jobs",
+    "orgScanRefreshJobs": "Refresh jobs",
+    "orgScanNoJobs": "No organization scan jobs yet.",
+    "orgScanContinueJob": "Continue job",
+    "orgScanRetryFailures": "Retry failures",
+    "orgScanJobNextPage": "next page {page}",
+    "orgScanJobScanned": "{count} done",
+    "orgScanJobFailed": "{count} failed",
+    "orgScanJobSkipped": "{count} skipped",
+    "orgScanJobBatch": "{count} per batch",
+    "orgScanJobStatus": {
+      "pending": "Pending",
+      "running": "Running",
+      "paused": "Waiting",
+      "done": "Done",
+      "failed": "Failed"
+    },
+    "orgScanItemStatus": {
+      "done": "Done",
+      "failed": "Failed",
+      "skipped": "Skipped"
+    },
+    "githubTokensTitle": "GitHub token pool",
+    "githubTokensBody": "Store multiple read-only GitHub tokens. Scans rotate through them by priority; when one token returns 401, rate limits, or flakes, it is cooled down and the next token is tried. Full tokens are encrypted server-side and never echoed back.",
+    "githubTokensRefresh": "Refresh tokens",
+    "githubTokensLabel": "Label, e.g. primary token",
+    "githubTokensToken": "Paste GitHub PAT",
+    "githubTokensPriority": "Priority",
+    "githubTokensAdd": "Add token",
+    "githubTokensEmpty": "No stored tokens yet. The environment GITHUB_TOKEN will still be used as fallback.",
+    "githubTokensEnable": "Enable",
+    "githubTokensDisable": "Disable",
+    "githubTokensDelete": "Delete",
+    "githubTokensPriorityValue": "priority {value}",
+    "githubTokensFailCount": "{count} failures",
+    "githubTokensLastUsed": "last used {time}",
+    "githubTokensCooldown": "cooldown until {time}",
+    "githubTokenStatus": {
+      "active": "Active",
+      "disabled": "Disabled",
+      "cooldown": "Cooling down"
+    }
   },
   "repoLink": {
     "label": "Source",

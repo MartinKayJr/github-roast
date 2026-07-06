@@ -113,7 +113,49 @@
     "orgScanResultSkipped": "低星跳过 {count} 个",
     "orgScanSafety": "安全 {level}",
     "orgScanResolvedFrom": "来自索引仓库 {repo}",
-    "orgScanNext": "继续扫描第 {page} 页"
+    "orgScanNext": "继续扫描第 {page} 页",
+    "orgScanJobsTitle": "组织扫描任务",
+    "orgScanRefreshJobs": "刷新任务",
+    "orgScanNoJobs": "还没有组织扫描任务。",
+    "orgScanContinueJob": "继续任务",
+    "orgScanRetryFailures": "重试失败项",
+    "orgScanJobNextPage": "下一页 {page}",
+    "orgScanJobScanned": "成功 {count}",
+    "orgScanJobFailed": "失败 {count}",
+    "orgScanJobSkipped": "跳过 {count}",
+    "orgScanJobBatch": "每批 {count}",
+    "orgScanJobStatus": {
+      "pending": "待开始",
+      "running": "进行中",
+      "paused": "等待继续",
+      "done": "已完成",
+      "failed": "失败待重试"
+    },
+    "orgScanItemStatus": {
+      "done": "成功",
+      "failed": "失败",
+      "skipped": "跳过"
+    },
+    "githubTokensTitle": "GitHub Token 池",
+    "githubTokensBody": "预存多个只读 GitHub token。扫描时会按优先级轮换使用；某个 token 401、限流或抽风时会自动冷却并切到下一个。完整 token 只加密保存在服务端，不会回显。",
+    "githubTokensRefresh": "刷新 token",
+    "githubTokensLabel": "标签，例如主 token",
+    "githubTokensToken": "粘贴 GitHub PAT",
+    "githubTokensPriority": "优先级",
+    "githubTokensAdd": "添加 token",
+    "githubTokensEmpty": "还没有预存 token，会继续使用环境变量 GITHUB_TOKEN 作为兜底。",
+    "githubTokensEnable": "启用",
+    "githubTokensDisable": "禁用",
+    "githubTokensDelete": "删除",
+    "githubTokensPriorityValue": "优先级 {value}",
+    "githubTokensFailCount": "失败 {count}",
+    "githubTokensLastUsed": "最近使用 {time}",
+    "githubTokensCooldown": "冷却到 {time}",
+    "githubTokenStatus": {
+      "active": "可用",
+      "disabled": "已禁用",
+      "cooldown": "冷却中"
+    }
   },
   "repoLink": {
     "label": "开源",

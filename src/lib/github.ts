@@ -17,6 +17,13 @@ import type {
   RepoReadme,
   TopRepo,
 } from "./types";
+import {
+  getGitHubAuthTokens,
+  githubHeaders,
+  reportGitHubTokenFailure,
+  reportGitHubTokenSuccess,
+  type GitHubAuthToken,
+} from "./github-token-pool";
 
 const GITHUB_API = "https://api.github.com";
 const README_FETCH_LIMIT = 1024 * 1024;
@@ -29,17 +36,6 @@ export class GitHubRateLimitError extends Error {}
 /** Raised when the app cannot collect GraphQL-only scoring dimensions safely. */
 export class GitHubAuthRequiredError extends Error {}
 export class GitHubDataUnavailableError extends Error {}
-
-function authHeaders(): Record<string, string> {
-  const token = process.env.GITHUB_TOKEN;
-  const headers: Record<string, string> = {
-    Accept: "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-    "User-Agent": "ghsphere",
-  };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return headers;
-}
 
 interface RestRepo {
   name: string;
@@ -99,67 +95,119 @@ interface RestUser {
 }
 
 async function restGet<T>(path: string): Promise<T | null> {
-  let res: Response;
-  try {
-    res = await fetch(`${GITHUB_API}/${path}`, {
-      headers: authHeaders(),
-      // Edge/runtime caching is handled by our own Redis layer; skip Next cache.
-      cache: "no-store",
-    });
-  } catch {
-    return null;
+  const tokens = await getGitHubAuthTokens(5);
+  const attempts: (GitHubAuthToken | null)[] = [...tokens, null];
+  let sawRateLimit = false;
+  for (const token of attempts) {
+    let res: Response;
+    try {
+      res = await fetch(`${GITHUB_API}/${path}`, {
+        headers: githubHeaders(token?.token),
+        // Edge/runtime caching is handled by our own Redis layer; skip Next cache.
+        cache: "no-store",
+      });
+    } catch {
+      await reportGitHubTokenFailure(token, "network_error", 60_000);
+      continue;
+    }
+    if (res.status === 404) throw new AccountNotFoundError();
+    if (res.status === 401) {
+      await reportGitHubTokenFailure(token, "unauthorized", 60 * 60_000);
+      continue;
+    }
+    if (res.status === 403 || res.status === 429) {
+      const remaining = res.headers.get("x-ratelimit-remaining");
+      sawRateLimit = sawRateLimit || remaining === "0" || res.status === 429;
+      await reportGitHubTokenFailure(
+        token,
+        sawRateLimit ? "rate_limited" : `github_http_${res.status}`,
+        sawRateLimit ? 30 * 60_000 : 10 * 60_000,
+      );
+      continue;
+    }
+    if (!res.ok) {
+      await reportGitHubTokenFailure(token, `github_http_${res.status}`, 5 * 60_000);
+      continue;
+    }
+    await reportGitHubTokenSuccess(token);
+    try {
+      return (await res.json()) as T;
+    } catch {
+      return null;
+    }
   }
-  if (res.status === 404) throw new AccountNotFoundError();
-  if (res.status === 403 || res.status === 429) {
-    const remaining = res.headers.get("x-ratelimit-remaining");
-    if (remaining === "0") throw new GitHubRateLimitError();
-    return null;
-  }
-  if (!res.ok) return null;
-  try {
-    return (await res.json()) as T;
-  } catch {
-    return null;
-  }
+  if (sawRateLimit) throw new GitHubRateLimitError();
+  return null;
 }
 
 async function graphql<T>(
   query: string,
   variables: Record<string, unknown>,
 ): Promise<T> {
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) throw new GitHubAuthRequiredError("GITHUB_TOKEN is required.");
-  let res: Response;
-  try {
-    res = await fetch(`${GITHUB_API}/graphql`, {
-      method: "POST",
-      headers: { ...authHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ query, variables }),
-      cache: "no-store",
-    });
-  } catch {
-    throw new GitHubDataUnavailableError("GitHub GraphQL request failed.");
+  const tokens = await getGitHubAuthTokens(8);
+  if (tokens.length === 0) throw new GitHubAuthRequiredError("GITHUB_TOKEN is required.");
+  let lastError: Error | null = null;
+  let sawRateLimit = false;
+  for (const token of tokens) {
+    let res: Response;
+    try {
+      res = await fetch(`${GITHUB_API}/graphql`, {
+        method: "POST",
+        headers: { ...githubHeaders(token.token), "Content-Type": "application/json" },
+        body: JSON.stringify({ query, variables }),
+        cache: "no-store",
+      });
+    } catch {
+      lastError = new GitHubDataUnavailableError("GitHub GraphQL request failed.");
+      await reportGitHubTokenFailure(token, "network_error", 60_000);
+      continue;
+    }
+    if (res.status === 401) {
+      lastError = new GitHubDataUnavailableError("GitHub GraphQL unauthorized.");
+      await reportGitHubTokenFailure(token, "unauthorized", 60 * 60_000);
+      continue;
+    }
+    if (res.status === 403 || res.status === 429) {
+      sawRateLimit = true;
+      lastError = new GitHubRateLimitError();
+      await reportGitHubTokenFailure(token, "rate_limited", 30 * 60_000);
+      continue;
+    }
+    if (!res.ok) {
+      lastError = new GitHubDataUnavailableError(`GitHub GraphQL HTTP ${res.status}.`);
+      await reportGitHubTokenFailure(token, `graphql_http_${res.status}`, 10 * 60_000);
+      continue;
+    }
+    let json: { data?: T; errors?: { message?: string }[] };
+    try {
+      json = (await res.json()) as { data?: T; errors?: { message?: string }[] };
+    } catch {
+      lastError = new GitHubDataUnavailableError("GitHub GraphQL returned invalid JSON.");
+      await reportGitHubTokenFailure(token, "invalid_json", 5 * 60_000);
+      continue;
+    }
+    if (json.errors?.length) {
+      const message = json.errors[0]?.message ?? "GitHub GraphQL error.";
+      if (/rate.?limit/i.test(message)) {
+        sawRateLimit = true;
+        lastError = new GitHubRateLimitError(message);
+        await reportGitHubTokenFailure(token, "rate_limited", 30 * 60_000);
+        continue;
+      }
+      lastError = new GitHubDataUnavailableError(message);
+      await reportGitHubTokenFailure(token, message, 10 * 60_000);
+      continue;
+    }
+    if (!json.data) {
+      lastError = new GitHubDataUnavailableError("GitHub GraphQL returned no data.");
+      await reportGitHubTokenFailure(token, "graphql_no_data", 5 * 60_000);
+      continue;
+    }
+    await reportGitHubTokenSuccess(token);
+    return json.data;
   }
-  if (res.status === 403 || res.status === 429) {
-    throw new GitHubRateLimitError();
-  }
-  if (!res.ok) {
-    throw new GitHubDataUnavailableError(`GitHub GraphQL HTTP ${res.status}.`);
-  }
-  let json: { data?: T; errors?: { message?: string }[] };
-  try {
-    json = (await res.json()) as { data?: T; errors?: { message?: string }[] };
-  } catch {
-    throw new GitHubDataUnavailableError("GitHub GraphQL returned invalid JSON.");
-  }
-  if (json.errors?.length) {
-    const message = json.errors[0]?.message ?? "GitHub GraphQL error.";
-    throw /rate.?limit/i.test(message)
-      ? new GitHubRateLimitError(message)
-      : new GitHubDataUnavailableError(message);
-  }
-  if (!json.data) throw new GitHubDataUnavailableError("GitHub GraphQL returned no data.");
-  return json.data;
+  if (sawRateLimit) throw new GitHubRateLimitError();
+  throw lastError ?? new GitHubDataUnavailableError("GitHub GraphQL request failed.");
 }
 
 function isFineGrainedPatOrgPolicyError(e: unknown): boolean {
@@ -185,64 +233,26 @@ async function fetchContributionGraphWithPolicyFallback<T>(
 }
 
 async function fetchOrganizations(username: string): Promise<string[]> {
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) return [];
-
-  let res: Response;
   try {
-    res = await fetch(`${GITHUB_API}/graphql`, {
-      method: "POST",
-      headers: { ...authHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({
-        query: `query($login: String!) {
+    const json = await graphql<{
+      user?: {
+        organizations?: { nodes?: ({ login?: string | null } | null)[] | null } | null;
+      } | null;
+    }>(
+      `query($login: String!) {
           user(login: $login) {
             organizations(first: 20) { nodes { login } }
           }
         }`,
-        variables: { login: username },
-      }),
-      cache: "no-store",
-    });
-  } catch {
-    return [];
-  }
-
-  if (res.status === 403 || res.status === 429) {
-    const remaining = res.headers.get("x-ratelimit-remaining");
-    if (remaining === "0") throw new GitHubRateLimitError();
-    return [];
-  }
-  if (!res.ok) return [];
-
-  let json:
-    | {
-        data?: {
-          user?: {
-            organizations?: { nodes?: ({ login?: string | null } | null)[] | null } | null;
-          } | null;
-        };
-        errors?: { type?: string; message?: string }[];
-      }
-    | undefined;
-  try {
-    json = (await res.json()) as typeof json;
-  } catch {
-    return [];
-  }
-
-  if (json?.errors?.length) {
-    const insufficientScopes = json.errors.some(
-      (error) =>
-        error.type === "INSUFFICIENT_SCOPES" ||
-        /read:org|insufficient scopes|organizations/i.test(error.message ?? ""),
+      { login: username },
     );
-    if (insufficientScopes) return [];
+    return (json.user?.organizations?.nodes ?? [])
+      .map((node) => node?.login)
+      .filter((login): login is string => typeof login === "string");
+  } catch (e) {
+    if (e instanceof GitHubRateLimitError) throw e;
     return [];
   }
-
-  return (json?.data?.user?.organizations?.nodes ?? [])
-    .map((node) => node?.login)
-    .filter((login): login is string => typeof login === "string");
 }
 
 function parseTs(value: string | null | undefined): Date | null {
@@ -1570,7 +1580,7 @@ export async function collect(username: string): Promise<{
   organizations: string[];
   contribution_days: ContributionDay[];
 }> {
-  if (!process.env.GITHUB_TOKEN) {
+  if ((await getGitHubAuthTokens(1)).length === 0) {
     throw new GitHubAuthRequiredError("GITHUB_TOKEN is required for accurate scoring.");
   }
 

@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminAccess } from "@/lib/admin";
 import {
+  createOrganizationProjectScanJob,
+  getOrganizationProjectScanJob,
+  listOrganizationProjectScanJobItemsByStatus,
+  listOrganizationProjectScanJobs,
+  markOrganizationProjectScanJobRunning,
   recordOrganizationProjectCatalog,
+  recordOrganizationProjectScanJobItem,
   recordProjectScan,
+  updateOrganizationProjectScanJobAfterBatch,
 } from "@/lib/db";
 import {
   AccountNotFoundError,
@@ -21,12 +28,14 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 interface ScanOrgProjectsBody {
+  jobId?: unknown;
   org?: unknown;
   page?: unknown;
   batchSize?: unknown;
   minStars?: unknown;
   includeForks?: unknown;
   includeArchived?: unknown;
+  retryFailures?: unknown;
 }
 
 function num(input: unknown, fallback: number): number {
@@ -45,6 +54,21 @@ function mapScanError(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+function splitFullName(fullName: string): { owner: string; repo: string } | null {
+  const [owner, repo] = fullName.split("/");
+  if (!owner || !repo) return null;
+  return { owner, repo };
+}
+
+export async function GET() {
+  const access = await getAdminAccess();
+  if (!access.ok) {
+    return errorResponse(access.reason, access.reason === "unauthorized" ? 401 : 403);
+  }
+  const jobs = await listOrganizationProjectScanJobs(20);
+  return NextResponse.json({ jobs });
+}
+
 export async function POST(req: NextRequest) {
   const access = await getAdminAccess();
   if (!access.ok) {
@@ -58,34 +82,113 @@ export async function POST(req: NextRequest) {
     return errorResponse("invalid_body", 400);
   }
 
-  const org = parseOrganizationInput(body.org);
-  if (!org) return errorResponse("invalid_org", 400);
+  const requestedJobId = typeof body.jobId === "string" ? body.jobId.trim() : "";
+  const retryFailures = body.retryFailures === true;
+  let job = requestedJobId ? await getOrganizationProjectScanJob(requestedJobId) : null;
+  if (requestedJobId && !job) return errorResponse("job_not_found", 404);
 
-  const page = Math.max(1, Math.floor(num(body.page, 1)));
-  const batchSize = Math.max(1, Math.min(30, Math.floor(num(body.batchSize, 15))));
-  const minStars = Math.max(0, Math.floor(num(body.minStars, 0)));
-  const includeForks = body.includeForks === true;
-  const includeArchived = body.includeArchived === true;
+  if (!job) {
+    const org = parseOrganizationInput(body.org);
+    if (!org) return errorResponse("invalid_org", 400);
+    job = await createOrganizationProjectScanJob({
+      orgLogin: org,
+      requestedBy: access.session.user.login,
+      page: Math.max(1, Math.floor(num(body.page, 1))),
+      batchSize: Math.max(1, Math.min(30, Math.floor(num(body.batchSize, 15)))),
+      minStars: Math.max(0, Math.floor(num(body.minStars, 0))),
+      includeForks: body.includeForks === true,
+      includeArchived: body.includeArchived === true,
+    });
+    if (!job) return errorResponse("job_create_failed", 500);
+  }
+
+  if (job.status === "done" && !retryFailures) {
+    return NextResponse.json({ job, done: true });
+  }
+
+  const runningJob = await markOrganizationProjectScanJobRunning(job.id);
+  job = runningJob ?? job;
+  const page = job.next_page;
+  const batchSize = job.batch_size;
+  const minStars = job.min_stars;
 
   try {
-    const listed = await listOrganizationRepos({
-      org,
-      page,
-      perPage: batchSize,
-      includeForks,
-      includeArchived,
-    });
-    const repos = listed.repos.filter((repo) => repo.stars >= minStars);
+    const retryItems = retryFailures
+      ? await listOrganizationProjectScanJobItemsByStatus(job.id, "failed", batchSize)
+      : [];
+    const listed =
+      retryItems.length > 0
+        ? {
+            org: job.org_login,
+            repos: retryItems.flatMap((item) => {
+              const parsed = splitFullName(item.registry_full_name);
+              return parsed
+                ? [
+                    {
+                      name: parsed.repo,
+                      full_name: item.registry_full_name,
+                      html_url: `https://github.com/${item.registry_full_name}`,
+                      description: null,
+                      language: null,
+                      topics: [],
+                      stars: 0,
+                      forks: 0,
+                      pushed_at: null,
+                      fork: false,
+                      archived: false,
+                    },
+                  ]
+                : [];
+            }),
+            nextPage: job.next_page,
+          }
+        : await listOrganizationRepos({
+            org: job.org_login,
+            page,
+            perPage: batchSize,
+            includeForks: job.include_forks,
+            includeArchived: job.include_archived,
+          });
+    const repos = listed.repos.filter((repo) => retryFailures || repo.stars >= minStars);
     const projects = [];
     const failures: { repo: string; error: string }[] = [];
+    const skippedByStars = listed.repos.length - repos.length;
+
+    for (const repo of listed.repos) {
+      if (!retryFailures && repo.stars < minStars) {
+        await recordOrganizationProjectScanJobItem({
+          jobId: job.id,
+          registryFullName: repo.full_name,
+          status: "skipped",
+          error: "below_min_stars",
+        });
+      }
+    }
 
     for (const repo of repos) {
       try {
-        const project = await scanProject(org, repo.name);
+        const project = await scanProject(job.org_login, repo.name);
+        const safety = assessProjectSafety(project);
         await recordProjectScan(project);
-        projects.push({ project, safety: assessProjectSafety(project) });
+        projects.push({ project, safety });
+        await recordOrganizationProjectScanJobItem({
+          jobId: job.id,
+          registryFullName: repo.full_name,
+          sourceFullName: project.full_name,
+          status: "done",
+          score: project.score,
+          band: project.band,
+          safetyLevel: safety.level,
+        });
       } catch (e) {
-        failures.push({ repo: repo.full_name, error: mapScanError(e) });
+        const error = mapScanError(e);
+        failures.push({ repo: repo.full_name, error });
+        await recordOrganizationProjectScanJobItem({
+          jobId: job.id,
+          registryFullName: repo.full_name,
+          status: "failed",
+          error,
+        });
       }
     }
 
@@ -98,14 +201,40 @@ export async function POST(req: NextRequest) {
       projects,
       failures,
     });
+    const shouldRetryThisPage =
+      !retryFailures && repos.length > 0 && projects.length === 0 && failures.length > 0;
+    const nextPage = shouldRetryThisPage ? page : retryItems.length > 0 ? job.next_page : listed.nextPage;
+    const status = shouldRetryThisPage
+      ? "failed"
+      : nextPage
+        ? "paused"
+        : failures.length > 0 && retryFailures
+          ? "failed"
+          : "done";
+    const updatedJob =
+      (await updateOrganizationProjectScanJobAfterBatch({
+        jobId: job.id,
+        nextPage,
+        scannedDelta: projects.length,
+        failedDelta: failures.length,
+        skippedDelta: skippedByStars,
+        status,
+        lastError: shouldRetryThisPage
+          ? failures[0]?.error ?? "batch_failed"
+          : status === "failed"
+            ? failures[0]?.error ?? null
+            : null,
+      })) ?? job;
 
     return NextResponse.json({
+      job: updatedJob,
+      jobId: job.id,
       org: listed.org,
       page,
       batchSize,
-      nextPage: listed.nextPage,
+      nextPage,
       listed: listed.repos.length,
-      skippedByStars: listed.repos.length - repos.length,
+      skippedByStars,
       scanned: projects.length,
       failed: failures.length,
       runId: recorded.runId,
@@ -125,6 +254,16 @@ export async function POST(req: NextRequest) {
       failures,
     });
   } catch (e) {
+    const error = mapScanError(e);
+    await updateOrganizationProjectScanJobAfterBatch({
+      jobId: job.id,
+      nextPage: page,
+      scannedDelta: 0,
+      failedDelta: 0,
+      skippedDelta: 0,
+      status: "failed",
+      lastError: error,
+    });
     if (e instanceof AccountNotFoundError) return errorResponse("organization_not_found", 404);
     if (e instanceof GitHubRateLimitError) return errorResponse("github_rate_limited", 503);
     if (e instanceof GitHubDataUnavailableError) return errorResponse("github_unavailable", 503);

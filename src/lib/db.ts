@@ -9,7 +9,7 @@
  */
 
 import { Client, createClient } from "@libsql/client";
-import { createHash, randomUUID } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
 import {
   bypassGeneratedCaches,
   ROAST_CACHE_VERSION,
@@ -162,6 +162,46 @@ function heatIpHash(ip: string): string {
   const salt =
     process.env.AUTH_SECRET ?? process.env.TURNSTILE_SECRET_KEY ?? "github-roast-heat-v1";
   return createHash("sha256").update(salt).update("\0").update(ip).digest("hex");
+}
+
+function githubTokenCipherKey(): Buffer {
+  const secret =
+    process.env.AUTH_SECRET ??
+    process.env.ADMIN_SECRET ??
+    process.env.NEXTAUTH_SECRET ??
+    "ghsphere-local-github-token-pool";
+  return createHash("sha256").update("github-token-pool:v1").update("\0").update(secret).digest();
+}
+
+function encryptGitHubToken(token: string): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", githubTokenCipherKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `v1:${iv.toString("base64url")}:${tag.toString("base64url")}:${encrypted.toString("base64url")}`;
+}
+
+function decryptGitHubToken(payload: string): string | null {
+  const [version, ivRaw, tagRaw, encryptedRaw] = payload.split(":");
+  if (version !== "v1" || !ivRaw || !tagRaw || !encryptedRaw) return null;
+  try {
+    const decipher = createDecipheriv(
+      "aes-256-gcm",
+      githubTokenCipherKey(),
+      Buffer.from(ivRaw, "base64url"),
+    );
+    decipher.setAuthTag(Buffer.from(tagRaw, "base64url"));
+    return Buffer.concat([
+      decipher.update(Buffer.from(encryptedRaw, "base64url")),
+      decipher.final(),
+    ]).toString("utf8");
+  } catch {
+    return null;
+  }
+}
+
+function githubTokenHash(token: string): string {
+  return createHash("sha256").update("github-token").update("\0").update(token).digest("hex");
 }
 
 let client: Client | null = null;
@@ -442,6 +482,65 @@ function ensureSchema(db: Client): Promise<void> {
              ON organization_project_catalog(org_login, score DESC, stars DESC)`,
           `CREATE INDEX IF NOT EXISTS idx_org_project_catalog_org_language
              ON organization_project_catalog(org_login, language, score DESC)`,
+          `CREATE TABLE IF NOT EXISTS organization_project_scan_jobs (
+             id               TEXT PRIMARY KEY,
+             org_login        TEXT NOT NULL,
+             requested_by     TEXT,
+             status           TEXT NOT NULL DEFAULT 'pending'
+                                CHECK(status IN ('pending', 'running', 'paused', 'done', 'failed')),
+             next_page        INTEGER NOT NULL DEFAULT 1,
+             batch_size       INTEGER NOT NULL DEFAULT 15,
+             min_stars        INTEGER NOT NULL DEFAULT 0,
+             include_forks    INTEGER NOT NULL DEFAULT 0,
+             include_archived INTEGER NOT NULL DEFAULT 0,
+             scanned_count    INTEGER NOT NULL DEFAULT 0,
+             failed_count     INTEGER NOT NULL DEFAULT 0,
+             skipped_count    INTEGER NOT NULL DEFAULT 0,
+             last_error       TEXT,
+             created_at       INTEGER NOT NULL,
+             updated_at       INTEGER NOT NULL,
+             completed_at     INTEGER
+           )`,
+          `CREATE INDEX IF NOT EXISTS idx_org_project_scan_jobs_status_updated
+             ON organization_project_scan_jobs(status, updated_at DESC)`,
+          `CREATE INDEX IF NOT EXISTS idx_org_project_scan_jobs_org_updated
+             ON organization_project_scan_jobs(org_login, updated_at DESC)`,
+          `CREATE TABLE IF NOT EXISTS organization_project_scan_job_items (
+             id                 TEXT PRIMARY KEY,
+             job_id             TEXT NOT NULL,
+             registry_full_name TEXT NOT NULL,
+             source_full_name   TEXT,
+             status             TEXT NOT NULL
+                                  CHECK(status IN ('done', 'failed', 'skipped')),
+             score              REAL,
+             band               TEXT,
+             safety_level       TEXT,
+             error              TEXT,
+             attempts           INTEGER NOT NULL DEFAULT 1,
+             updated_at         INTEGER NOT NULL
+           )`,
+          `CREATE UNIQUE INDEX IF NOT EXISTS idx_org_project_scan_job_items_job_registry
+             ON organization_project_scan_job_items(job_id, registry_full_name)`,
+          `CREATE INDEX IF NOT EXISTS idx_org_project_scan_job_items_job_status
+             ON organization_project_scan_job_items(job_id, status, updated_at DESC)`,
+          `CREATE TABLE IF NOT EXISTS github_tokens (
+             id              TEXT PRIMARY KEY,
+             label           TEXT NOT NULL,
+             token_encrypted TEXT NOT NULL,
+             token_hash      TEXT NOT NULL UNIQUE,
+             token_suffix    TEXT NOT NULL,
+             status          TEXT NOT NULL DEFAULT 'active'
+                             CHECK(status IN ('active', 'disabled', 'cooldown')),
+             priority        INTEGER NOT NULL DEFAULT 100,
+             fail_count      INTEGER NOT NULL DEFAULT 0,
+             last_error      TEXT,
+             last_used_at    INTEGER,
+             cooldown_until  INTEGER,
+             created_at      INTEGER NOT NULL,
+             updated_at      INTEGER NOT NULL
+           )`,
+          `CREATE INDEX IF NOT EXISTS idx_github_tokens_status_priority
+             ON github_tokens(status, priority, cooldown_until, last_used_at)`,
           `CREATE TABLE IF NOT EXISTS profile_comments (
              id                TEXT PRIMARY KEY,
              target_username   TEXT NOT NULL,
@@ -711,6 +810,27 @@ export interface GrowthLeaderboardEntry {
   previous_snapshot_at: number | null;
 }
 
+export interface GitHubTokenView {
+  id: string;
+  label: string;
+  token_suffix: string;
+  status: "active" | "disabled" | "cooldown";
+  priority: number;
+  fail_count: number;
+  last_error: string | null;
+  last_used_at: number | null;
+  cooldown_until: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface GitHubTokenCandidate {
+  id: string;
+  label: string;
+  token: string;
+  token_suffix: string;
+}
+
 /**
  * Count one successful public lookup for a GitHub account.
  *
@@ -776,6 +896,211 @@ export async function recordAccountLookup(username: string, ip: string): Promise
     await releaseLookupGate(gateKey);
     console.error("recordAccountLookup failed:", e);
     return false;
+  }
+}
+
+function mapGitHubTokenView(row: Record<string, unknown>): GitHubTokenView {
+  return {
+    id: String(row.id),
+    label: String(row.label),
+    token_suffix: String(row.token_suffix),
+    status: String(row.status) as GitHubTokenView["status"],
+    priority: Number(row.priority) || 100,
+    fail_count: Number(row.fail_count) || 0,
+    last_error: (row.last_error as string | null) ?? null,
+    last_used_at: row.last_used_at == null ? null : Number(row.last_used_at),
+    cooldown_until: row.cooldown_until == null ? null : Number(row.cooldown_until),
+    created_at: Number(row.created_at) || 0,
+    updated_at: Number(row.updated_at) || 0,
+  };
+}
+
+export async function addGitHubToken(input: {
+  label: string;
+  token: string;
+  priority?: number;
+}): Promise<GitHubTokenView | null> {
+  const db = getClient();
+  const token = input.token.trim();
+  if (!db || token.length < 20) return null;
+  try {
+    await ensureSchema(db);
+    const now = Date.now();
+    const id = randomUUID();
+    const tokenHash = githubTokenHash(token);
+    await db.execute({
+      sql: `INSERT INTO github_tokens
+              (id, label, token_encrypted, token_hash, token_suffix, status,
+               priority, fail_count, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'active', ?, 0, ?, ?)
+            ON CONFLICT(token_hash) DO UPDATE SET
+              label = excluded.label,
+              token_encrypted = excluded.token_encrypted,
+              token_suffix = excluded.token_suffix,
+              status = 'active',
+              priority = excluded.priority,
+              last_error = NULL,
+              cooldown_until = NULL,
+              updated_at = excluded.updated_at`,
+      args: [
+        id,
+        input.label.trim() || `GitHub token ${token.slice(-4)}`,
+        encryptGitHubToken(token),
+        tokenHash,
+        token.slice(-4),
+        Math.max(0, Math.floor(input.priority ?? 100)),
+        now,
+        now,
+      ],
+    });
+    const res = await db.execute({
+      sql: `SELECT * FROM github_tokens WHERE token_hash = ? LIMIT 1`,
+      args: [tokenHash],
+    });
+    const row = res.rows[0];
+    return row ? mapGitHubTokenView(row as Record<string, unknown>) : null;
+  } catch (e) {
+    console.error("addGitHubToken failed:", e);
+    return null;
+  }
+}
+
+export async function listGitHubTokens(): Promise<GitHubTokenView[]> {
+  const db = getClient();
+  if (!db) return [];
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT id, label, token_suffix, status, priority, fail_count,
+                   last_error, last_used_at, cooldown_until, created_at, updated_at
+            FROM github_tokens
+            ORDER BY priority ASC, created_at DESC`,
+      args: [],
+    });
+    return res.rows.map((row) => mapGitHubTokenView(row as Record<string, unknown>));
+  } catch (e) {
+    console.error("listGitHubTokens failed:", e);
+    return [];
+  }
+}
+
+export async function deleteGitHubToken(id: string): Promise<boolean> {
+  const db = getClient();
+  if (!db || !id) return false;
+  try {
+    await ensureSchema(db);
+    await db.execute({ sql: `DELETE FROM github_tokens WHERE id = ?`, args: [id] });
+    return true;
+  } catch (e) {
+    console.error("deleteGitHubToken failed:", e);
+    return false;
+  }
+}
+
+export async function setGitHubTokenStatus(
+  id: string,
+  status: "active" | "disabled",
+): Promise<boolean> {
+  const db = getClient();
+  if (!db || !id) return false;
+  try {
+    await ensureSchema(db);
+    await db.execute({
+      sql: `UPDATE github_tokens
+            SET status = ?, last_error = NULL, cooldown_until = NULL, updated_at = ?
+            WHERE id = ?`,
+      args: [status, Date.now(), id],
+    });
+    return true;
+  } catch (e) {
+    console.error("setGitHubTokenStatus failed:", e);
+    return false;
+  }
+}
+
+export async function getGitHubTokenCandidates(limit = 5): Promise<GitHubTokenCandidate[]> {
+  const db = getClient();
+  if (!db) return [];
+  try {
+    await ensureSchema(db);
+    const now = Date.now();
+    const res = await db.execute({
+      sql: `SELECT id, label, token_encrypted, token_suffix
+            FROM github_tokens
+            WHERE status IN ('active', 'cooldown')
+              AND (cooldown_until IS NULL OR cooldown_until <= ?)
+            ORDER BY
+              CASE WHEN status = 'active' THEN 0 ELSE 1 END,
+              priority ASC,
+              fail_count ASC,
+              COALESCE(last_used_at, 0) ASC
+            LIMIT ?`,
+      args: [now, Math.max(1, Math.min(20, limit))],
+    });
+    const tokens: GitHubTokenCandidate[] = [];
+    for (const row of res.rows) {
+      const token = decryptGitHubToken(String(row.token_encrypted));
+      if (!token) continue;
+      tokens.push({
+        id: String(row.id),
+        label: String(row.label),
+        token,
+        token_suffix: String(row.token_suffix),
+      });
+    }
+    return tokens;
+  } catch (e) {
+    console.error("getGitHubTokenCandidates failed:", e);
+    return [];
+  }
+}
+
+export async function markGitHubTokenSuccess(id: string): Promise<void> {
+  const db = getClient();
+  if (!db || !id) return;
+  try {
+    await ensureSchema(db);
+    const now = Date.now();
+    await db.execute({
+      sql: `UPDATE github_tokens
+            SET status = 'active',
+                fail_count = 0,
+                last_error = NULL,
+                last_used_at = ?,
+                cooldown_until = NULL,
+                updated_at = ?
+            WHERE id = ?`,
+      args: [now, now, id],
+    });
+  } catch (e) {
+    console.error("markGitHubTokenSuccess failed:", e);
+  }
+}
+
+export async function markGitHubTokenFailure(input: {
+  id: string;
+  error: string;
+  cooldownMs?: number;
+}): Promise<void> {
+  const db = getClient();
+  if (!db || !input.id) return;
+  try {
+    await ensureSchema(db);
+    const now = Date.now();
+    const cooldown = Math.max(60_000, input.cooldownMs ?? 15 * 60_000);
+    await db.execute({
+      sql: `UPDATE github_tokens
+            SET status = 'cooldown',
+                fail_count = fail_count + 1,
+                last_error = ?,
+                last_used_at = ?,
+                cooldown_until = ?,
+                updated_at = ?
+            WHERE id = ?`,
+      args: [input.error.slice(0, 500), now, now + cooldown, now, input.id],
+    });
+  } catch (e) {
+    console.error("markGitHubTokenFailure failed:", e);
   }
 }
 
@@ -2186,6 +2511,47 @@ export interface OrganizationProjectCatalogItem {
   scanned_at: number;
 }
 
+export type OrganizationProjectScanJobStatus =
+  | "pending"
+  | "running"
+  | "paused"
+  | "done"
+  | "failed";
+
+export interface OrganizationProjectScanJobItem {
+  id: string;
+  job_id: string;
+  registry_full_name: string;
+  source_full_name: string | null;
+  status: "done" | "failed" | "skipped";
+  score: number | null;
+  band: ProjectBand | null;
+  safety_level: string | null;
+  error: string | null;
+  attempts: number;
+  updated_at: number;
+}
+
+export interface OrganizationProjectScanJob {
+  id: string;
+  org_login: string;
+  requested_by: string | null;
+  status: OrganizationProjectScanJobStatus;
+  next_page: number;
+  batch_size: number;
+  min_stars: number;
+  include_forks: boolean;
+  include_archived: boolean;
+  scanned_count: number;
+  failed_count: number;
+  skipped_count: number;
+  last_error: string | null;
+  created_at: number;
+  updated_at: number;
+  completed_at: number | null;
+  items: OrganizationProjectScanJobItem[];
+}
+
 function parseProjectJson<T>(raw: unknown, fallback: T): T {
   if (typeof raw !== "string" || !raw) return fallback;
   try {
@@ -2481,6 +2847,303 @@ export async function recordProjectScan(project: ProjectScanResult): Promise<voi
     );
   } catch (e) {
     console.error("recordProjectScan failed:", e);
+  }
+}
+
+function mapOrganizationProjectScanJob(row: Record<string, unknown>): OrganizationProjectScanJob {
+  return {
+    id: String(row.id),
+    org_login: String(row.org_login),
+    requested_by: (row.requested_by as string | null) ?? null,
+    status: String(row.status) as OrganizationProjectScanJobStatus,
+    next_page: Number(row.next_page) || 1,
+    batch_size: Number(row.batch_size) || 15,
+    min_stars: Number(row.min_stars) || 0,
+    include_forks: Number(row.include_forks) === 1,
+    include_archived: Number(row.include_archived) === 1,
+    scanned_count: Number(row.scanned_count) || 0,
+    failed_count: Number(row.failed_count) || 0,
+    skipped_count: Number(row.skipped_count) || 0,
+    last_error: (row.last_error as string | null) ?? null,
+    created_at: Number(row.created_at) || 0,
+    updated_at: Number(row.updated_at) || 0,
+    completed_at: row.completed_at == null ? null : Number(row.completed_at),
+    items: [],
+  };
+}
+
+function mapOrganizationProjectScanJobItem(
+  row: Record<string, unknown>,
+): OrganizationProjectScanJobItem {
+  return {
+    id: String(row.id),
+    job_id: String(row.job_id),
+    registry_full_name: String(row.registry_full_name),
+    source_full_name: (row.source_full_name as string | null) ?? null,
+    status: String(row.status) as OrganizationProjectScanJobItem["status"],
+    score: row.score == null ? null : Number(row.score),
+    band: row.band == null ? null : (String(row.band) as ProjectBand),
+    safety_level: (row.safety_level as string | null) ?? null,
+    error: (row.error as string | null) ?? null,
+    attempts: Number(row.attempts) || 1,
+    updated_at: Number(row.updated_at) || 0,
+  };
+}
+
+export async function createOrganizationProjectScanJob(input: {
+  orgLogin: string;
+  requestedBy?: string | null;
+  page: number;
+  batchSize: number;
+  minStars: number;
+  includeForks: boolean;
+  includeArchived: boolean;
+}): Promise<OrganizationProjectScanJob | null> {
+  const db = getClient();
+  if (!db) return null;
+  try {
+    await ensureSchema(db);
+    const now = Date.now();
+    const id = randomUUID();
+    await db.execute({
+      sql: `INSERT INTO organization_project_scan_jobs
+              (id, org_login, requested_by, status, next_page, batch_size,
+               min_stars, include_forks, include_archived, created_at, updated_at)
+            VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        id,
+        input.orgLogin.toLowerCase(),
+        input.requestedBy?.toLowerCase() ?? null,
+        Math.max(1, Math.floor(input.page)),
+        Math.max(1, Math.floor(input.batchSize)),
+        Math.max(0, Math.floor(input.minStars)),
+        input.includeForks ? 1 : 0,
+        input.includeArchived ? 1 : 0,
+        now,
+        now,
+      ],
+    });
+    return getOrganizationProjectScanJob(id);
+  } catch (e) {
+    console.error("createOrganizationProjectScanJob failed:", e);
+    return null;
+  }
+}
+
+export async function getOrganizationProjectScanJob(
+  jobId: string,
+): Promise<OrganizationProjectScanJob | null> {
+  const db = getClient();
+  if (!db || !jobId) return null;
+  try {
+    await ensureSchema(db);
+    const jobRes = await db.execute({
+      sql: `SELECT * FROM organization_project_scan_jobs WHERE id = ? LIMIT 1`,
+      args: [jobId],
+    });
+    const row = jobRes.rows[0];
+    if (!row) return null;
+    const job = mapOrganizationProjectScanJob(row as Record<string, unknown>);
+    const itemRes = await db.execute({
+      sql: `SELECT * FROM organization_project_scan_job_items
+            WHERE job_id = ?
+            ORDER BY updated_at DESC
+            LIMIT 50`,
+      args: [job.id],
+    });
+    job.items = itemRes.rows.map((item) =>
+      mapOrganizationProjectScanJobItem(item as Record<string, unknown>),
+    );
+    return job;
+  } catch (e) {
+    console.error("getOrganizationProjectScanJob failed:", e);
+    return null;
+  }
+}
+
+export async function listOrganizationProjectScanJobs(
+  limit = 12,
+): Promise<OrganizationProjectScanJob[]> {
+  const db = getClient();
+  if (!db) return [];
+  try {
+    await ensureSchema(db);
+    const capped = Math.max(1, Math.min(50, limit));
+    const res = await db.execute({
+      sql: `SELECT * FROM organization_project_scan_jobs
+            ORDER BY updated_at DESC
+            LIMIT ?`,
+      args: [capped],
+    });
+    const jobs = res.rows.map((row) =>
+      mapOrganizationProjectScanJob(row as Record<string, unknown>),
+    );
+    if (jobs.length === 0) return [];
+    const placeholders = jobs.map(() => "?").join(", ");
+    const itemRes = await db.execute({
+      sql: `SELECT *
+            FROM (
+              SELECT *,
+                     ROW_NUMBER() OVER (
+                       PARTITION BY job_id
+                       ORDER BY updated_at DESC
+                     ) AS rn
+              FROM organization_project_scan_job_items
+              WHERE job_id IN (${placeholders})
+            )
+            WHERE rn <= 8
+            ORDER BY updated_at DESC`,
+      args: jobs.map((job) => job.id),
+    });
+    const byJob = new Map<string, OrganizationProjectScanJobItem[]>();
+    for (const row of itemRes.rows) {
+      const item = mapOrganizationProjectScanJobItem(row as Record<string, unknown>);
+      const list = byJob.get(item.job_id) ?? [];
+      list.push(item);
+      byJob.set(item.job_id, list);
+    }
+    return jobs.map((job) => ({ ...job, items: byJob.get(job.id) ?? [] }));
+  } catch (e) {
+    console.error("listOrganizationProjectScanJobs failed:", e);
+    return [];
+  }
+}
+
+export async function listOrganizationProjectScanJobItemsByStatus(
+  jobId: string,
+  status: OrganizationProjectScanJobItem["status"],
+  limit = 30,
+): Promise<OrganizationProjectScanJobItem[]> {
+  const db = getClient();
+  if (!db || !jobId) return [];
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT * FROM organization_project_scan_job_items
+            WHERE job_id = ? AND status = ?
+            ORDER BY updated_at ASC
+            LIMIT ?`,
+      args: [jobId, status, Math.max(1, Math.min(100, limit))],
+    });
+    return res.rows.map((row) =>
+      mapOrganizationProjectScanJobItem(row as Record<string, unknown>),
+    );
+  } catch (e) {
+    console.error("listOrganizationProjectScanJobItemsByStatus failed:", e);
+    return [];
+  }
+}
+
+export async function markOrganizationProjectScanJobRunning(
+  jobId: string,
+): Promise<OrganizationProjectScanJob | null> {
+  const db = getClient();
+  if (!db || !jobId) return null;
+  try {
+    await ensureSchema(db);
+    const now = Date.now();
+    await db.execute({
+      sql: `UPDATE organization_project_scan_jobs
+            SET status = 'running', last_error = NULL, updated_at = ?
+            WHERE id = ?`,
+      args: [now, jobId],
+    });
+    return getOrganizationProjectScanJob(jobId);
+  } catch (e) {
+    console.error("markOrganizationProjectScanJobRunning failed:", e);
+    return null;
+  }
+}
+
+export async function updateOrganizationProjectScanJobAfterBatch(input: {
+  jobId: string;
+  nextPage: number | null;
+  scannedDelta: number;
+  failedDelta: number;
+  skippedDelta: number;
+  status: OrganizationProjectScanJobStatus;
+  lastError?: string | null;
+}): Promise<OrganizationProjectScanJob | null> {
+  const db = getClient();
+  if (!db) return null;
+  try {
+    await ensureSchema(db);
+    const now = Date.now();
+    await db.execute({
+      sql: `UPDATE organization_project_scan_jobs
+            SET status = ?,
+                next_page = ?,
+                scanned_count = scanned_count + ?,
+                failed_count = failed_count + ?,
+                skipped_count = skipped_count + ?,
+                last_error = ?,
+                updated_at = ?,
+                completed_at = CASE WHEN ? IN ('done', 'failed') THEN ? ELSE completed_at END
+            WHERE id = ?`,
+      args: [
+        input.status,
+        input.nextPage ?? 1,
+        Math.max(0, input.scannedDelta),
+        Math.max(0, input.failedDelta),
+        Math.max(0, input.skippedDelta),
+        input.lastError ?? null,
+        now,
+        input.status,
+        now,
+        input.jobId,
+      ],
+    });
+    return getOrganizationProjectScanJob(input.jobId);
+  } catch (e) {
+    console.error("updateOrganizationProjectScanJobAfterBatch failed:", e);
+    return null;
+  }
+}
+
+export async function recordOrganizationProjectScanJobItem(input: {
+  jobId: string;
+  registryFullName: string;
+  sourceFullName?: string | null;
+  status: OrganizationProjectScanJobItem["status"];
+  score?: number | null;
+  band?: ProjectBand | null;
+  safetyLevel?: string | null;
+  error?: string | null;
+}): Promise<void> {
+  const db = getClient();
+  if (!db) return;
+  try {
+    await ensureSchema(db);
+    const now = Date.now();
+    await db.execute({
+      sql: `INSERT INTO organization_project_scan_job_items
+              (id, job_id, registry_full_name, source_full_name, status,
+               score, band, safety_level, error, attempts, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+            ON CONFLICT(job_id, registry_full_name) DO UPDATE SET
+              source_full_name = excluded.source_full_name,
+              status = excluded.status,
+              score = excluded.score,
+              band = excluded.band,
+              safety_level = excluded.safety_level,
+              error = excluded.error,
+              attempts = organization_project_scan_job_items.attempts + 1,
+              updated_at = excluded.updated_at`,
+      args: [
+        randomUUID(),
+        input.jobId,
+        input.registryFullName.toLowerCase(),
+        input.sourceFullName?.toLowerCase() ?? null,
+        input.status,
+        input.score ?? null,
+        input.band ?? null,
+        input.safetyLevel ?? null,
+        input.error ?? null,
+        now,
+      ],
+    });
+  } catch (e) {
+    console.error("recordOrganizationProjectScanJobItem failed:", e);
   }
 }
 
