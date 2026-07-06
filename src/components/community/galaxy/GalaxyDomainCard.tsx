@@ -221,6 +221,12 @@ export function GalaxyDomainCard({
           })}
       </div>
 
+      <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center px-4">
+        <span className="max-w-[min(16rem,82%)] truncate rounded-full border border-white/10 bg-black/35 px-3 py-1 text-center text-xs font-semibold text-white/85 shadow-[0_0_18px_rgba(34,211,238,0.18)] backdrop-blur-md dark:border-white/12 dark:bg-black/30">
+          {name}
+        </span>
+      </div>
+
       <span className="sr-only">
         {name} · {t("memberCount", { count: domain.member_count })}
       </span>
