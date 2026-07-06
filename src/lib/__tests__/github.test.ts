@@ -451,6 +451,186 @@ ${"Useful project detail. ".repeat(50)}
     expect(result.contribution_days).toEqual([]);
   });
 
+  it("fills recent contribution days from public default-branch pushes when the contribution graph lags", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+        if (url === "https://api.github.com/users/HSSkyBoy") {
+          return jsonResponse({
+            login: "HSSkyBoy",
+            id: 122550437,
+            html_url: "https://github.com/HSSkyBoy",
+            avatar_url: "https://avatars.githubusercontent.com/u/122550437?v=4",
+            name: "HSSkyBoy",
+            bio: null,
+            company: null,
+            created_at: "2020-01-01T00:00:00Z",
+            followers: 1,
+            following: 0,
+            public_repos: 1,
+          });
+        }
+
+        if (url.includes("/users/HSSkyBoy/repos")) {
+          return jsonResponse([]);
+        }
+
+        if (url === "https://api.github.com/users/HSSkyBoy/events/public?per_page=100") {
+          return jsonResponse([
+            {
+              type: "PushEvent",
+              created_at: "2026-07-06T06:01:59Z",
+              repo: { name: "HSSkyBoy/BBZQ" },
+              payload: {
+                ref: "refs/heads/master",
+                before: "578f81d55525236cdaca9a1d06ac52fa94db1f1f",
+                head: "7696da1a88f02aaad53d10d40201b1c8138ad49a",
+              },
+            },
+          ]);
+        }
+
+        if (url === "https://api.github.com/repos/HSSkyBoy/BBZQ") {
+          return jsonResponse({
+            name: "BBZQ",
+            full_name: "HSSkyBoy/BBZQ",
+            private: false,
+            fork: false,
+            default_branch: "master",
+            size: 100,
+            stargazers_count: 10,
+            forks_count: 1,
+            open_issues_count: 0,
+            language: "Kotlin",
+            description: null,
+            pushed_at: "2026-07-06T06:01:59Z",
+            owner: { login: "HSSkyBoy" },
+            topics: [],
+          });
+        }
+
+        if (
+          url ===
+          "https://api.github.com/repos/HSSkyBoy/BBZQ/compare/578f81d55525236cdaca9a1d06ac52fa94db1f1f...7696da1a88f02aaad53d10d40201b1c8138ad49a"
+        ) {
+          return jsonResponse({
+            commits: [
+              {
+                sha: "578f81d55525236cdaca9a1d06ac52fa94db1f1f",
+                author: { login: "HSSkyBoy" },
+                committer: { login: "HSSkyBoy" },
+                commit: {
+                  author: { date: "2026-07-06T05:44:20Z" },
+                  committer: { date: "2026-07-06T05:44:20Z" },
+                },
+              },
+              {
+                sha: "7696da1a88f02aaad53d10d40201b1c8138ad49a",
+                author: { login: "HSSkyBoy" },
+                committer: { login: "HSSkyBoy" },
+                commit: {
+                  author: { date: "2026-07-06T05:52:06Z" },
+                  committer: { date: "2026-07-06T06:01:18Z" },
+                },
+              },
+            ],
+          });
+        }
+
+        if (url === "https://api.github.com/graphql") {
+          const body = JSON.parse(String(init?.body ?? "{}")) as { query?: string };
+          const query = body.query ?? "";
+
+          if (query.includes("organizations(first: 20)")) {
+            return jsonResponse({ data: { user: { organizations: { nodes: [] } } } });
+          }
+
+          if (query.includes("contributions(first: 100)")) {
+            return jsonResponse({
+              data: {
+                user: {
+                  contributionsCollection: {
+                    commitContributionsByRepository: [],
+                  },
+                },
+              },
+            });
+          }
+
+          if (query.includes("contributionsCollection(from:")) {
+            return jsonResponse({
+              data: {
+                user: {
+                  y0: {
+                    commitContributionsByRepository: [],
+                  },
+                },
+              },
+            });
+          }
+
+          if (
+            query.includes("mergedPRs: pullRequests") &&
+            query.includes("pinnedItems(first: 6, types: REPOSITORY)")
+          ) {
+            return jsonResponse({
+              data: {
+                user: {
+                  pinnedItems: { nodes: [] },
+                  mergedPRs: { totalCount: 0 },
+                  allPRs: { totalCount: 0 },
+                  closedPRs: { totalCount: 0, nodes: [] },
+                  issues: { totalCount: 0 },
+                  contributionsCollection: {
+                    totalCommitContributions: 0,
+                    totalPullRequestContributions: 0,
+                    totalIssueContributions: 0,
+                    totalPullRequestReviewContributions: 0,
+                    restrictedContributionsCount: 0,
+                    contributionCalendar: { totalContributions: 0 },
+                  },
+                  contributionYears: { contributionYears: [2026] },
+                },
+              },
+            });
+          }
+
+          if (query.includes("pullRequests(first: $count")) {
+            return jsonResponse({
+              data: {
+                user: {
+                  pullRequests: {
+                    nodes: [],
+                    pageInfo: { hasNextPage: false, endCursor: null },
+                  },
+                },
+              },
+            });
+          }
+        }
+
+        return jsonResponse({}, 404);
+      }),
+    );
+
+    const result = await collect("HSSkyBoy");
+
+    expect(result.contribution_days).toEqual([
+      {
+        date: "2026-07-06",
+        contribution_count: 2,
+        repo: "HSSkyBoy/BBZQ",
+      },
+    ]);
+  });
+
   it("degrades gracefully when organization lookup lacks read:org scope", async () => {
     vi.stubGlobal(
       "fetch",

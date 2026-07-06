@@ -4,6 +4,7 @@ import { getAdminAccess } from "@/lib/admin";
 import { getAdminRoastEmailStats } from "@/lib/db";
 import { AdminGitHubTokenPanel } from "@/components/admin/AdminGitHubTokenPanel";
 import { AdminOrgProjectScanPanel } from "@/components/admin/AdminOrgProjectScanPanel";
+import { AdminProjectAiSummaryBackfillPanel } from "@/components/admin/AdminProjectAiSummaryBackfillPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -113,6 +114,7 @@ export default async function AdminPage() {
       </section>
 
       <AdminOrgProjectScanPanel />
+      <AdminProjectAiSummaryBackfillPanel />
       <AdminGitHubTokenPanel />
     </main>
   );

@@ -7,12 +7,12 @@ import { useEffect, useRef, useState } from "react";
  * the viewport, so the waterfall only spends canvas/RAF budget on cards the user
  * can (nearly) see. Mirrors the state machine in community-galaxy-waterfall-todo.md:
  *
- *   idle     — far offscreen; no canvas, lightweight placeholder only
+ *   idle     — never shown and far offscreen; no canvas, lightweight placeholder only
  *   preload  — within ~600px; load data/avatars, mount canvas at low cost
  *   forming  — intersecting; particles converge into the planet
  *   orbiting — brief; rings spin up (auto-advances to revealed)
  *   revealed — steady state while in view
- *   paused   — left the viewport; RAF paused, last frame kept
+ *   paused   — left the viewport; RAF paused, last revealed frame/avatars kept
  *
  * Two IntersectionObservers: a wide `rootMargin` one flips idle↔preload, a tight
  * one flips the in-view phases. The card owns the engine; this hook only tells it
@@ -33,8 +33,9 @@ export function useGalaxyCardVisibility<T extends HTMLElement>() {
   const ref = useRef<T | null>(null);
   const [phase, setPhase] = useState<GalaxyVisibilityPhase>("idle");
   const [revealCycle, setRevealCycle] = useState(0);
-  // Whether the card has ever formed — so re-entering the viewport goes straight
-  // back to `revealed` (via a quick re-form) rather than replaying from scratch.
+  // Whether the card has ever formed. Once true, leaving the viewport should
+  // keep the loaded card paused instead of dropping back to idle, so scrolling
+  // upward does not replay the particle/avatar loading sequence.
   const formedOnce = useRef(false);
 
   useEffect(() => {
@@ -64,6 +65,9 @@ export function useGalaxyCardVisibility<T extends HTMLElement>() {
         for (const entry of entries) {
           if (entry.isIntersecting) {
             setPhase((p) => (p === "idle" ? "preload" : p));
+          } else if (formedOnce.current) {
+            clearTimers();
+            setPhase("paused");
           } else {
             clearTimers();
             setPhase("idle");
@@ -78,6 +82,10 @@ export function useGalaxyCardVisibility<T extends HTMLElement>() {
       (entries) => {
         for (const entry of entries) {
           if (entry.isIntersecting) {
+            if (formedOnce.current) {
+              setPhase("revealed");
+              return;
+            }
             setRevealCycle((cycle) => cycle + 1);
             setPhase("forming");
             clearTimers();

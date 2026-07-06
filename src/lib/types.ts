@@ -184,6 +184,8 @@ export interface ContributionDay {
   /** Public commit contribution count on that date. PRs, issues and reviews are
    * intentionally excluded from recent growth. */
   contribution_count: number;
+  /** Representative repository for that day's commit contributions, owner/name. */
+  repo?: string | null;
 }
 
 /** Full scan payload — same shape the Python script prints. */

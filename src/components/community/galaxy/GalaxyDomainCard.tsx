@@ -50,6 +50,7 @@ export function GalaxyDomainCard({
   const engineRef = useRef<GalaxyParticleEngine | null>(null);
   const [nodePositions, setNodePositions] = useState<{ x: number; y: number }[]>([]);
   const [shownAvatarCycle, setShownAvatarCycle] = useState(-1);
+  const [avatarsRevealed, setAvatarsRevealed] = useState(false);
 
   const name = lang === "en" ? domain.name.en || domain.name.zh : domain.name.zh;
   const members = domain.members.slice(0, 6);
@@ -150,12 +151,16 @@ export function GalaxyDomainCard({
   useEffect(() => {
     if (phase !== "revealed" || !active) return;
     const cycle = revealCycle;
-    const id = window.setTimeout(() => setShownAvatarCycle(cycle), 180);
+    const id = window.setTimeout(() => {
+      setShownAvatarCycle(cycle);
+      setAvatarsRevealed(true);
+    }, 180);
     return () => window.clearTimeout(id);
   }, [phase, revealCycle, active]);
 
   const avatarsVisible =
-    active && phase === "revealed" && shownAvatarCycle === revealCycle;
+    avatarsRevealed ||
+    (active && phase === "revealed" && shownAvatarCycle === revealCycle);
 
   return (
     <div

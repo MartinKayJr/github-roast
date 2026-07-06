@@ -52,7 +52,17 @@ import type {
 import type { LeaderboardWindow } from "./leaderboardWindow";
 import { bandFor } from "./band";
 import { clampScore, logRatio, spamBotScore } from "./score";
-import type { ProjectBand, ProjectSafetyAssessment, ProjectScanResult } from "./project-scan";
+import {
+  assessProjectSafety,
+  type ProjectBand,
+  type ProjectSafetyAssessment,
+  type ProjectScanResult,
+} from "./project-scan";
+import {
+  deterministicProjectAiSummary,
+  parseStoredProjectAiSummary,
+  type ProjectAiSummary,
+} from "./project-ai-summary";
 
 const EMPTY_TAGS: Tags = { zh: [], en: [] };
 const HEAT_LOOKUP_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -296,6 +306,7 @@ function ensureSchema(db: Client): Promise<void> {
              contribution_count INTEGER NOT NULL,
              scanned_at         INTEGER NOT NULL,
              source             TEXT NOT NULL DEFAULT 'github_commit_contributions',
+             representative_repo TEXT,
              PRIMARY KEY(username, contribution_date)
            )`,
           `CREATE INDEX IF NOT EXISTS idx_github_contribution_days_date
@@ -396,6 +407,7 @@ function ensureSchema(db: Client): Promise<void> {
              band              TEXT NOT NULL,
              breakdown         TEXT NOT NULL,
              roast_line        TEXT NOT NULL,
+             ai_summary        TEXT,
              readme            TEXT,
              languages         TEXT,
              scanned_at        INTEGER NOT NULL
@@ -441,6 +453,21 @@ function ensureSchema(db: Client): Promise<void> {
            )`,
           `CREATE INDEX IF NOT EXISTS idx_project_scan_jobs_status
              ON project_scan_jobs(status, created_at)`,
+          `CREATE TABLE IF NOT EXISTS project_ai_summary_backfill_jobs (
+             id              TEXT PRIMARY KEY,
+             requested_by    TEXT,
+             status          TEXT NOT NULL DEFAULT 'pending'
+                             CHECK(status IN ('pending', 'running', 'done', 'failed')),
+             batch_size      INTEGER NOT NULL DEFAULT 10,
+             processed_count INTEGER NOT NULL DEFAULT 0,
+             failed_count    INTEGER NOT NULL DEFAULT 0,
+             last_error      TEXT,
+             created_at      INTEGER NOT NULL,
+             updated_at      INTEGER NOT NULL,
+             completed_at    INTEGER
+           )`,
+          `CREATE INDEX IF NOT EXISTS idx_project_ai_summary_backfill_jobs_status_updated
+             ON project_ai_summary_backfill_jobs(status, updated_at DESC)`,
           `CREATE TABLE IF NOT EXISTS organization_project_scan_runs (
              id              TEXT PRIMARY KEY,
              org_login       TEXT NOT NULL,
@@ -474,6 +501,7 @@ function ensureSchema(db: Client): Promise<void> {
              safety_level    TEXT NOT NULL,
              safety_notes    TEXT,
              roast_line      TEXT,
+             ai_summary      TEXT,
              contributors    TEXT,
              scanned_at      INTEGER NOT NULL,
              PRIMARY KEY(org_login, full_name)
@@ -747,12 +775,25 @@ function ensureSchema(db: Client): Promise<void> {
         "registry_full_name TEXT",
         "registry_html_url TEXT",
         "source_url TEXT",
+        "ai_summary TEXT",
       ]) {
         try {
           await db.execute(`ALTER TABLE organization_project_catalog ADD COLUMN ${col}`);
         } catch {
           // column already exists — ignore
         }
+      }
+      try {
+        await db.execute(`ALTER TABLE project_scores ADD COLUMN ai_summary TEXT`);
+      } catch {
+        // column already exists — ignore
+      }
+      try {
+        await db.execute(
+          `ALTER TABLE github_contribution_days ADD COLUMN representative_repo TEXT`,
+        );
+      } catch {
+        // column already exists — ignore
       }
     })().catch((e) => {
       schemaReady = null; // allow retry on next call
@@ -1210,17 +1251,19 @@ export async function recordProfileSnapshot(
         for (const day of contributionDays) {
           await db.execute({
             sql: `INSERT INTO github_contribution_days
-                    (username, contribution_date, contribution_count, scanned_at, source)
-                  VALUES (?, ?, ?, ?, 'github_commit_contributions')
+                    (username, contribution_date, contribution_count, scanned_at, source, representative_repo)
+                  VALUES (?, ?, ?, ?, 'github_commit_contributions', ?)
                   ON CONFLICT(username, contribution_date) DO UPDATE SET
                     contribution_count = excluded.contribution_count,
                     scanned_at = MAX(github_contribution_days.scanned_at, excluded.scanned_at),
-                    source = excluded.source`,
+                    source = excluded.source,
+                    representative_repo = COALESCE(excluded.representative_repo, github_contribution_days.representative_repo)`,
             args: [
               username,
               day.date,
               Math.max(0, Math.floor(day.contribution_count)),
               scannedAt,
+              typeof day.repo === "string" && day.repo.trim() ? day.repo.trim() : null,
             ],
           });
         }
@@ -2221,7 +2264,7 @@ export async function getGrowthTimeline(
     const usernames = ranked.map((p) => p.username);
     const placeholders = usernames.map(() => "?").join(",");
     const daysRes = await db.execute({
-      sql: `SELECT username, contribution_date, contribution_count
+      sql: `SELECT username, contribution_date, contribution_count, representative_repo
             FROM github_contribution_days
             WHERE username IN (${placeholders})
               AND contribution_date >= ?
@@ -2232,7 +2275,7 @@ export async function getGrowthTimeline(
 
     const daysByUser = new Map<
       string,
-      { t: number; count: number; date: string }[]
+      { t: number; count: number; date: string; repo: string | null }[]
     >();
     for (const row of daysRes.rows) {
       const u = String(row.username);
@@ -2244,6 +2287,10 @@ export async function getGrowthTimeline(
         t,
         count: Math.max(0, Math.floor(Number(row.contribution_count))),
         date,
+        repo:
+          typeof row.representative_repo === "string" && row.representative_repo
+            ? row.representative_repo
+            : null,
       });
       daysByUser.set(u, arr);
     }
@@ -2255,6 +2302,7 @@ export async function getGrowthTimeline(
       if (!latestDay) continue;
       timeline.push({
         ...p,
+        primary_repo: latestDay.repo ?? p.primary_repo,
         snapshot_at: latestDay.t,
         contribution_count: p.contribution_delta,
         steps: days.map((day) => ({
@@ -2487,6 +2535,7 @@ export interface ProjectScoreDetail {
   band: ProjectBand;
   breakdown: ProjectScanResult["breakdown"];
   roast_line: ProjectScanResult["roast_line"];
+  ai_summary: ProjectAiSummary | null;
   readme: ProjectScanResult["readme"];
   languages: { name: string; size: number }[];
   contributors: ProjectContributorEntry[];
@@ -2513,6 +2562,7 @@ export interface OrganizationProjectCatalogItem {
   safety_level: string;
   safety_notes: ProjectSafetyAssessment["notes"];
   roast_line: ProjectScanResult["roast_line"];
+  ai_summary: ProjectAiSummary | null;
   contributors: ProjectScanResult["contributors"];
   scanned_at: number;
 }
@@ -2523,6 +2573,25 @@ export type OrganizationProjectScanJobStatus =
   | "paused"
   | "done"
   | "failed";
+
+export type ProjectAiSummaryBackfillJobStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "failed";
+
+export interface ProjectAiSummaryBackfillJob {
+  id: string;
+  requested_by: string | null;
+  status: ProjectAiSummaryBackfillJobStatus;
+  batch_size: number;
+  processed_count: number;
+  failed_count: number;
+  last_error: string | null;
+  created_at: number;
+  updated_at: number;
+  completed_at: number | null;
+}
 
 export interface OrganizationProjectScanJobItem {
   id: string;
@@ -2576,6 +2645,159 @@ function projectDisplayName(fullName: string): { zh: string; en: string } {
   return {
     zh: `${repo} 项目圈`,
     en: `${repo} project circle`,
+  };
+}
+
+interface ProjectCircleSearchProfile {
+  tag: string;
+  project: true;
+  summary: { zh: string; en: string };
+  search_text: string;
+  categories: string[];
+  goals: string[];
+  language: string | null;
+  topics: string[];
+  safety: string | null;
+  ai_summary: ProjectAiSummary | null;
+  band: ProjectBand;
+  score: number;
+  stars: number;
+  forks: number;
+  contributors: number;
+}
+
+function cleanSearchPart(value: string | null | undefined): string {
+  return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function uniqueCompactStrings(values: (string | null | undefined)[], limit = 12): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of values) {
+    const value = cleanSearchPart(raw);
+    if (!value) continue;
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(value.slice(0, 80));
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function inferProjectGoals(project: ProjectScanResult): string[] {
+  const haystack = [
+    project.full_name,
+    project.description,
+    project.language,
+    ...project.topics,
+    project.readme?.prompt_summary,
+    project.roast_line.zh,
+    project.roast_line.en,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const goals: string[] = [];
+  if (/\bxposed\b|lsposed|zygisk|magisk|hook/.test(haystack)) {
+    goals.push("Xposed / Android hook module");
+  }
+  if (/android|kotlin|java|gradle|apk/.test(haystack)) goals.push("Android development");
+  if (/ai|llm|agent|rag|prompt|model/.test(haystack)) goals.push("AI application");
+  if (/security|auth|crypto|permission|privacy|sandbox/.test(haystack)) goals.push("Security and privacy");
+  if (/cli|terminal|command line|developer tool|sdk/.test(haystack)) goals.push("Developer tooling");
+  if (/ui|frontend|react|vue|next|web/.test(haystack)) goals.push("Frontend and web");
+  if (/server|backend|api|database|worker/.test(haystack)) goals.push("Backend infrastructure");
+  return uniqueCompactStrings(goals, 8);
+}
+
+function buildProjectCircleSearchProfile(
+  project: ProjectScanResult,
+  aiSummary?: ProjectAiSummary | null,
+): ProjectCircleSearchProfile {
+  const summarySource = aiSummary ?? deterministicProjectAiSummary(project);
+  const categories = uniqueCompactStrings([
+    project.language,
+    ...project.topics,
+    ...summarySource.category_hints,
+    project.license ? `${project.license} license` : null,
+    `${project.band} quality band`,
+    project.score >= 70 ? "high quality" : project.score >= 48 ? "mid quality" : "early stage",
+  ]);
+  const goals = uniqueCompactStrings([
+    ...inferProjectGoals(project),
+    summarySource.zh.target,
+    summarySource.en.target,
+    summarySource.zh.use_case,
+    summarySource.en.use_case,
+  ], 10);
+  const zhSummary = cleanSearchPart(
+    [
+      summarySource.zh.summary,
+      summarySource.zh.target,
+      project.description,
+      project.readme?.prompt_summary,
+      project.roast_line.zh,
+    ]
+      .filter(Boolean)
+      .join("。"),
+  ).slice(0, 360);
+  const enSummary = cleanSearchPart(
+    [
+      summarySource.en.summary,
+      summarySource.en.target,
+      project.description,
+      project.readme?.prompt_summary,
+      project.roast_line.en,
+    ]
+      .filter(Boolean)
+      .join(". "),
+  ).slice(0, 360);
+  const searchText = uniqueCompactStrings(
+    [
+      project.full_name,
+      project.description,
+      project.homepage,
+      project.language,
+      project.license,
+      ...project.topics,
+      ...project.languages.map((l) => l.name),
+      ...categories,
+      ...goals,
+      ...summarySource.keywords,
+      summarySource.zh.summary,
+      summarySource.zh.target,
+      summarySource.zh.use_case,
+      summarySource.en.summary,
+      summarySource.en.target,
+      summarySource.en.use_case,
+      project.readme?.prompt_summary,
+      project.roast_line.zh,
+      project.roast_line.en,
+      project.resolved_from_repository?.full_name,
+    ],
+    36,
+  ).join(" · ");
+
+  return {
+    tag: project.full_name,
+    project: true,
+    summary: {
+      zh: zhSummary || `${project.full_name} 项目圈`,
+      en: enSummary || `${project.full_name} project circle`,
+    },
+    search_text: searchText,
+    categories,
+    goals,
+    language: project.language,
+    topics: project.topics.slice(0, 12),
+    safety: null,
+    ai_summary: summarySource,
+    band: project.band,
+    score: Math.round(project.score * 10) / 10,
+    stars: project.stars,
+    forks: project.forks,
+    contributors: project.contributors.length,
   };
 }
 
@@ -2688,7 +2910,10 @@ export async function getScoreBrief(username: string): Promise<ScoreBrief | null
   }
 }
 
-export async function recordProjectScan(project: ProjectScanResult): Promise<void> {
+export async function recordProjectScan(
+  project: ProjectScanResult,
+  options: { aiSummary?: ProjectAiSummary | null } = {},
+): Promise<void> {
   const db = getClient();
   if (!db) return;
   try {
@@ -2699,7 +2924,9 @@ export async function recordProjectScan(project: ProjectScanResult): Promise<voi
     const now = project.scanned_at || Date.now();
     const domainSlug = projectDomainSlug(project.owner, project.repo);
     const domainName = projectDisplayName(project.full_name);
-    const description = JSON.stringify({ tag: project.full_name, project: true });
+    const aiSummary = options.aiSummary ?? deterministicProjectAiSummary(project);
+    const aiSummaryJson = JSON.stringify(aiSummary);
+    const description = JSON.stringify(buildProjectCircleSearchProfile(project, aiSummary));
     const contributorLogins = project.contributors.map((c) => c.login.toLowerCase());
 
     await db.batch(
@@ -2709,9 +2936,9 @@ export async function recordProjectScan(project: ProjectScanResult): Promise<voi
                   (full_name, owner, repo, html_url, owner_avatar_url, description,
                    homepage, language, topics, license, stars, forks, watchers,
                    open_issues, size, default_branch, created_at_iso, pushed_at_iso,
-                   latest_release_at, score, band, breakdown, roast_line, readme,
+                   latest_release_at, score, band, breakdown, roast_line, ai_summary, readme,
                    languages, scanned_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(full_name) DO UPDATE SET
                   owner = excluded.owner,
                   repo = excluded.repo,
@@ -2735,6 +2962,7 @@ export async function recordProjectScan(project: ProjectScanResult): Promise<voi
                   band = excluded.band,
                   breakdown = excluded.breakdown,
                   roast_line = excluded.roast_line,
+                  ai_summary = excluded.ai_summary,
                   readme = excluded.readme,
                   languages = excluded.languages,
                   scanned_at = excluded.scanned_at`,
@@ -2762,6 +2990,7 @@ export async function recordProjectScan(project: ProjectScanResult): Promise<voi
             project.band,
             JSON.stringify(project.breakdown),
             JSON.stringify(project.roast_line),
+            aiSummaryJson,
             JSON.stringify(project.readme),
             JSON.stringify(project.languages),
             now,
@@ -2856,6 +3085,368 @@ export async function recordProjectScan(project: ProjectScanResult): Promise<voi
     );
   } catch (e) {
     console.error("recordProjectScan failed:", e);
+  }
+}
+
+function mapProjectAiSummaryBackfillJob(
+  row: Record<string, unknown>,
+): ProjectAiSummaryBackfillJob {
+  return {
+    id: String(row.id),
+    requested_by: (row.requested_by as string | null) ?? null,
+    status: String(row.status) as ProjectAiSummaryBackfillJobStatus,
+    batch_size: Number(row.batch_size) || 10,
+    processed_count: Number(row.processed_count) || 0,
+    failed_count: Number(row.failed_count) || 0,
+    last_error: (row.last_error as string | null) ?? null,
+    created_at: Number(row.created_at) || 0,
+    updated_at: Number(row.updated_at) || 0,
+    completed_at: row.completed_at == null ? null : Number(row.completed_at),
+  };
+}
+
+export async function createProjectAiSummaryBackfillJob(input: {
+  requestedBy?: string | null;
+  batchSize?: number;
+} = {}): Promise<ProjectAiSummaryBackfillJob | null> {
+  const db = getClient();
+  if (!db) return null;
+  try {
+    await ensureSchema(db);
+    const now = Date.now();
+    const id = randomUUID();
+    await db.execute({
+      sql: `INSERT INTO project_ai_summary_backfill_jobs
+              (id, requested_by, status, batch_size, created_at, updated_at)
+            VALUES (?, ?, 'pending', ?, ?, ?)`,
+      args: [
+        id,
+        input.requestedBy?.toLowerCase() ?? null,
+        Math.max(1, Math.min(30, Math.floor(input.batchSize ?? 10))),
+        now,
+        now,
+      ],
+    });
+    return getProjectAiSummaryBackfillJob(id);
+  } catch (e) {
+    console.error("createProjectAiSummaryBackfillJob failed:", e);
+    return null;
+  }
+}
+
+export async function getProjectAiSummaryBackfillJob(
+  jobId: string,
+): Promise<ProjectAiSummaryBackfillJob | null> {
+  const db = getClient();
+  if (!db || !jobId) return null;
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT * FROM project_ai_summary_backfill_jobs WHERE id = ? LIMIT 1`,
+      args: [jobId],
+    });
+    const row = res.rows[0];
+    return row ? mapProjectAiSummaryBackfillJob(row as Record<string, unknown>) : null;
+  } catch (e) {
+    console.error("getProjectAiSummaryBackfillJob failed:", e);
+    return null;
+  }
+}
+
+export async function listProjectAiSummaryBackfillJobs(
+  limit = 10,
+): Promise<ProjectAiSummaryBackfillJob[]> {
+  const db = getClient();
+  if (!db) return [];
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT *
+            FROM project_ai_summary_backfill_jobs
+            ORDER BY updated_at DESC
+            LIMIT ?`,
+      args: [Math.max(1, Math.min(50, limit))],
+    });
+    return res.rows.map((row) =>
+      mapProjectAiSummaryBackfillJob(row as Record<string, unknown>),
+    );
+  } catch (e) {
+    console.error("listProjectAiSummaryBackfillJobs failed:", e);
+    return [];
+  }
+}
+
+export async function markProjectAiSummaryBackfillJobRunning(
+  jobId: string,
+): Promise<ProjectAiSummaryBackfillJob | null> {
+  const db = getClient();
+  if (!db || !jobId) return null;
+  try {
+    await ensureSchema(db);
+    const now = Date.now();
+    await db.execute({
+      sql: `UPDATE project_ai_summary_backfill_jobs
+            SET status = 'running', last_error = NULL, updated_at = ?
+            WHERE id = ?`,
+      args: [now, jobId],
+    });
+    return getProjectAiSummaryBackfillJob(jobId);
+  } catch (e) {
+    console.error("markProjectAiSummaryBackfillJobRunning failed:", e);
+    return null;
+  }
+}
+
+export async function updateProjectAiSummaryBackfillJobAfterBatch(input: {
+  jobId: string;
+  processedDelta: number;
+  failedDelta: number;
+  status: ProjectAiSummaryBackfillJobStatus;
+  lastError?: string | null;
+}): Promise<ProjectAiSummaryBackfillJob | null> {
+  const db = getClient();
+  if (!db) return null;
+  try {
+    await ensureSchema(db);
+    const now = Date.now();
+    await db.execute({
+      sql: `UPDATE project_ai_summary_backfill_jobs
+            SET status = ?,
+                processed_count = processed_count + ?,
+                failed_count = failed_count + ?,
+                last_error = ?,
+                updated_at = ?,
+                completed_at = CASE WHEN ? IN ('done', 'failed') THEN ? ELSE completed_at END
+            WHERE id = ?`,
+      args: [
+        input.status,
+        Math.max(0, input.processedDelta),
+        Math.max(0, input.failedDelta),
+        input.lastError ?? null,
+        now,
+        input.status,
+        now,
+        input.jobId,
+      ],
+    });
+    return getProjectAiSummaryBackfillJob(input.jobId);
+  } catch (e) {
+    console.error("updateProjectAiSummaryBackfillJobAfterBatch failed:", e);
+    return null;
+  }
+}
+
+function projectScanFromScoreRow(
+  row: Record<string, unknown>,
+  contributors: ProjectScanResult["contributors"],
+): ProjectScanResult {
+  const owner = String(row.owner);
+  const repo = String(row.repo);
+  return {
+    owner,
+    repo,
+    full_name: `${owner}/${repo}`,
+    html_url: String(row.html_url),
+    owner_avatar_url: (row.owner_avatar_url as string | null) ?? null,
+    description: (row.description as string | null) ?? null,
+    homepage: (row.homepage as string | null) ?? null,
+    language: (row.language as string | null) ?? null,
+    topics: parseProjectJson<string[]>(row.topics, []),
+    license: (row.license as string | null) ?? null,
+    stars: Number(row.stars) || 0,
+    forks: Number(row.forks) || 0,
+    watchers: Number(row.watchers) || 0,
+    open_issues: Number(row.open_issues) || 0,
+    size: Number(row.size) || 0,
+    default_branch: (row.default_branch as string | null) ?? "main",
+    created_at: (row.created_at_iso as string | null) ?? null,
+    pushed_at: (row.pushed_at_iso as string | null) ?? null,
+    latest_release_at: (row.latest_release_at as string | null) ?? null,
+    contributors,
+    languages: parseProjectJson<{ name: string; size: number }[]>(row.languages, []),
+    readme: parseProjectJson<ProjectScanResult["readme"]>(row.readme, null),
+    score: Number(row.score) || 0,
+    band: String(row.band) as ProjectBand,
+    breakdown: parseProjectJson<ProjectScanResult["breakdown"]>(row.breakdown, {
+      activity: 0,
+      quality: 0,
+      collaboration: 0,
+      impact: 0,
+      authenticity: 0,
+    }),
+    roast_line: parseProjectJson<ProjectScanResult["roast_line"]>(row.roast_line, {
+      zh: "",
+      en: "",
+    }),
+    resolved_from_repository: null,
+    scanned_at: Number(row.scanned_at) || Date.now(),
+  };
+}
+
+export async function listProjectsMissingAiSummary(
+  limit = 10,
+): Promise<{
+  project: ProjectScanResult;
+  safety: ProjectSafetyAssessment;
+  existingAiSummary: ProjectAiSummary | null;
+}[]> {
+  const db = getClient();
+  if (!db) return [];
+  try {
+    await ensureSchema(db);
+    const capped = Math.max(1, Math.min(30, limit));
+    const res = await db.execute({
+      sql: `SELECT ps.*,
+                   opc.safety_level AS org_safety_level,
+                   opc.safety_notes AS org_safety_notes
+            FROM project_scores AS ps
+            LEFT JOIN (
+              SELECT *
+              FROM (
+                SELECT *,
+                       ROW_NUMBER() OVER (
+                         PARTITION BY full_name
+                         ORDER BY scanned_at DESC, org_login ASC
+                       ) AS rn
+                FROM organization_project_catalog
+              )
+              WHERE rn = 1
+            ) AS opc ON opc.full_name = ps.full_name
+            WHERE ps.ai_summary IS NULL
+               OR ps.ai_summary = ''
+               OR EXISTS (
+                 SELECT 1
+                 FROM organization_project_catalog AS missing_org
+                 WHERE missing_org.full_name = ps.full_name
+                   AND (missing_org.ai_summary IS NULL OR missing_org.ai_summary = '')
+               )
+            ORDER BY ps.scanned_at DESC, ps.score DESC
+            LIMIT ?`,
+      args: [capped],
+    });
+    if (res.rows.length === 0) return [];
+    const fullNames = res.rows.map((row) => String(row.full_name));
+    const placeholders = fullNames.map(() => "?").join(", ");
+    const contributorRes = await db.execute({
+      sql: `SELECT full_name, login, avatar_url, html_url, contributions, role
+            FROM project_contributors
+            WHERE full_name IN (${placeholders})
+            ORDER BY full_name ASC, contributions DESC`,
+      args: fullNames,
+    });
+    const contributorsByProject = new Map<string, ProjectScanResult["contributors"]>();
+    for (const row of contributorRes.rows) {
+      const fullName = String(row.full_name);
+      const list = contributorsByProject.get(fullName) ?? [];
+      list.push({
+        login: String(row.login),
+        avatar_url: (row.avatar_url as string | null) ?? null,
+        html_url: (row.html_url as string | null) ?? null,
+        contributions: Number(row.contributions) || 0,
+        role: String(row.role) as ProjectScanResult["contributors"][number]["role"],
+      });
+      contributorsByProject.set(fullName, list);
+    }
+    return res.rows.map((row) => {
+      const project = projectScanFromScoreRow(
+        row as Record<string, unknown>,
+        contributorsByProject.get(String(row.full_name)) ?? [],
+      );
+      const safetyNotes =
+        row.org_safety_notes == null
+          ? null
+          : parseProjectJson<ProjectSafetyAssessment["notes"]>(row.org_safety_notes, {
+              zh: [],
+              en: [],
+            });
+      const safety =
+        row.org_safety_level && safetyNotes
+          ? {
+              level: String(row.org_safety_level) as ProjectSafetyAssessment["level"],
+              notes: safetyNotes,
+            }
+          : assessProjectSafety(project);
+      return {
+        project,
+        safety,
+        existingAiSummary: parseStoredProjectAiSummary(row.ai_summary),
+      };
+    });
+  } catch (e) {
+    console.error("listProjectsMissingAiSummary failed:", e);
+    return [];
+  }
+}
+
+export async function countProjectsMissingAiSummary(): Promise<number> {
+  const db = getClient();
+  if (!db) return 0;
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT COUNT(*) AS n
+            FROM project_scores
+            WHERE ai_summary IS NULL
+               OR ai_summary = ''
+               OR EXISTS (
+                 SELECT 1
+                 FROM organization_project_catalog AS missing_org
+                 WHERE missing_org.full_name = project_scores.full_name
+                   AND (missing_org.ai_summary IS NULL OR missing_org.ai_summary = '')
+               )`,
+      args: [],
+    });
+    return Number(res.rows[0]?.n) || 0;
+  } catch (e) {
+    console.error("countProjectsMissingAiSummary failed:", e);
+    return 0;
+  }
+}
+
+export async function updateStoredProjectAiSummary(input: {
+  project: ProjectScanResult;
+  aiSummary: ProjectAiSummary;
+  safety?: ProjectSafetyAssessment | null;
+}): Promise<void> {
+  const db = getClient();
+  if (!db) return;
+  try {
+    await ensureSchema(db);
+    const fullName = input.project.full_name.toLowerCase();
+    const now = Date.now();
+    const aiSummaryJson = JSON.stringify(input.aiSummary);
+    const description = JSON.stringify(
+      buildProjectCircleSearchProfile(input.project, input.aiSummary),
+    );
+    const domainSlug = projectDomainSlug(input.project.owner, input.project.repo);
+    await db.batch(
+      [
+        {
+          sql: `UPDATE project_scores
+                SET ai_summary = ?, scanned_at = scanned_at
+                WHERE full_name = ?`,
+          args: [aiSummaryJson, fullName],
+        },
+        {
+          sql: `UPDATE circle_domains
+                SET description_zh = ?,
+                    description_en = ?,
+                    updated_at = ?
+                WHERE slug = ?`,
+          args: [description, description, now, domainSlug],
+        },
+        {
+          sql: `UPDATE organization_project_catalog
+                SET ai_summary = ?
+                WHERE full_name = ?`,
+          args: [aiSummaryJson, fullName],
+        },
+      ],
+      "write",
+    );
+  } catch (e) {
+    console.error("updateStoredProjectAiSummary failed:", e);
+    throw e;
   }
 }
 
@@ -3162,7 +3753,11 @@ export async function recordOrganizationProjectCatalog(input: {
   pageStart: number;
   perPage: number;
   nextPage: number | null;
-  projects: { project: ProjectScanResult; safety: ProjectSafetyAssessment }[];
+  projects: {
+    project: ProjectScanResult;
+    safety: ProjectSafetyAssessment;
+    aiSummary?: ProjectAiSummary | null;
+  }[];
   failures: { repo: string; error: string }[];
 }): Promise<{ runId: string | null; written: number }> {
   const db = getClient();
@@ -3192,13 +3787,13 @@ export async function recordOrganizationProjectCatalog(input: {
             now,
           ],
         },
-        ...input.projects.map(({ project, safety }) => ({
+        ...input.projects.map(({ project, safety, aiSummary }) => ({
           sql: `INSERT INTO organization_project_catalog
                   (org_login, full_name, registry_full_name, registry_html_url,
                    source_url, owner, repo, html_url, description,
                    language, topics, stars, forks, score, band, safety_level,
-                   safety_notes, roast_line, contributors, scanned_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   safety_notes, roast_line, ai_summary, contributors, scanned_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(org_login, full_name) DO UPDATE SET
                   registry_full_name = excluded.registry_full_name,
                   registry_html_url = excluded.registry_html_url,
@@ -3216,6 +3811,7 @@ export async function recordOrganizationProjectCatalog(input: {
                   safety_level = excluded.safety_level,
                   safety_notes = excluded.safety_notes,
                   roast_line = excluded.roast_line,
+                  ai_summary = excluded.ai_summary,
                   contributors = excluded.contributors,
                   scanned_at = excluded.scanned_at`,
           args: [
@@ -3237,6 +3833,7 @@ export async function recordOrganizationProjectCatalog(input: {
             safety.level,
             JSON.stringify(safety.notes),
             JSON.stringify(project.roast_line),
+            JSON.stringify(aiSummary ?? deterministicProjectAiSummary(project, safety)),
             JSON.stringify(project.contributors),
             project.scanned_at || now,
           ] as (string | number | null)[],
@@ -3274,13 +3871,15 @@ export async function searchOrganizationProjectCatalog(
                 LOWER(COALESCE(description, '')) LIKE ? ESCAPE '\\' OR
                 LOWER(COALESCE(language, '')) LIKE ? ESCAPE '\\' OR
                 LOWER(COALESCE(topics, '')) LIKE ? ESCAPE '\\' OR
-                LOWER(COALESCE(roast_line, '')) LIKE ? ESCAPE '\\'
+                LOWER(COALESCE(roast_line, '')) LIKE ? ESCAPE '\\' OR
+                LOWER(COALESCE(ai_summary, '')) LIKE ? ESCAPE '\\'
               )
             ORDER BY score DESC, stars DESC, scanned_at DESC
             LIMIT ?`,
       args: [
         org,
         hasQuery ? 1 : 0,
+        like,
         like,
         like,
         like,
@@ -3314,6 +3913,7 @@ export async function searchOrganizationProjectCatalog(
         zh: "",
         en: "",
       }),
+      ai_summary: parseStoredProjectAiSummary(row.ai_summary),
       contributors: parseProjectJson<ProjectScanResult["contributors"]>(row.contributors, []),
       scanned_at: Number(row.scanned_at) || 0,
     }));
@@ -3643,6 +4243,7 @@ export async function getProjectScore(
         zh: "",
         en: "",
       }),
+      ai_summary: parseStoredProjectAiSummary(row.ai_summary),
       readme: parseProjectJson<ProjectScanResult["readme"]>(row.readme, null),
       languages: parseProjectJson<{ name: string; size: number }[]>(row.languages, []),
       contributors: contributorRes.rows.map((r) => ({
@@ -5619,14 +6220,50 @@ export async function rebuildCircleDomainsFromFacets(): Promise<{
   }
 }
 
-/** Parse the domain description blob, which today stores only a `{tag}` hint. */
+function parseDomainDescription(rawZh: unknown, rawEn?: unknown): { zh: string; en: string } | null {
+  const parseOne = (raw: unknown, lang: Lang): string | null => {
+    if (typeof raw !== "string" || !raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as {
+        summary?: { zh?: unknown; en?: unknown };
+      };
+      const summary = parsed?.summary?.[lang];
+      return typeof summary === "string" && summary.trim() ? summary.trim() : null;
+    } catch {
+      return null;
+    }
+  };
+  const zh = parseOne(rawZh, "zh");
+  const en = parseOne(rawEn ?? rawZh, "en") ?? zh;
+  if (!zh && !en) return null;
+  return {
+    zh: zh ?? en ?? "",
+    en: en ?? zh ?? "",
+  };
+}
+
+/** Parse the domain description blob for display/search tag hints. */
 function parseDomainTags(raw: unknown): string[] {
   if (typeof raw !== "string" || !raw) return [];
   try {
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object" && typeof parsed.tag === "string") {
-      return [parsed.tag];
-    }
+    const parsed = JSON.parse(raw) as {
+      tag?: unknown;
+      language?: unknown;
+      topics?: unknown;
+      categories?: unknown;
+      goals?: unknown;
+    };
+    if (!parsed || typeof parsed !== "object") return [];
+    return uniqueCompactStrings(
+      [
+        typeof parsed.tag === "string" ? parsed.tag : null,
+        typeof parsed.language === "string" ? parsed.language : null,
+        ...(Array.isArray(parsed.topics) ? parsed.topics : []),
+        ...(Array.isArray(parsed.categories) ? parsed.categories : []),
+        ...(Array.isArray(parsed.goals) ? parsed.goals : []),
+      ].map((v) => (typeof v === "string" ? v : null)),
+      6,
+    );
   } catch {
     // legacy/plain string — ignore
   }
@@ -5842,6 +6479,7 @@ export async function getCommunityDomains(options: {
                      cd.name_zh,
                      cd.name_en,
                      cd.description_zh,
+                     cd.description_en,
                      cd.source,
                      cd.member_count,
                      cd.heat_score,
@@ -5861,7 +6499,7 @@ export async function getCommunityDomains(options: {
               FROM circle_domains AS cd
               WHERE cd.status = 'active'
             )
-            SELECT slug, name_zh, name_en, description_zh, source,
+            SELECT slug, name_zh, name_en, description_zh, description_en, source,
                    member_count, heat_score
             FROM domain_rank
             ORDER BY
@@ -5963,7 +6601,7 @@ export async function getCommunityDomains(options: {
       return {
         slug,
         name: { zh: String(r.name_zh), en: String(r.name_en ?? r.name_zh) },
-        description: null,
+        description: parseDomainDescription(r.description_zh, r.description_en),
         source: String(r.source) as CircleDomain["source"],
         member_count: Number(r.member_count),
         heat_score: Number(r.heat_score),
@@ -5989,7 +6627,7 @@ export async function getCommunityDomain(
   try {
     await ensureSchema(db);
     const domainRes = await db.execute({
-      sql: `SELECT slug, name_zh, name_en, description_zh, source,
+      sql: `SELECT slug, name_zh, name_en, description_zh, description_en, source,
                    member_count, heat_score
             FROM circle_domains
             WHERE slug = ? AND status = 'active'`,
@@ -6046,7 +6684,7 @@ export async function getCommunityDomain(
     return {
       slug: String(row.slug),
       name: { zh: String(row.name_zh), en: String(row.name_en ?? row.name_zh) },
-      description: null,
+      description: parseDomainDescription(row.description_zh, row.description_en),
       source: String(row.source) as CircleDomain["source"],
       member_count: Number(row.member_count),
       heat_score: Number(row.heat_score),
@@ -6061,6 +6699,567 @@ export async function getCommunityDomain(
   } catch (e) {
     console.error("getCommunityDomain failed:", e);
     return null;
+  }
+}
+
+export interface ProjectCircleSearchCatalogItem {
+  slug: string;
+  name: { zh: string; en: string };
+  description: { zh: string; en: string } | null;
+  tags: string[];
+  search_text: string;
+  member_count: number;
+  heat_score: number;
+}
+
+function parseProjectCircleSearchText(raw: unknown): string {
+  if (typeof raw !== "string" || !raw) return "";
+  try {
+    const parsed = JSON.parse(raw) as {
+      tag?: unknown;
+      summary?: { zh?: unknown; en?: unknown };
+      search_text?: unknown;
+      categories?: unknown;
+      goals?: unknown;
+      topics?: unknown;
+      language?: unknown;
+      band?: unknown;
+      score?: unknown;
+    };
+    return uniqueCompactStrings(
+      [
+        typeof parsed.tag === "string" ? parsed.tag : null,
+        typeof parsed.search_text === "string" ? parsed.search_text : null,
+        typeof parsed.summary?.zh === "string" ? parsed.summary.zh : null,
+        typeof parsed.summary?.en === "string" ? parsed.summary.en : null,
+        typeof parsed.language === "string" ? parsed.language : null,
+        typeof parsed.band === "string" ? parsed.band : null,
+        typeof parsed.score === "number" ? `score ${parsed.score}` : null,
+        ...(Array.isArray(parsed.categories) ? parsed.categories : []),
+        ...(Array.isArray(parsed.goals) ? parsed.goals : []),
+        ...(Array.isArray(parsed.topics) ? parsed.topics : []),
+      ].map((v) => (typeof v === "string" ? v : null)),
+      48,
+    ).join(" · ");
+  } catch {
+    return raw;
+  }
+}
+
+function tokenizeProjectSearch(query: string): string[] {
+  return uniqueCompactStrings(
+    query
+      .toLowerCase()
+      .split(/[\s,，、;；|/]+/)
+      .map((v) => v.trim())
+      .filter((v) => v.length >= 2),
+    12,
+  ).map((v) => v.toLowerCase());
+}
+
+function projectCircleCatalogItem(row: Record<string, unknown>): ProjectCircleSearchCatalogItem {
+  const description = parseDomainDescription(row.description_zh, row.description_en);
+  const tags = parseDomainTags(row.description_zh);
+  const projectTopics = parseProjectJson<string[]>(row.project_topics, []);
+  const projectReadme = parseProjectJson<{ prompt_summary?: string } | null>(
+    row.project_readme,
+    null,
+  );
+  const projectRoast = parseProjectJson<{ zh?: string; en?: string } | null>(
+    row.project_roast_line,
+    null,
+  );
+  const aiSummary = parseStoredProjectAiSummary(row.project_ai_summary);
+  const searchText = uniqueCompactStrings(
+    [
+      String(row.slug ?? ""),
+      String(row.name_zh ?? ""),
+      String(row.name_en ?? ""),
+      parseProjectCircleSearchText(row.description_zh),
+      row.project_description as string | null,
+      row.project_language as string | null,
+      ...(Array.isArray(projectTopics) ? projectTopics : []),
+      projectReadme?.prompt_summary,
+      projectRoast?.zh,
+      projectRoast?.en,
+      aiSummary?.zh.summary,
+      aiSummary?.zh.target,
+      aiSummary?.zh.use_case,
+      aiSummary?.zh.safety,
+      aiSummary?.en.summary,
+      aiSummary?.en.target,
+      aiSummary?.en.use_case,
+      ...(aiSummary?.keywords ?? []),
+      ...(aiSummary?.category_hints ?? []),
+      ...tags,
+    ],
+    72,
+  ).join(" · ");
+
+  return {
+    slug: String(row.slug),
+    name: { zh: String(row.name_zh), en: String(row.name_en ?? row.name_zh) },
+    description,
+    tags: uniqueCompactStrings([
+      ...tags,
+      row.project_language as string | null,
+      ...projectTopics,
+      ...(aiSummary?.category_hints ?? []),
+    ], 8),
+    search_text: searchText,
+    member_count: Number(row.member_count) || 0,
+    heat_score: Number(row.heat_score) || 0,
+  };
+}
+
+function scoreProjectCircleSearch(
+  item: ProjectCircleSearchCatalogItem,
+  query: string,
+  requireAllTerms: boolean,
+): number {
+  const compactQuery = query.trim().toLowerCase();
+  const terms = tokenizeProjectSearch(compactQuery);
+  const haystack = [
+    item.slug,
+    item.name.zh,
+    item.name.en,
+    item.description?.zh,
+    item.description?.en,
+    item.search_text,
+    ...item.tags,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (!compactQuery) return item.heat_score;
+  const termHits = terms.filter((term) => haystack.includes(term));
+  if (terms.length > 0) {
+    if (requireAllTerms && termHits.length < terms.length) return Number.NEGATIVE_INFINITY;
+    if (!requireAllTerms && termHits.length === 0) return Number.NEGATIVE_INFINITY;
+  } else if (!haystack.includes(compactQuery)) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  let score = item.heat_score / 100;
+  if (haystack.includes(compactQuery)) score += 80;
+  if (item.slug.toLowerCase().includes(compactQuery)) score += 60;
+  if (item.name.zh.toLowerCase().includes(compactQuery) || item.name.en.toLowerCase().includes(compactQuery)) {
+    score += 40;
+  }
+  score += termHits.length * 12;
+  score += Math.min(20, item.member_count * 2);
+  return score;
+}
+
+async function getProjectCircleRows(db: Client, limit: number): Promise<Record<string, unknown>[]> {
+  const res = await db.execute({
+    sql: `SELECT cd.slug,
+                 cd.name_zh,
+                 cd.name_en,
+                 cd.description_zh,
+                 cd.description_en,
+                 cd.source,
+                 cd.member_count,
+                 cd.heat_score,
+                 ps.description AS project_description,
+                 ps.language AS project_language,
+                 ps.topics AS project_topics,
+                 ps.readme AS project_readme,
+                 ps.roast_line AS project_roast_line,
+                 ps.ai_summary AS project_ai_summary
+          FROM circle_domains AS cd
+          LEFT JOIN project_scores AS ps
+            ON ps.full_name = lower(json_extract(cd.description_zh, '$.tag'))
+          WHERE cd.status = 'active'
+            AND json_extract(cd.description_zh, '$.project') = 1
+          ORDER BY cd.heat_score DESC, cd.member_count DESC, cd.updated_at DESC
+          LIMIT ?`,
+    args: [limit],
+  });
+  return res.rows as Record<string, unknown>[];
+}
+
+async function hydrateCircleDomainRows(
+  db: Client,
+  rows: Record<string, unknown>[],
+  memberLimit = DOMAIN_CARD_MEMBERS,
+): Promise<CircleDomain[]> {
+  if (rows.length === 0) return [];
+  const slugs = rows.map((r) => String(r.slug));
+  const placeholders = slugs.map(() => "?").join(", ");
+  const memberRes = await db.execute({
+    sql: `WITH candidates AS (
+            SELECT dm.domain_slug,
+                   dm.login,
+                   COALESCE(s.avatar_url, pc.avatar_url) AS avatar_url,
+                   COALESCE(s.final_score, 0) AS final_score,
+                   COALESCE(s.tier, 'NPC') AS tier,
+                   dm.weight AS weight
+            FROM circle_domain_members AS dm
+            JOIN circle_domains AS cd ON cd.slug = dm.domain_slug
+            LEFT JOIN scores AS s ON s.username = dm.login AND s.hidden = 0
+            LEFT JOIN project_contributors AS pc
+              ON pc.login = dm.login
+             AND pc.full_name = lower(json_extract(cd.description_zh, '$.tag'))
+            WHERE dm.domain_slug IN (${placeholders})
+
+            UNION ALL
+
+            SELECT cd.slug AS domain_slug,
+                   pc.login,
+                   COALESCE(s.avatar_url, pc.avatar_url) AS avatar_url,
+                   COALESCE(s.final_score, 0) AS final_score,
+                   COALESCE(s.tier, 'NPC') AS tier,
+                   pc.contributions AS weight
+            FROM circle_domains AS cd
+            JOIN project_contributors AS pc
+              ON pc.full_name = lower(json_extract(cd.description_zh, '$.tag'))
+            LEFT JOIN scores AS s ON s.username = pc.login AND s.hidden = 0
+            WHERE cd.slug IN (${placeholders})
+              AND json_extract(cd.description_zh, '$.project') = 1
+              AND NOT EXISTS (
+                SELECT 1
+                FROM circle_domain_members AS dm
+                WHERE dm.domain_slug = cd.slug AND dm.login = pc.login
+              )
+          )
+          SELECT domain_slug, login, avatar_url, final_score, tier
+          FROM (
+            SELECT domain_slug,
+                   login,
+                   avatar_url,
+                   final_score,
+                   tier,
+                   ROW_NUMBER() OVER (
+                     PARTITION BY domain_slug
+                     ORDER BY
+                       CASE WHEN avatar_url IS NULL THEN 1 ELSE 0 END ASC,
+                       weight DESC,
+                       final_score DESC,
+                       login ASC
+                   ) AS rn
+            FROM candidates
+          )
+          WHERE rn <= ?`,
+    args: [...slugs, ...slugs, memberLimit],
+  });
+  const membersBySlug = new Map<string, CircleDomainMember[]>();
+  for (const r of memberRes.rows) {
+    const slug = String(r.domain_slug);
+    const list = membersBySlug.get(slug) ?? [];
+    list.push({
+      login: String(r.login),
+      avatar_url: (r.avatar_url as string | null) ?? null,
+      final_score: Number(r.final_score),
+      tier: String(r.tier) as Tier,
+    });
+    membersBySlug.set(slug, list);
+  }
+
+  return rows.map((r) => {
+    const slug = String(r.slug);
+    return {
+      slug,
+      name: { zh: String(r.name_zh), en: String(r.name_en ?? r.name_zh) },
+      description: parseDomainDescription(r.description_zh, r.description_en),
+      source: String(r.source) as CircleDomain["source"],
+      member_count: Number(r.member_count) || 0,
+      heat_score: Number(r.heat_score) || 0,
+      tags: parseDomainTags(r.description_zh),
+      members: membersBySlug.get(slug) ?? [],
+    };
+  });
+}
+
+export async function getProjectCircleSearchCatalog(
+  query: string,
+  options: { limit?: number } = {},
+): Promise<ProjectCircleSearchCatalogItem[]> {
+  const db = getClient();
+  if (!db) return [];
+  try {
+    await ensureSchema(db);
+    const limit = Math.max(12, Math.min(240, options.limit ?? 160));
+    const rows = await getProjectCircleRows(db, Math.max(limit * 3, 120));
+    const items = rows.map(projectCircleCatalogItem);
+    const allTermMatches = items
+      .map((item) => ({
+        item,
+        score: scoreProjectCircleSearch(item, query, true),
+      }))
+      .filter((entry) => Number.isFinite(entry.score));
+    const matches =
+      allTermMatches.length > 0
+        ? allTermMatches
+        : items
+            .map((item) => ({
+              item,
+              score: scoreProjectCircleSearch(item, query, false),
+            }))
+            .filter((entry) => Number.isFinite(entry.score));
+    const ranked = (matches.length > 0 ? matches : items.map((item) => ({ item, score: item.heat_score })))
+      .sort(
+        (a, b) =>
+          b.score - a.score ||
+          b.item.heat_score - a.item.heat_score ||
+          a.item.slug.localeCompare(b.item.slug),
+      )
+      .slice(0, limit)
+      .map((entry) => entry.item);
+    return ranked;
+  } catch (e) {
+    console.error("getProjectCircleSearchCatalog failed:", e);
+    return [];
+  }
+}
+
+export async function getProjectCircleDomainsBySlugs(
+  slugs: string[],
+  options: { limit?: number } = {},
+): Promise<CircleDomain[]> {
+  const db = getClient();
+  const wanted = uniqueCompactStrings(slugs, Math.max(1, Math.min(24, options.limit ?? 12)));
+  if (!db || wanted.length === 0) return [];
+  try {
+    await ensureSchema(db);
+    const placeholders = wanted.map(() => "?").join(", ");
+    const res = await db.execute({
+      sql: `SELECT slug, name_zh, name_en, description_zh, description_en,
+                   source, member_count, heat_score
+            FROM circle_domains
+            WHERE status = 'active'
+              AND json_extract(description_zh, '$.project') = 1
+              AND slug IN (${placeholders})`,
+      args: wanted,
+    });
+    const bySlug = new Map((res.rows as Record<string, unknown>[]).map((r) => [String(r.slug), r]));
+    const rows = wanted.map((slug) => bySlug.get(slug)).filter((r): r is Record<string, unknown> => Boolean(r));
+    return hydrateCircleDomainRows(db, rows);
+  } catch (e) {
+    console.error("getProjectCircleDomainsBySlugs failed:", e);
+    return [];
+  }
+}
+
+export async function searchProjectCircleDomains(
+  query: string,
+  options: { limit?: number } = {},
+): Promise<CircleDomain[]> {
+  const db = getClient();
+  if (!db) return [];
+  try {
+    await ensureSchema(db);
+    const limit = Math.max(1, Math.min(24, options.limit ?? 12));
+    const catalog = await getProjectCircleSearchCatalog(query, { limit });
+    if (catalog.length === 0) return [];
+    return getProjectCircleDomainsBySlugs(
+      catalog.map((item) => item.slug),
+      { limit },
+    );
+  } catch (e) {
+    console.error("searchProjectCircleDomains failed:", e);
+    return [];
+  }
+}
+
+export type ProjectCircleListPreset = "all" | "xposed" | "ai" | "security" | "devtools";
+
+export interface ProjectCircleListItem {
+  full_name: string;
+  owner: string;
+  repo: string;
+  html_url: string;
+  description: string | null;
+  language: string | null;
+  topics: string[];
+  stars: number;
+  forks: number;
+  score: number;
+  band: ProjectBand;
+  safety_level: string | null;
+  safety_notes: ProjectSafetyAssessment["notes"] | null;
+  roast_line: ProjectScanResult["roast_line"];
+  ai_summary: ProjectAiSummary | null;
+  contributors: ProjectScanResult["contributors"];
+  scanned_at: number;
+  domain_slug: string;
+}
+
+function projectListPresetQuery(preset: ProjectCircleListPreset): string {
+  if (preset === "xposed") return "xposed lsposed zygisk magisk android hook module Xposed-Modules-Repo";
+  if (preset === "ai") return "ai llm agent rag prompt model";
+  if (preset === "security") return "security privacy permission auth crypto sandbox";
+  if (preset === "devtools") return "cli sdk developer tool debug terminal";
+  return "";
+}
+
+function projectListSearchTerms(query: string): string[] {
+  return uniqueCompactStrings(
+    query
+      .toLowerCase()
+      .split(/[\s,，、;；|/]+/)
+      .filter((v) => v.trim().length >= 2),
+    16,
+  ).map((v) => v.toLowerCase());
+}
+
+function sqlLikePattern(value: string): string {
+  return `%${value.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
+}
+
+function projectListHaystack(item: ProjectCircleListItem): string {
+  return [
+    item.full_name,
+    item.description,
+    item.language,
+    ...item.topics,
+    item.roast_line.zh,
+    item.roast_line.en,
+    item.ai_summary?.zh.summary,
+    item.ai_summary?.zh.target,
+    item.ai_summary?.zh.use_case,
+    item.ai_summary?.zh.safety,
+    item.ai_summary?.en.summary,
+    item.ai_summary?.en.target,
+    item.ai_summary?.en.use_case,
+    ...(item.ai_summary?.keywords ?? []),
+    ...(item.ai_summary?.category_hints ?? []),
+    item.safety_level,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function scoreProjectListItem(
+  item: ProjectCircleListItem,
+  query: string,
+  preset: ProjectCircleListPreset,
+): number {
+  const effectiveQuery = [projectListPresetQuery(preset), query].filter(Boolean).join(" ");
+  const terms = projectListSearchTerms(effectiveQuery);
+  const haystack = projectListHaystack(item);
+  const hits = terms.filter((term) => haystack.includes(term));
+  if (terms.length > 0 && hits.length === 0) return Number.NEGATIVE_INFINITY;
+  let score = item.score * 4 + Math.min(160, item.stars) + Math.min(80, item.forks * 2);
+  score += hits.length * 40;
+  if (preset === "xposed" && item.full_name.toLowerCase().startsWith("xposed-modules-repo/")) {
+    score += 120;
+  }
+  if (item.ai_summary?.source === "llm") score += 25;
+  if (item.safety_level === "A") score += 16;
+  if (item.safety_level === "B") score += 8;
+  return score;
+}
+
+export async function listProjectCircleItems(options: {
+  query?: string | null;
+  preset?: ProjectCircleListPreset | null;
+  limit?: number;
+} = {}): Promise<ProjectCircleListItem[]> {
+  const db = getClient();
+  if (!db) return [];
+  try {
+    await ensureSchema(db);
+    const limit = Math.max(1, Math.min(120, options.limit ?? 48));
+    const preset = options.preset ?? "all";
+    const query = options.query?.trim() ?? "";
+    const terms = projectListSearchTerms(
+      [projectListPresetQuery(preset), query].filter(Boolean).join(" "),
+    );
+    const searchableSql = `LOWER(
+      ps.full_name || ' ' ||
+      COALESCE(ps.description, '') || ' ' ||
+      COALESCE(ps.language, '') || ' ' ||
+      COALESCE(ps.topics, '') || ' ' ||
+      COALESCE(ps.roast_line, '') || ' ' ||
+      COALESCE(ps.ai_summary, '') || ' ' ||
+      COALESCE(opc.ai_summary, '')
+    )`;
+    const termWhere =
+      terms.length > 0
+        ? `WHERE (${terms.map(() => `${searchableSql} LIKE ? ESCAPE '\\'`).join(" OR ")})`
+        : "";
+    const res = await db.execute({
+      sql: `SELECT ps.*,
+                   opc.safety_level AS org_safety_level,
+                   opc.safety_notes AS org_safety_notes,
+                   opc.contributors AS org_contributors,
+                   opc.ai_summary AS org_ai_summary
+            FROM project_scores AS ps
+            LEFT JOIN (
+              SELECT *
+              FROM (
+                SELECT *,
+                       ROW_NUMBER() OVER (
+                         PARTITION BY full_name
+                         ORDER BY scanned_at DESC, org_login ASC
+                       ) AS rn
+                FROM organization_project_catalog
+              )
+              WHERE rn = 1
+            ) AS opc ON opc.full_name = ps.full_name
+            ${termWhere}
+            ORDER BY ps.scanned_at DESC, ps.score DESC
+            LIMIT ?`,
+      args: [...terms.map(sqlLikePattern), Math.max(1000, limit * 12)],
+    });
+    const items = res.rows.map((row): ProjectCircleListItem => {
+      const owner = String(row.owner);
+      const repo = String(row.repo);
+      return {
+        full_name: `${owner}/${repo}`,
+        owner,
+        repo,
+        html_url: String(row.html_url),
+        description: (row.description as string | null) ?? null,
+        language: (row.language as string | null) ?? null,
+        topics: parseProjectJson<string[]>(row.topics, []),
+        stars: Number(row.stars) || 0,
+        forks: Number(row.forks) || 0,
+        score: Number(row.score) || 0,
+        band: String(row.band) as ProjectBand,
+        safety_level: (row.org_safety_level as string | null) ?? null,
+        safety_notes:
+          row.org_safety_notes == null
+            ? null
+            : parseProjectJson<ProjectSafetyAssessment["notes"]>(row.org_safety_notes, {
+                zh: [],
+                en: [],
+              }),
+        roast_line: parseProjectJson<ProjectScanResult["roast_line"]>(row.roast_line, {
+          zh: "",
+          en: "",
+        }),
+        ai_summary:
+          parseStoredProjectAiSummary(row.ai_summary) ??
+          parseStoredProjectAiSummary(row.org_ai_summary),
+        contributors: parseProjectJson<ProjectScanResult["contributors"]>(
+          row.org_contributors,
+          [],
+        ),
+        scanned_at: Number(row.scanned_at) || 0,
+        domain_slug: projectDomainSlug(owner, repo),
+      };
+    });
+    return items
+      .map((item) => ({
+        item,
+        score: scoreProjectListItem(item, query, preset),
+      }))
+      .filter((entry) => Number.isFinite(entry.score))
+      .sort(
+        (a, b) =>
+          b.score - a.score ||
+          b.item.score - a.item.score ||
+          b.item.stars - a.item.stars ||
+          a.item.full_name.localeCompare(b.item.full_name),
+      )
+      .slice(0, limit)
+      .map((entry) => entry.item);
+  } catch (e) {
+    console.error("listProjectCircleItems failed:", e);
+    return [];
   }
 }
 

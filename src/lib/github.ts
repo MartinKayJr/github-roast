@@ -42,6 +42,7 @@ interface RestRepo {
   full_name?: string;
   private?: boolean;
   fork: boolean;
+  default_branch?: string;
   size: number;
   stargazers_count: number;
   forks_count: number;
@@ -68,6 +69,26 @@ interface RestTag {
 interface RestCommit {
   author?: { login?: string | null } | null;
   committer?: { login?: string | null } | null;
+  commit?: {
+    author?: { date?: string | null } | null;
+    committer?: { date?: string | null } | null;
+  } | null;
+  sha?: string | null;
+}
+
+interface RestPublicEvent {
+  type?: string;
+  created_at?: string | null;
+  repo?: { name?: string | null } | null;
+  payload?: {
+    ref?: string | null;
+    before?: string | null;
+    head?: string | null;
+  } | null;
+}
+
+interface RestCompare {
+  commits?: RestCommit[];
 }
 
 interface RestReadme {
@@ -1390,10 +1411,158 @@ interface RecentCommitContributionNode {
 }
 
 interface RecentCommitContribByRepoNode {
+  repository?: {
+    nameWithOwner?: string | null;
+  } | null;
   contributions: {
     totalCount?: number;
     nodes?: RecentCommitContributionNode[];
   };
+}
+
+interface ContributionDayAccumulator {
+  total: number;
+  repoCounts: Map<string, number>;
+}
+
+function isZeroSha(value: string): boolean {
+  return /^0+$/.test(value);
+}
+
+function mergeContributionDayCount(
+  byDate: Map<string, ContributionDayAccumulator>,
+  date: string | undefined,
+  count: number,
+  repo?: string | null,
+): void {
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || count <= 0) return;
+  const entry = byDate.get(date) ?? { total: 0, repoCounts: new Map<string, number>() };
+  entry.total += count;
+  if (repo) entry.repoCounts.set(repo, (entry.repoCounts.get(repo) ?? 0) + count);
+  byDate.set(date, entry);
+}
+
+function maxContributionDayCount(
+  byDate: Map<string, ContributionDayAccumulator>,
+  date: string | undefined,
+  count: number,
+  repo?: string | null,
+): void {
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || count <= 0) return;
+  const existing = byDate.get(date);
+  if (!existing || count > existing.total) {
+    const repoCounts = new Map<string, number>();
+    if (repo) repoCounts.set(repo, count);
+    byDate.set(date, { total: count, repoCounts });
+  }
+}
+
+function contributionDaysFromAccumulator(
+  byDate: Map<string, ContributionDayAccumulator>,
+): ContributionDay[] {
+  return [...byDate.entries()]
+    .map(([date, entry]) => {
+      const repo =
+        [...entry.repoCounts.entries()].sort(
+          (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+        )[0]?.[0] ?? null;
+      return { date, contribution_count: entry.total, repo };
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+async function fetchRecentPushContributionDays(
+  username: string,
+  now = new Date(),
+): Promise<ContributionDay[]> {
+  const fromMs = now.getTime() - 30 * 24 * 60 * 60 * 1000;
+  const loginLower = username.toLowerCase();
+  let events: RestPublicEvent[] | null = null;
+  try {
+    events = await restGet<RestPublicEvent[]>(
+      `users/${encodeURIComponent(username)}/events/public?per_page=100`,
+    );
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(events) || events.length === 0) return [];
+
+  const byDate = new Map<string, ContributionDayAccumulator>();
+  const seenRanges = new Set<string>();
+  const seenCommits = new Set<string>();
+  const repoDefaults = new Map<string, string | null>();
+
+  for (const event of events) {
+    if (event.type !== "PushEvent") continue;
+    const createdAt = event.created_at ? Date.parse(event.created_at) : NaN;
+    if (!Number.isFinite(createdAt) || createdAt < fromMs || createdAt > now.getTime()) {
+      continue;
+    }
+    const repoName = event.repo?.name?.trim();
+    const ref = event.payload?.ref?.trim() ?? "";
+    const before = event.payload?.before?.trim() ?? "";
+    const head = event.payload?.head?.trim() ?? "";
+    if (!repoName || !ref.startsWith("refs/heads/") || !head || !before || isZeroSha(head)) {
+      continue;
+    }
+    const branch = ref.slice("refs/heads/".length);
+    let defaultBranch = repoDefaults.get(repoName);
+    if (defaultBranch === undefined) {
+      const [owner, repo] = repoName.split("/");
+      if (!owner || !repo) {
+        defaultBranch = null;
+      } else {
+        const repoMeta = await restGet<RestRepo>(
+          `repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+        ).catch(() => null);
+        defaultBranch = repoMeta?.default_branch ?? null;
+      }
+      repoDefaults.set(repoName, defaultBranch);
+    }
+    if (branch !== defaultBranch && branch !== "gh-pages") continue;
+
+    const rangeKey = `${repoName}:${before}...${head}`;
+    if (seenRanges.has(rangeKey)) continue;
+    seenRanges.add(rangeKey);
+
+    const [owner, repo] = repoName.split("/");
+    if (!owner || !repo) continue;
+    const commits = isZeroSha(before)
+      ? await restGet<RestCommit>(
+          `repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(head)}`,
+        )
+          .then((commit) => (commit ? [commit] : []))
+          .catch(() => [])
+      : await restGet<RestCompare>(
+          `repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/compare/${encodeURIComponent(before)}...${encodeURIComponent(head)}`,
+        )
+          .then((compare) => compare?.commits ?? [])
+          .catch(() => []);
+
+    const counts = new Map<string, number>();
+    for (const commit of commits) {
+      const sha = commit.sha;
+      if (sha && seenCommits.has(sha)) continue;
+      const authorMatches = commit.author?.login?.toLowerCase() === loginLower;
+      const committerMatches = commit.committer?.login?.toLowerCase() === loginLower;
+      if (!authorMatches && !committerMatches) continue;
+      if (sha) seenCommits.add(sha);
+      const rawDate =
+        (authorMatches
+          ? commit.commit?.author?.date
+          : commit.commit?.committer?.date) ??
+        commit.commit?.author?.date ??
+        commit.commit?.committer?.date;
+      const ts = rawDate ? Date.parse(rawDate) : NaN;
+      if (!Number.isFinite(ts) || ts < fromMs || ts > now.getTime()) continue;
+      const date = new Date(ts).toISOString().slice(0, 10);
+      counts.set(date, (counts.get(date) ?? 0) + 1);
+    }
+
+    for (const [date, count] of counts) mergeContributionDayCount(byDate, date, count, repoName);
+  }
+
+  return contributionDaysFromAccumulator(byDate);
 }
 
 async function fetchRecentCommitContributionDays(
@@ -1412,6 +1581,7 @@ async function fetchRecentCommitContributionDays(
       user(login: $login) {
         contributionsCollection(from: $from, to: $to) {
           commitContributionsByRepository(maxRepositories: 100) {
+            repository { nameWithOwner }
             contributions(first: 100) {
               totalCount
               nodes {
@@ -1432,26 +1602,37 @@ async function fetchRecentCommitContributionDays(
     throw new GitHubDataUnavailableError("GitHub GraphQL returned no commit contribution data.");
   }
 
-  const byDate = new Map<string, number>();
+  const byDate = new Map<string, ContributionDayAccumulator>();
   for (const repo of data.user.contributionsCollection.commitContributionsByRepository ?? []) {
+    const repoName = repo.repository?.nameWithOwner ?? null;
     const nodes = repo.contributions.nodes ?? [];
+    const repoCounts = new Map<string, number>();
     for (const node of nodes) {
       const date = node.occurredAt?.slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
-      byDate.set(date, (byDate.get(date) ?? 0) + 1);
+      repoCounts.set(date, (repoCounts.get(date) ?? 0) + 1);
     }
     const missing = Math.max(0, (repo.contributions.totalCount ?? nodes.length) - nodes.length);
     if (missing > 0) {
       const fallbackDate = nodes[nodes.length - 1]?.occurredAt?.slice(0, 10) ?? now.toISOString().slice(0, 10);
       if (/^\d{4}-\d{2}-\d{2}$/.test(fallbackDate)) {
-        byDate.set(fallbackDate, (byDate.get(fallbackDate) ?? 0) + missing);
+        repoCounts.set(fallbackDate, (repoCounts.get(fallbackDate) ?? 0) + missing);
       }
     }
+    for (const [date, count] of repoCounts) mergeContributionDayCount(byDate, date, count, repoName);
   }
 
-  return [...byDate.entries()]
-    .map(([date, contribution_count]) => ({ date, contribution_count }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+  // GitHub's contribution graph can lag immediately after a push. Merge a
+  // conservative REST fallback from public default-branch PushEvents so today's
+  // real commits are not invisible until the graph catches up. Same-day counts
+  // use the larger source instead of summing, avoiding duplicate inflation once
+  // GraphQL has indexed the same commits.
+  const pushDays = await fetchRecentPushContributionDays(username, now);
+  for (const day of pushDays) {
+    maxContributionDayCount(byDate, day.date, day.contribution_count, day.repo);
+  }
+
+  return contributionDaysFromAccumulator(byDate);
 }
 
 interface MergedPrRepoNode {

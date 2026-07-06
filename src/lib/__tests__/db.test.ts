@@ -505,6 +505,173 @@ describe("community project domains", () => {
     );
     expect(emptyDomain?.members).toEqual([]);
   });
+
+  it("stores searchable project-circle descriptions for AI project search", async () => {
+    const project = {
+      ...projectScanFixture("xposedsearch/hook-module"),
+      description: "A practical Android Xposed hook module for notification controls",
+      language: "Kotlin",
+      topics: ["xposed", "android", "hook"],
+      readme: {
+        length: 1200,
+        heading_count: 4,
+        content_depth_score: 0.8,
+        placeholder_score: 0,
+        prompt_summary: "Lets users tune Android notification behavior through Xposed hooks.",
+      },
+      roast_line: {
+        zh: "这是一个偏实用的 Xposed 模块项目。",
+        en: "A practical Xposed module project.",
+      },
+    } satisfies ProjectScanResult;
+    await db.recordProjectScan(project);
+
+    const catalog = await db.getProjectCircleSearchCatalog("Android Xposed hook", { limit: 8 });
+    expect(catalog[0]).toMatchObject({
+      slug: db.projectDomainSlug(project.owner, project.repo),
+    });
+    expect(catalog[0]?.search_text.toLowerCase()).toContain("xposed");
+
+    const domains = await db.searchProjectCircleDomains("notification xposed", { limit: 4 });
+    expect(domains[0]).toMatchObject({
+      slug: db.projectDomainSlug(project.owner, project.repo),
+      description: {
+        en: expect.stringContaining("Xposed"),
+      },
+    });
+    expect(domains[0]?.tags).toEqual(
+      expect.arrayContaining(["xposedsearch/hook-module", "Kotlin", "xposed"]),
+    );
+  });
+
+  it("persists organization project AI summaries for exact catalog search", async () => {
+    const project = projectScanFixture("Xposed-Modules-Repo/exact-search-module");
+    const aiSummary = {
+      zh: {
+        summary: "用于通知增强的 Xposed 模块。",
+        target: "想安装通知增强模块的 Android 用户",
+        use_case: "精确筛选通知、隐藏检测和 Hook 类模块。",
+        safety: "公开维护信号可复核。",
+        roast: "锐评语料",
+      },
+      en: {
+        summary: "An Xposed module for notification enhancement.",
+        target: "Android users looking for notification modules",
+        use_case: "Filter notification, detection hiding, and hook modules.",
+        safety: "Public maintenance signals are reviewable.",
+        roast: "Roast corpus",
+      },
+      keywords: ["notification", "xposed", "hook"],
+      category_hints: ["Xposed module", "Android"],
+      source: "llm" as const,
+      generated_at: Date.now(),
+    };
+
+    await db.recordOrganizationProjectCatalog({
+      orgLogin: "Xposed-Modules-Repo",
+      pageStart: 1,
+      perPage: 1,
+      nextPage: null,
+      projects: [
+        {
+          project,
+          aiSummary,
+          safety: {
+            level: "B",
+            notes: { zh: ["贡献者较少"], en: ["small contributor base"] },
+          },
+        },
+      ],
+      failures: [],
+    });
+
+    const results = await db.searchOrganizationProjectCatalog("xposed-modules-repo", {
+      query: "notification",
+      limit: 5,
+    });
+    expect(results[0]).toMatchObject({
+      full_name: "xposed-modules-repo/exact-search-module",
+      ai_summary: {
+        zh: {
+          summary: "用于通知增强的 Xposed 模块。",
+        },
+      },
+    });
+  });
+
+  it("filters project reading mode in SQL before applying the candidate limit", async () => {
+    const client = createClient({ url: process.env.TURSO_DATABASE_URL! });
+    const now = Date.now();
+    const common = {
+      breakdown: JSON.stringify({
+        activity: 1,
+        quality: 1,
+        collaboration: 1,
+        impact: 1,
+        authenticity: 1,
+      }),
+      roast: JSON.stringify({ zh: "普通项目", en: "ordinary project" }),
+      readme: JSON.stringify(null),
+      languages: JSON.stringify([]),
+    };
+    const statements = Array.from({ length: 1005 }, (_, index) => ({
+      sql: `INSERT INTO project_scores
+              (full_name, owner, repo, html_url, description, language, topics,
+               stars, forks, score, band, breakdown, roast_line, ai_summary,
+               readme, languages, scanned_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        `bulk-noise/noise-${index}`,
+        "bulk-noise",
+        `noise-${index}`,
+        `https://github.com/bulk-noise/noise-${index}`,
+        "ordinary utility project",
+        "TypeScript",
+        JSON.stringify(["utility"]),
+        1,
+        0,
+        40,
+        "C",
+        common.breakdown,
+        common.roast,
+        null,
+        common.readme,
+        common.languages,
+        now + index,
+      ],
+    }));
+    statements.push({
+      sql: `INSERT INTO project_scores
+              (full_name, owner, repo, html_url, description, language, topics,
+               stars, forks, score, band, breakdown, roast_line, ai_summary,
+               readme, languages, scanned_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        "xposed-modules-repo/old-visible-module",
+        "xposed-modules-repo",
+        "old-visible-module",
+        "https://github.com/Xposed-Modules-Repo/old-visible-module",
+        "Old but searchable Xposed hook module",
+        "Kotlin",
+        JSON.stringify(["xposed-module", "android", "hook"]),
+        10,
+        1,
+        62,
+        "B+",
+        common.breakdown,
+        JSON.stringify({ zh: "老 Xposed 模块", en: "Old Xposed module" }),
+        null,
+        common.readme,
+        common.languages,
+        now - 1_000_000,
+      ],
+    });
+    await client.batch(statements, "write");
+    client.close();
+
+    const projects = await db.listProjectCircleItems({ preset: "xposed", limit: 5 });
+    expect(projects.some((project) => project.full_name === "xposed-modules-repo/old-visible-module")).toBe(true);
+  });
 });
 
 describe("getRank", () => {
@@ -595,8 +762,16 @@ describe("recent growth contribution eligibility", () => {
     const username = "growth-multi-day";
     const scan = scanFixture(username, 72);
     scan.contribution_days = [
-      { date: daysAgoIso(5), contribution_count: 2 },
-      { date: daysAgoIso(1), contribution_count: 7 },
+      {
+        date: daysAgoIso(5),
+        contribution_count: 2,
+        repo: "personal/old-repo",
+      },
+      {
+        date: daysAgoIso(1),
+        contribution_count: 7,
+        repo: "Org/recent-repo",
+      },
     ];
     await db.recordScore({
       ...entry,
@@ -612,6 +787,7 @@ describe("recent growth contribution eligibility", () => {
     const point = points.find((p) => p.username === username);
     expect(point?.steps.map((s) => s.count)).toEqual([2, 7]);
     expect(point?.contribution_count).toBe(9);
+    expect(point?.primary_repo).toBe("Org/recent-repo");
   });
 
   it("does not add accounts at or below the growth score floor", async () => {

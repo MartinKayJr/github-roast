@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Loader2, Play, RotateCcw, Search } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
@@ -32,6 +32,7 @@ type ScanResponse = {
   written: number;
   projects: ScanProjectSummary[];
   failures: { repo: string; error: string }[];
+  background?: boolean;
   error?: string;
 };
 
@@ -82,7 +83,7 @@ export function AdminOrgProjectScanPanel() {
   const [jobs, setJobs] = useState<OrgScanJob[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  async function loadJobs() {
+  const loadJobs = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/organizations/scan-projects", {
         cache: "no-store",
@@ -93,7 +94,7 @@ export function AdminOrgProjectScanPanel() {
     } catch {
       // The panel itself remains usable; failed polling should not block scans.
     }
-  }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -110,6 +111,16 @@ export function AdminOrgProjectScanPanel() {
       window.clearTimeout(id);
     };
   }, []);
+
+  useEffect(() => {
+    if (!jobs.some((job) => job.status === "pending" || job.status === "running")) {
+      return;
+    }
+    const id = window.setInterval(() => {
+      void loadJobs();
+    }, 3000);
+    return () => window.clearInterval(id);
+  }, [jobs, loadJobs]);
 
   async function run(options: {
     nextPage?: number | null;
@@ -279,15 +290,10 @@ export function AdminOrgProjectScanPanel() {
           </div>
 
           {result.nextPage && (
-            <button
-              type="button"
-              onClick={() => void run({ jobId: result.jobId, nextPage: result.nextPage })}
-              disabled={loading}
-              className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-sm font-semibold text-zinc-200 hover:bg-white/[0.06] disabled:cursor-wait disabled:opacity-60"
-            >
+            <p className="mt-4 inline-flex items-center gap-2 rounded-full border border-cyan-300/15 bg-cyan-300/10 px-4 py-2 text-sm font-semibold text-cyan-100">
               <Search className="h-4 w-4" />
-              {t("orgScanNext", { page: result.nextPage })}
-            </button>
+              {t("orgScanBackgroundQueued", { page: result.nextPage })}
+            </p>
           )}
         </div>
       )}
@@ -345,7 +351,7 @@ export function AdminOrgProjectScanPanel() {
                           {loadingJobId === job.id ? (
                             <Loader2 className="h-3.5 w-3.5 animate-spin" />
                           ) : (
-                            <Play className="h-3.5 w-3.5" />
+                          <Play className="h-3.5 w-3.5" />
                           )}
                           {t("orgScanContinueJob")}
                         </button>

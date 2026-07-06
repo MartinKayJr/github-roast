@@ -3,6 +3,7 @@ import { CommunityGalaxyBackdrop } from "@/components/community/CommunityGalaxyB
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { CommunityJoinEntry } from "@/components/community/CommunityJoinEntry";
 import { CommunityGalaxyWaterfall } from "@/components/community/galaxy/CommunityGalaxyWaterfall";
+import { CommunityProjectSearchDock } from "@/components/community/galaxy/CommunityProjectSearchDock";
 import {
   ensureCommunityProfileDraft,
   getCommunityDomains,
@@ -12,6 +13,7 @@ import {
 } from "@/lib/db";
 import { auth, authConfigured } from "@/lib/auth";
 import { buildCommunityProfileDraft, sourceFromSnapshot } from "@/lib/community-profile";
+import { resolveAiDiscoveryLlmMode } from "@/lib/discovery";
 import { normLang } from "@/lib/lang";
 import { localeAlternates } from "@/lib/site";
 
@@ -41,6 +43,7 @@ export default async function CommunityPage({
   setRequestLocale(locale);
   const t = await getTranslations("communityPage");
   const lang = normLang(locale);
+  const aiSearchMode = resolveAiDiscoveryLlmMode(process.env.AI_DISCOVERY_LLM_MODE);
   const session = authConfigured() ? await auth() : null;
   const login = session?.user?.login || null;
   const githubId = session?.user?.githubId || null;
@@ -89,6 +92,7 @@ export default async function CommunityPage({
             lang={lang}
           />
         </div>
+        <CommunityProjectSearchDock aiSearchMode={aiSearchMode} lang={lang} />
       </div>
     </main>
   );

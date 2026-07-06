@@ -6,7 +6,13 @@ import {
 } from "@/lib/github";
 import { getScoreBrief, recordProfileSnapshot, recordProjectScan, recordScore } from "@/lib/db";
 import { checkRateLimit, coalesceScan, rateLimitHeaders } from "@/lib/redis";
-import { parseProjectInput, scanProject, type ProjectScanResult } from "@/lib/project-scan";
+import {
+  assessProjectSafety,
+  parseProjectInput,
+  scanProject,
+  type ProjectScanResult,
+} from "@/lib/project-scan";
+import { deterministicProjectAiSummary } from "@/lib/project-ai-summary";
 import { buildScanResult, scanErrorResponse } from "@/lib/scan-core";
 import { spamBotScore } from "@/lib/score";
 import { getGitHubAuthTokens } from "@/lib/github-token-pool";
@@ -115,10 +121,13 @@ export async function POST(req: NextRequest) {
   try {
     const project = await scanProject(parsed.owner, parsed.repo);
     const autoScannedContributors = await autoRecordTopContributorProfiles(project.contributors);
-    await recordProjectScan(project);
+    const safety = assessProjectSafety(project);
+    const aiSummary = deterministicProjectAiSummary(project, safety);
+    await recordProjectScan(project, { aiSummary });
     return NextResponse.json(
       {
         project,
+        aiSummary,
         href: `/projects/${encodeURIComponent(project.owner)}/${encodeURIComponent(project.repo)}`,
         autoScannedContributors,
       },
