@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "@/i18n/navigation";
+import { Search, X } from "lucide-react";
 import {
   Dialog,
   DialogClose,
@@ -14,6 +15,7 @@ import {
 export interface TrajectoryStep {
   t: number;
   score: number;
+  count: number;
 }
 
 export interface TimelinePoint {
@@ -36,6 +38,11 @@ export interface TimelinePoint {
 export interface TimelineLabels {
   timelineTitle: string;
   timelineEmpty: string;
+  dailyTitle: string;
+  backToAll: string;
+  filterPlaceholder: string;
+  filterNoResults: string;
+  filterClear: string;
   tooltipBand: string;
   tooltipGrowth: string;
   tooltipCommits: string;
@@ -81,6 +88,29 @@ function startOfDayTs(ts: number): number {
   return date.getTime();
 }
 
+function normalizeUserKey(value: string): string {
+  return value.trim().replace(/^@/, "").toLowerCase();
+}
+
+function pointMatchesTerm(point: TimelinePoint, term: string): boolean {
+  const q = normalizeUserKey(term);
+  if (!q) return true;
+  return (
+    point.username.toLowerCase().includes(q) ||
+    (point.display_name?.toLowerCase().includes(q) ?? false)
+  );
+}
+
+function findPointForTerm(points: TimelinePoint[], term: string): TimelinePoint | null {
+  const q = normalizeUserKey(term);
+  if (!q) return null;
+  return (
+    points.find((p) => p.username.toLowerCase() === q) ??
+    points.find((p) => pointMatchesTerm(p, q)) ??
+    null
+  );
+}
+
 export function GrowthTimelineChart({
   points,
   labels,
@@ -93,9 +123,13 @@ export function GrowthTimelineChart({
   /** Server "now" (ms epoch). Deterministic — avoids Date.now() in render. */
   updatedAt?: number;
 }) {
-  const router = useRouter();
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const [focusedNode, setFocusedNode] = useState<string | null>(null);
+  const [selectedPoint, setSelectedPoint] = useState<TimelinePoint | null>(
+    null,
+  );
+  const [filterInput, setFilterInput] = useState("");
+  const [selectedUsernames, setSelectedUsernames] = useState<string[]>([]);
   const [columnDialog, setColumnDialog] = useState<TimelinePoint[] | null>(
     null,
   );
@@ -107,6 +141,30 @@ export function GrowthTimelineChart({
   );
   const hideTooltip = useCallback(() => setTooltip(null), []);
 
+  const addFilterTerms = useCallback(
+    (rawTerms: string[]) => {
+      const matches = rawTerms
+        .map((term) => findPointForTerm(points, term))
+        .filter((point): point is TimelinePoint => point !== null);
+      if (matches.length === 0) return;
+      setSelectedUsernames((current) => {
+        const seen = new Set(current.map((username) => username.toLowerCase()));
+        const next = [...current];
+        for (const point of matches) {
+          const key = point.username.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          next.push(point.username);
+        }
+        return next;
+      });
+      setFilterInput("");
+      setSelectedPoint(null);
+      hideTooltip();
+    },
+    [hideTooltip, points],
+  );
+
   if (points.length === 0) {
     return (
       <p className="py-10 text-center text-sm text-zinc-500">
@@ -115,14 +173,131 @@ export function GrowthTimelineChart({
     );
   }
 
-  const dataTimes = points.flatMap((p) => [
+  if (selectedPoint) {
+    return (
+      <DailyContributionChart
+        point={selectedPoint}
+        labels={labels}
+        windowDays={windowDays}
+        updatedAt={updatedAt}
+        onBack={() => setSelectedPoint(null)}
+      />
+    );
+  }
+
+  const selectedSet = new Set(
+    selectedUsernames.map((username) => username.toLowerCase()),
+  );
+  const query = filterInput.trim();
+  const visiblePoints =
+    selectedUsernames.length > 0
+      ? points.filter((p) => selectedSet.has(p.username.toLowerCase()))
+      : query
+        ? points.filter((p) => pointMatchesTerm(p, query))
+        : points;
+  const selectedFilterPoints = selectedUsernames
+    .map((username) =>
+      points.find((p) => p.username.toLowerCase() === username.toLowerCase()),
+    )
+    .filter((point): point is TimelinePoint => point !== undefined);
+
+  const filterControls = (
+    <div className="mb-3 flex flex-col gap-2">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          addFilterTerms(filterInput.split(","));
+        }}
+        className="relative max-w-xl"
+      >
+        <Search
+          className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--muted-foreground)]"
+          aria-hidden="true"
+        />
+        <input
+          value={filterInput}
+          onChange={(event) => {
+            const value = event.target.value;
+            if (!value.includes(",")) {
+              setFilterInput(value);
+              return;
+            }
+            const parts = value.split(",");
+            const complete = parts.slice(0, -1);
+            addFilterTerms(complete);
+            setFilterInput(parts.at(-1) ?? "");
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter") return;
+            event.preventDefault();
+            addFilterTerms(filterInput.split(","));
+          }}
+          placeholder={labels.filterPlaceholder}
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          className="h-10 w-full rounded-full border border-[var(--border)] bg-[var(--surface)] pl-9 pr-3 text-sm text-[var(--foreground)] outline-none transition-colors placeholder:text-[var(--muted-foreground)] focus:border-[var(--primary)]"
+        />
+      </form>
+      {selectedFilterPoints.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {selectedFilterPoints.map((point) => (
+            <span
+              key={point.username}
+              className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] py-1 pl-1 pr-2 text-xs font-semibold text-[var(--foreground)]"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={point.avatar_url ?? `https://github.com/${point.username}.png`}
+                alt=""
+                width={20}
+                height={20}
+                className="size-5 rounded-full object-cover"
+              />
+              <span className="max-w-32 truncate">@{point.username}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedUsernames((current) =>
+                    current.filter(
+                      (username) =>
+                        username.toLowerCase() !== point.username.toLowerCase(),
+                    ),
+                  );
+                  hideTooltip();
+                }}
+                className="rounded-full p-0.5 text-[var(--muted-foreground)] transition-colors hover:bg-[var(--accent)] hover:text-[var(--foreground)]"
+                aria-label={`${labels.filterClear} @${point.username}`}
+              >
+                <X className="size-3" aria-hidden="true" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  if (visiblePoints.length === 0) {
+    return (
+      <div className="relative w-full">
+        <p className="mb-2 text-xs text-zinc-500">{labels.timelineTitle}</p>
+        {filterControls}
+        <p className="py-10 text-center text-sm text-zinc-500">
+          {labels.filterNoResults}
+        </p>
+      </div>
+    );
+  }
+
+  const dataTimes = visiblePoints.flatMap((p) => [
     p.snapshot_at,
     ...p.steps.map((s) => s.t),
   ]);
   const dataMinDay = startOfDayTs(Math.min(...dataTimes));
   const dataMaxDay = startOfDayTs(Math.max(...dataTimes));
   const dataSpan = Math.max(1, dataMaxDay - dataMinDay);
-  const hasTrajectory = points.some((p) => {
+  const hasTrajectory = visiblePoints.some((p) => {
     const first = p.steps[0];
     const last = p.steps[p.steps.length - 1];
     return first && last && Math.abs(last.t - first.t) >= DAY_MS;
@@ -168,7 +343,7 @@ export function GrowthTimelineChart({
   // Bucket endpoints by (day column, rounded score) so each date reads as one
   // vertical stack. This matches the product model: X = day, Y = score.
   const buckets = new Map<string, TimelinePoint[]>();
-  for (const p of points) {
+  for (const p of visiblePoints) {
     const bx = startOfDayTs(p.snapshot_at);
     const bs = Math.round(p.final_score / 4);
     const key = `${bx}:${bs}`;
@@ -192,7 +367,7 @@ export function GrowthTimelineChart({
   }
 
   const dayColumns = new Map<number, TimelinePoint[]>();
-  for (const p of points) {
+  for (const p of visiblePoints) {
     const day = startOfDayTs(p.snapshot_at);
     const arr = dayColumns.get(day) ?? [];
     arr.push(p);
@@ -227,6 +402,7 @@ export function GrowthTimelineChart({
   return (
     <div className="relative w-full overflow-x-auto">
       <p className="mb-2 text-xs text-zinc-500">{labels.timelineTitle}</p>
+      {filterControls}
       <svg
         viewBox={`0 0 ${CHART_W} ${CHART_H}`}
         className="h-auto w-full min-w-[520px]"
@@ -298,7 +474,7 @@ export function GrowthTimelineChart({
           strokeWidth={1}
         />
 
-        {/* Nodes: every growth entry is rendered as its own avatar. */}
+        {/* Nodes: every developer is rendered once, at the latest contribution day. */}
         {renderNodes.map((n) => {
           const p = n.point;
           const avatarSrc =
@@ -317,7 +493,11 @@ export function GrowthTimelineChart({
               <button
                 type="button"
                 aria-label={`${p.display_name ?? p.username} — ${p.band} ${p.final_score}`}
-                onClick={() => router.push(`/u/${p.username}`)}
+                onClick={() => {
+                  hideTooltip();
+                  setFocusedNode(null);
+                  setSelectedPoint(p);
+                }}
                 onMouseEnter={() => {
                   setFocusedNode(p.username);
                   showTooltip(n.cx, n.cy, [p]);
@@ -390,6 +570,172 @@ export function GrowthTimelineChart({
           if (!open) setColumnDialog(null);
         }}
       />
+    </div>
+  );
+}
+
+function DailyContributionChart({
+  point,
+  labels,
+  windowDays,
+  updatedAt,
+  onBack,
+}: {
+  point: TimelinePoint;
+  labels: TimelineLabels;
+  windowDays: number;
+  updatedAt?: number;
+  onBack: () => void;
+}) {
+  const avatarSrc = point.avatar_url ?? `https://github.com/${point.username}.png`;
+  const nowTs = startOfDayTs(updatedAt ?? point.snapshot_at);
+  const axisStart = startOfDayTs(nowTs - windowDays * DAY_MS);
+  const axisEnd = nowTs;
+  const span = Math.max(1, axisEnd - axisStart);
+  const countByDay = new Map(
+    point.steps.map((step) => [
+      startOfDayTs(step.t),
+      Math.max(0, Math.floor(step.count || 0)),
+    ]),
+  );
+  const series = Array.from({ length: windowDays + 1 }, (_, i) => {
+    const t = axisStart + i * DAY_MS;
+    return { t, count: countByDay.get(t) ?? 0 };
+  });
+  const maxCount = Math.max(1, ...series.map((item) => item.count));
+  const yMax = Math.max(4, Math.ceil(maxCount / 4) * 4);
+  const yTicks = Array.from({ length: 5 }, (_, i) => Math.round((yMax / 4) * i));
+  const xForTime = (t: number) =>
+    PAD.left + ((Math.min(axisEnd, Math.max(axisStart, t)) - axisStart) / span) * PLOT_W;
+  const yForCount = (count: number) =>
+    PAD.top + (1 - Math.min(yMax, Math.max(0, count)) / yMax) * PLOT_H;
+  const path = series
+    .map((item, i) => `${i === 0 ? "M" : "L"} ${xForTime(item.t).toFixed(2)} ${yForCount(item.count).toFixed(2)}`)
+    .join(" ");
+  const xTicks = Array.from({ length: 7 }, (_, i) =>
+    axisStart + Math.round((span / 6) * i / DAY_MS) * DAY_MS,
+  ).filter((ts, i, arr) => i === 0 || ts !== arr[i - 1]);
+
+  return (
+    <div className="relative w-full overflow-x-auto">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={avatarSrc}
+            alt=""
+            width={40}
+            height={40}
+            className="size-10 shrink-0 rounded-full object-cover"
+          />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold text-[var(--foreground)]">
+              {labels.dailyTitle.replace("{name}", point.display_name ?? point.username)}
+            </p>
+            <p className="truncate text-xs text-[var(--muted-foreground)]">
+              @{point.username} · {point.band} · +{Math.round(point.contribution_count)}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onBack}
+          className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--foreground)] transition-colors hover:bg-[var(--accent)]"
+        >
+          {labels.backToAll}
+        </button>
+      </div>
+      <svg
+        viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+        className="h-auto w-full min-w-[520px]"
+        aria-label={labels.dailyTitle.replace("{name}", point.display_name ?? point.username)}
+        role="img"
+      >
+        {yTicks.map((tick) => {
+          const y = yForCount(tick);
+          return (
+            <g key={`count-${tick}`}>
+              <line
+                x1={PAD.left}
+                y1={y}
+                x2={PAD.left + PLOT_W}
+                y2={y}
+                stroke="var(--border-soft)"
+                opacity={0.7}
+                strokeWidth={1}
+              />
+              <text
+                x={PAD.left - 8}
+                y={y + 3}
+                textAnchor="end"
+                fontSize={10}
+                fill="var(--muted-foreground)"
+                className="tabular-nums"
+              >
+                {tick}
+              </text>
+            </g>
+          );
+        })}
+
+        {xTicks.map((ts) => {
+          const x = xForTime(ts);
+          return (
+            <g key={`daily-x-${ts}`}>
+              <line
+                x1={x}
+                y1={PAD.top + PLOT_H}
+                x2={x}
+                y2={PAD.top + PLOT_H + 4}
+                stroke="var(--border)"
+                strokeWidth={1}
+              />
+              <text
+                x={x}
+                y={PAD.top + PLOT_H + 16}
+                textAnchor="middle"
+                fontSize={10}
+                fill="var(--muted-foreground)"
+              >
+                {formatDate(ts)}
+              </text>
+            </g>
+          );
+        })}
+
+        <line
+          x1={PAD.left}
+          y1={PAD.top + PLOT_H}
+          x2={PAD.left + PLOT_W}
+          y2={PAD.top + PLOT_H}
+          stroke="var(--border)"
+          strokeWidth={1}
+        />
+        <path
+          d={path}
+          fill="none"
+          stroke="var(--primary)"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2.5}
+        />
+        {series.map((item) => {
+          const active = item.count > 0;
+          return (
+            <g key={`daily-point-${item.t}`}>
+              <circle
+                cx={xForTime(item.t)}
+                cy={yForCount(item.count)}
+                r={active ? 4.5 : 2.4}
+                fill={active ? "var(--primary)" : "var(--muted-foreground)"}
+                opacity={active ? 0.95 : 0.25}
+              >
+                <title>{`${formatDate(item.t)} · ${item.count}`}</title>
+              </circle>
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
 }

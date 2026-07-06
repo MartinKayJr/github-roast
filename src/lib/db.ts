@@ -2049,12 +2049,14 @@ export async function getContributionGrowthLeaderboard(
   }
 }
 
-/** One score reading in a user's trajectory: score at a point in time. */
+/** One public contribution day in a user's recent-growth trajectory. */
 export interface GrowthTrajectoryStep {
-  /** generated_at (ms epoch) of the score snapshot */
+  /** Contribution date (ms epoch, local day start) */
   t: number;
-  /** final_score at that time */
+  /** Current final_score. The avatar stays at the latest day; prior days use this same Y band. */
   score: number;
+  /** Public commit contribution count for this GitHub contribution day. */
+  count: number;
 }
 
 export interface GrowthTimelinePoint {
@@ -2255,7 +2257,11 @@ export async function getGrowthTimeline(
         ...p,
         snapshot_at: latestDay.t,
         contribution_count: p.contribution_delta,
-        steps: days.map((day) => ({ t: day.t, score: p.final_score })),
+        steps: days.map((day) => ({
+          t: day.t,
+          score: p.final_score,
+          count: day.count,
+        })),
       });
     }
 
@@ -2694,7 +2700,7 @@ export async function recordProjectScan(project: ProjectScanResult): Promise<voi
     const domainSlug = projectDomainSlug(project.owner, project.repo);
     const domainName = projectDisplayName(project.full_name);
     const description = JSON.stringify({ tag: project.full_name, project: true });
-    const scoredContributorLogins = project.contributors.map((c) => c.login.toLowerCase());
+    const contributorLogins = project.contributors.map((c) => c.login.toLowerCase());
 
     await db.batch(
       [
@@ -2826,20 +2832,23 @@ export async function recordProjectScan(project: ProjectScanResult): Promise<voi
           sql: `DELETE FROM circle_domain_members WHERE domain_slug = ?`,
           args: [domainSlug],
         },
-        ...scoredContributorLogins.map((login, index) => ({
+        ...contributorLogins.map((login, index) => ({
           sql: `INSERT INTO circle_domain_members
                   (domain_slug, login, weight, reason_zh, reason_en, created_at, updated_at)
-                SELECT ?, s.username, ?, ?, ?, ?, ?
-                FROM scores AS s
-                WHERE s.username = ? AND s.hidden = 0`,
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(domain_slug, login) DO UPDATE SET
+                  weight = excluded.weight,
+                  reason_zh = excluded.reason_zh,
+                  reason_en = excluded.reason_en,
+                  updated_at = excluded.updated_at`,
           args: [
             domainSlug,
+            login,
             Math.max(1, (project.contributors[index]?.contributions ?? 0) || 1),
             `${project.full_name} 贡献者`,
             `${project.full_name} contributor`,
             now,
             now,
-            login,
           ] as (string | number)[],
         })),
       ],
@@ -5828,11 +5837,42 @@ export async function getCommunityDomains(options: {
 
     // Fetch one extra row to know whether a next page exists.
     const domainRes = await db.execute({
-      sql: `SELECT slug, name_zh, name_en, description_zh, source,
+      sql: `WITH domain_rank AS (
+              SELECT cd.slug,
+                     cd.name_zh,
+                     cd.name_en,
+                     cd.description_zh,
+                     cd.source,
+                     cd.member_count,
+                     cd.heat_score,
+                     (
+                       SELECT COUNT(*)
+                       FROM circle_domain_members AS dm
+                       WHERE dm.domain_slug = cd.slug
+                     ) AS member_rows,
+                     CASE
+                       WHEN json_extract(cd.description_zh, '$.project') = 1 THEN (
+                         SELECT COUNT(*)
+                         FROM project_contributors AS pc
+                         WHERE pc.full_name = lower(json_extract(cd.description_zh, '$.tag'))
+                       )
+                       ELSE 0
+                     END AS project_contributor_rows
+              FROM circle_domains AS cd
+              WHERE cd.status = 'active'
+            )
+            SELECT slug, name_zh, name_en, description_zh, source,
                    member_count, heat_score
-            FROM circle_domains
-            WHERE status = 'active'
-            ORDER BY heat_score DESC, member_count DESC, slug ASC
+            FROM domain_rank
+            ORDER BY
+              CASE
+                WHEN MAX(member_rows, project_contributor_rows) >= 3 THEN 0
+                WHEN MAX(member_rows, project_contributor_rows) > 0 THEN 1
+                ELSE 2
+              END ASC,
+              heat_score DESC,
+              member_count DESC,
+              slug ASC
             LIMIT ? OFFSET ?`,
       args: [limit + 1, offset],
     });
@@ -5849,24 +5889,60 @@ export async function getCommunityDomains(options: {
     // Top members for every domain on this page in one round trip. ROW_NUMBER
     // partitions per domain so we cap at DOMAIN_CARD_MEMBERS without N queries.
     const memberRes = await db.execute({
-      sql: `SELECT domain_slug, login, avatar_url, final_score, tier
-            FROM (
+      sql: `WITH candidates AS (
               SELECT dm.domain_slug,
                      dm.login,
-                     s.avatar_url,
-                     s.final_score,
-                     s.tier,
-                     ROW_NUMBER() OVER (
-                       PARTITION BY dm.domain_slug
-                       ORDER BY dm.weight DESC, s.final_score DESC
-                     ) AS rn
+                     COALESCE(s.avatar_url, pc.avatar_url) AS avatar_url,
+                     COALESCE(s.final_score, 0) AS final_score,
+                     COALESCE(s.tier, 'NPC') AS tier,
+                     dm.weight AS weight
               FROM circle_domain_members AS dm
-              JOIN scores AS s ON s.username = dm.login
+              JOIN circle_domains AS cd ON cd.slug = dm.domain_slug
+              LEFT JOIN scores AS s ON s.username = dm.login AND s.hidden = 0
+              LEFT JOIN project_contributors AS pc
+                ON pc.login = dm.login
+               AND pc.full_name = lower(json_extract(cd.description_zh, '$.tag'))
               WHERE dm.domain_slug IN (${placeholders})
-                AND s.hidden = 0
+
+              UNION ALL
+
+              SELECT cd.slug AS domain_slug,
+                     pc.login,
+                     COALESCE(s.avatar_url, pc.avatar_url) AS avatar_url,
+                     COALESCE(s.final_score, 0) AS final_score,
+                     COALESCE(s.tier, 'NPC') AS tier,
+                     pc.contributions AS weight
+              FROM circle_domains AS cd
+              JOIN project_contributors AS pc
+                ON pc.full_name = lower(json_extract(cd.description_zh, '$.tag'))
+              LEFT JOIN scores AS s ON s.username = pc.login AND s.hidden = 0
+              WHERE cd.slug IN (${placeholders})
+                AND json_extract(cd.description_zh, '$.project') = 1
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM circle_domain_members AS dm
+                  WHERE dm.domain_slug = cd.slug AND dm.login = pc.login
+                )
+            )
+            SELECT domain_slug, login, avatar_url, final_score, tier
+            FROM (
+              SELECT domain_slug,
+                     login,
+                     avatar_url,
+                     final_score,
+                     tier,
+                     ROW_NUMBER() OVER (
+                       PARTITION BY domain_slug
+                       ORDER BY
+                         CASE WHEN avatar_url IS NULL THEN 1 ELSE 0 END ASC,
+                         weight DESC,
+                         final_score DESC,
+                         login ASC
+                     ) AS rn
+              FROM candidates
             )
             WHERE rn <= ?`,
-      args: [...slugs, DOMAIN_CARD_MEMBERS],
+      args: [...slugs, ...slugs, DOMAIN_CARD_MEMBERS],
     });
 
     const membersBySlug = new Map<string, CircleDomainMember[]>();
@@ -5923,13 +5999,48 @@ export async function getCommunityDomain(
     if (!row) return getCommunityDomainFromFacets(db, slug);
 
     const memberRes = await db.execute({
-      sql: `SELECT dm.login, s.avatar_url, s.final_score, s.tier
-            FROM circle_domain_members AS dm
-            JOIN scores AS s ON s.username = dm.login
-            WHERE dm.domain_slug = ? AND s.hidden = 0
-            ORDER BY dm.weight DESC, s.final_score DESC
+      sql: `WITH candidates AS (
+              SELECT dm.login,
+                     COALESCE(s.avatar_url, pc.avatar_url) AS avatar_url,
+                     COALESCE(s.final_score, 0) AS final_score,
+                     COALESCE(s.tier, 'NPC') AS tier,
+                     dm.weight AS weight
+              FROM circle_domain_members AS dm
+              JOIN circle_domains AS cd ON cd.slug = dm.domain_slug
+              LEFT JOIN scores AS s ON s.username = dm.login AND s.hidden = 0
+              LEFT JOIN project_contributors AS pc
+                ON pc.login = dm.login
+               AND pc.full_name = lower(json_extract(cd.description_zh, '$.tag'))
+              WHERE dm.domain_slug = ?
+
+              UNION ALL
+
+              SELECT pc.login,
+                     COALESCE(s.avatar_url, pc.avatar_url) AS avatar_url,
+                     COALESCE(s.final_score, 0) AS final_score,
+                     COALESCE(s.tier, 'NPC') AS tier,
+                     pc.contributions AS weight
+              FROM circle_domains AS cd
+              JOIN project_contributors AS pc
+                ON pc.full_name = lower(json_extract(cd.description_zh, '$.tag'))
+              LEFT JOIN scores AS s ON s.username = pc.login AND s.hidden = 0
+              WHERE cd.slug = ?
+                AND json_extract(cd.description_zh, '$.project') = 1
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM circle_domain_members AS dm
+                  WHERE dm.domain_slug = cd.slug AND dm.login = pc.login
+                )
+            )
+            SELECT login, avatar_url, final_score, tier
+            FROM candidates
+            ORDER BY
+              CASE WHEN avatar_url IS NULL THEN 1 ELSE 0 END ASC,
+              weight DESC,
+              final_score DESC,
+              login ASC
             LIMIT ?`,
-      args: [slug, MAX_DOMAIN_MEMBERS_STORED],
+      args: [slug, slug, MAX_DOMAIN_MEMBERS_STORED],
     });
 
     return {

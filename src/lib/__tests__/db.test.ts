@@ -6,6 +6,7 @@ import { createClient } from "@libsql/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ROAST_CACHE_VERSION } from "../cache-version";
 import type { ScoreEntry } from "../db";
+import type { ProjectScanResult } from "../project-scan";
 import type { RawMetrics, ScanResult } from "../types";
 
 let db: typeof import("../db");
@@ -81,6 +82,12 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function daysAgoIso(days: number): string {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+}
+
 function scanFixture(
   username: string,
   finalScore: number,
@@ -123,6 +130,66 @@ function scanFixture(
       tier: finalScore > 70 ? "人上人" : "NPC",
       tier_label: "test",
     },
+  };
+}
+
+function projectScanFixture(fullName: string): ProjectScanResult {
+  const [ownerRaw, repoRaw] = fullName.split("/");
+  const owner = ownerRaw ?? "owner";
+  const repo = repoRaw ?? "repo";
+  return {
+    owner,
+    repo,
+    full_name: fullName,
+    html_url: `https://github.com/${fullName}`,
+    owner_avatar_url: "https://avatars.githubusercontent.com/u/1?v=4",
+    description: "Test project circle",
+    homepage: null,
+    language: "TypeScript",
+    topics: ["test"],
+    license: "MIT",
+    stars: 12,
+    forks: 2,
+    watchers: 12,
+    open_issues: 1,
+    size: 128,
+    default_branch: "main",
+    created_at: "2024-01-01T00:00:00Z",
+    pushed_at: new Date().toISOString(),
+    latest_release_at: null,
+    contributors: [
+      {
+        login: `${repo}-alice`,
+        avatar_url: `https://avatars.githubusercontent.com/u/101?v=4`,
+        html_url: `https://github.com/${repo}-alice`,
+        contributions: 8,
+        role: "contributor",
+      },
+      {
+        login: `${repo}-bob`,
+        avatar_url: `https://avatars.githubusercontent.com/u/102?v=4`,
+        html_url: `https://github.com/${repo}-bob`,
+        contributions: 3,
+        role: "contributor",
+      },
+    ],
+    languages: [{ name: "TypeScript", size: 128 }],
+    readme: null,
+    score: 61,
+    band: "A",
+    breakdown: {
+      activity: 12,
+      quality: 14,
+      collaboration: 13,
+      impact: 10,
+      authenticity: 12,
+    },
+    roast_line: {
+      zh: "测试项目圈",
+      en: "Test project circle",
+    },
+    resolved_from_repository: null,
+    scanned_at: Date.now(),
   };
 }
 
@@ -395,6 +462,51 @@ describe("searchFacetCategories", () => {
   });
 });
 
+describe("community project domains", () => {
+  it("uses project contributor avatars and demotes empty domains", async () => {
+    const project = projectScanFixture("circleavatars/project-with-avatars");
+    await db.recordProjectScan(project);
+
+    const emptySlug = "admin:empty-high-heat";
+    const now = Date.now();
+    const client = createClient({ url: process.env.TURSO_DATABASE_URL! });
+    await client.execute({
+      sql: `INSERT INTO circle_domains
+              (slug, name_zh, name_en, description_zh, description_en,
+               source, status, member_count, heat_score, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'admin', 'active', 0, 999999, ?, ?)
+            ON CONFLICT(slug) DO UPDATE SET
+              heat_score = excluded.heat_score,
+              updated_at = excluded.updated_at`,
+      args: [
+        emptySlug,
+        "空项目圈",
+        "Empty project circle",
+        JSON.stringify({ tag: "empty/high-heat", project: true }),
+        JSON.stringify({ tag: "empty/high-heat", project: true }),
+        now,
+        now,
+      ],
+    });
+    client.close();
+
+    const page = await db.getCommunityDomains({ limit: 24 });
+    const projectSlug = db.projectDomainSlug(project.owner, project.repo);
+    const projectDomain = page.domains.find((d) => d.slug === projectSlug);
+    const emptyDomain = page.domains.find((d) => d.slug === emptySlug);
+
+    expect(projectDomain?.members.map((m) => m.avatar_url)).toEqual([
+      "https://avatars.githubusercontent.com/u/101?v=4",
+      "https://avatars.githubusercontent.com/u/102?v=4",
+    ]);
+    expect(projectDomain?.members.map((m) => m.tier)).toEqual(["NPC", "NPC"]);
+    expect(page.domains.findIndex((d) => d.slug === projectSlug)).toBeLessThan(
+      page.domains.findIndex((d) => d.slug === emptySlug),
+    );
+    expect(emptyDomain?.members).toEqual([]);
+  });
+});
+
 describe("getRank", () => {
   it("ranks by score desc over a shared population", async () => {
     await db.recordScore({ ...entry, username: "rank-low", final_score: 11 });
@@ -477,6 +589,29 @@ describe("recent growth contribution eligibility", () => {
 
     const points = await db.getGrowthTimeline(50, "30d");
     expect(points.some((p) => p.username === username)).toBe(true);
+  });
+
+  it("keeps daily contribution steps for users who commit on multiple days", async () => {
+    const username = "growth-multi-day";
+    const scan = scanFixture(username, 72);
+    scan.contribution_days = [
+      { date: daysAgoIso(5), contribution_count: 2 },
+      { date: daysAgoIso(1), contribution_count: 7 },
+    ];
+    await db.recordScore({
+      ...entry,
+      username,
+      final_score: 72,
+      tier: "人上人",
+      scanned_at: Date.now(),
+    });
+
+    await db.recordProfileSnapshot(scan);
+
+    const points = await db.getGrowthTimeline(50, "30d");
+    const point = points.find((p) => p.username === username);
+    expect(point?.steps.map((s) => s.count)).toEqual([2, 7]);
+    expect(point?.contribution_count).toBe(9);
   });
 
   it("does not add accounts at or below the growth score floor", async () => {

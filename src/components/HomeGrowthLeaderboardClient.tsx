@@ -33,6 +33,11 @@ export interface GrowthLabels {
   allTab: string;
   timelineTitle: string;
   timelineEmpty: string;
+  dailyTitle: string;
+  backToAll: string;
+  filterPlaceholder: string;
+  filterNoResults: string;
+  filterClear: string;
   tooltipBand: string;
   tooltipGrowth: string;
   tooltipCommits: string;
@@ -294,6 +299,11 @@ export function HomeGrowthLeaderboardClient({
   const timelineLabels = {
     timelineTitle: labels.timelineTitle,
     timelineEmpty: labels.timelineEmpty,
+    dailyTitle: labels.dailyTitle,
+    backToAll: labels.backToAll,
+    filterPlaceholder: labels.filterPlaceholder,
+    filterNoResults: labels.filterNoResults,
+    filterClear: labels.filterClear,
     tooltipBand: labels.tooltipBand,
     tooltipGrowth: labels.tooltipGrowth,
     tooltipCommits: labels.tooltipCommits,
