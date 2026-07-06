@@ -2567,6 +2567,13 @@ export interface OrganizationProjectCatalogItem {
   scanned_at: number;
 }
 
+export interface OrganizationProjectCatalogStats {
+  catalog_count: number;
+  unique_project_count: number;
+  organization_count: number;
+  missing_ai_summary_count: number;
+}
+
 export type OrganizationProjectScanJobStatus =
   | "pending"
   | "running"
@@ -3631,6 +3638,45 @@ export async function listOrganizationProjectScanJobItemsByStatus(
   } catch (e) {
     console.error("listOrganizationProjectScanJobItemsByStatus failed:", e);
     return [];
+  }
+}
+
+export async function getOrganizationProjectCatalogStats(): Promise<OrganizationProjectCatalogStats> {
+  const db = getClient();
+  if (!db) {
+    return {
+      catalog_count: 0,
+      unique_project_count: 0,
+      organization_count: 0,
+      missing_ai_summary_count: 0,
+    };
+  }
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT COUNT(*) AS catalog_count,
+                   COUNT(DISTINCT full_name) AS unique_project_count,
+                   COUNT(DISTINCT org_login) AS organization_count,
+                   SUM(CASE WHEN ai_summary IS NULL OR ai_summary = '' THEN 1 ELSE 0 END)
+                     AS missing_ai_summary_count
+            FROM organization_project_catalog`,
+      args: [],
+    });
+    const row = res.rows[0];
+    return {
+      catalog_count: Number(row?.catalog_count) || 0,
+      unique_project_count: Number(row?.unique_project_count) || 0,
+      organization_count: Number(row?.organization_count) || 0,
+      missing_ai_summary_count: Number(row?.missing_ai_summary_count) || 0,
+    };
+  } catch (e) {
+    console.error("getOrganizationProjectCatalogStats failed:", e);
+    return {
+      catalog_count: 0,
+      unique_project_count: 0,
+      organization_count: 0,
+      missing_ai_summary_count: 0,
+    };
   }
 }
 

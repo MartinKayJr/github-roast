@@ -69,6 +69,25 @@ type OrgScanJob = {
   items: OrgScanJobItem[];
 };
 
+type OrgProjectStats = {
+  catalog_count: number;
+  unique_project_count: number;
+  organization_count: number;
+  missing_ai_summary_count: number;
+};
+
+type OrgScanState = {
+  jobs: OrgScanJob[];
+  stats: OrgProjectStats;
+};
+
+const EMPTY_STATS: OrgProjectStats = {
+  catalog_count: 0,
+  unique_project_count: 0,
+  organization_count: 0,
+  missing_ai_summary_count: 0,
+};
+
 export function AdminOrgProjectScanPanel() {
   const t = useTranslations("admin");
   const [org, setOrg] = useState("https://github.com/Xposed-Modules-Repo");
@@ -81,6 +100,7 @@ export function AdminOrgProjectScanPanel() {
   const [loadingJobId, setLoadingJobId] = useState<string | null>(null);
   const [result, setResult] = useState<ScanResponse | null>(null);
   const [jobs, setJobs] = useState<OrgScanJob[]>([]);
+  const [stats, setStats] = useState<OrgProjectStats>(EMPTY_STATS);
   const [error, setError] = useState<string | null>(null);
 
   const loadJobs = useCallback(async () => {
@@ -89,8 +109,9 @@ export function AdminOrgProjectScanPanel() {
         cache: "no-store",
       });
       if (!res.ok) return;
-      const data = (await res.json()) as { jobs: OrgScanJob[] };
+      const data = (await res.json()) as OrgScanState;
       setJobs(data.jobs);
+      setStats(data.stats ?? EMPTY_STATS);
     } catch {
       // The panel itself remains usable; failed polling should not block scans.
     }
@@ -100,9 +121,12 @@ export function AdminOrgProjectScanPanel() {
     let cancelled = false;
     const id = window.setTimeout(() => {
       fetch("/api/admin/organizations/scan-projects", { cache: "no-store" })
-        .then((res) => (res.ok ? (res.json() as Promise<{ jobs: OrgScanJob[] }>) : null))
+        .then((res) => (res.ok ? (res.json() as Promise<OrgScanState>) : null))
         .then((data) => {
-          if (!cancelled && data) setJobs(data.jobs);
+          if (!cancelled && data) {
+            setJobs(data.jobs);
+            setStats(data.stats ?? EMPTY_STATS);
+          }
         })
         .catch(() => {});
     }, 0);
@@ -168,6 +192,32 @@ export function AdminOrgProjectScanPanel() {
           <p className="mt-1 max-w-3xl text-sm leading-6 text-zinc-400">
             {t("orgScanBody")}
           </p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-xl border border-white/10 bg-black/10 px-3 py-2">
+              <div className="text-[11px] text-zinc-500">{t("orgProjectCatalogCount")}</div>
+              <div className="mt-1 text-lg font-black text-zinc-100 tabular-nums">
+                {stats.catalog_count.toLocaleString()}
+              </div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/10 px-3 py-2">
+              <div className="text-[11px] text-zinc-500">{t("orgProjectUniqueCount")}</div>
+              <div className="mt-1 text-lg font-black text-zinc-100 tabular-nums">
+                {stats.unique_project_count.toLocaleString()}
+              </div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/10 px-3 py-2">
+              <div className="text-[11px] text-zinc-500">{t("orgProjectOrgCount")}</div>
+              <div className="mt-1 text-lg font-black text-zinc-100 tabular-nums">
+                {stats.organization_count.toLocaleString()}
+              </div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/10 px-3 py-2">
+              <div className="text-[11px] text-zinc-500">{t("orgProjectMissingAiCount")}</div>
+              <div className="mt-1 text-lg font-black text-zinc-100 tabular-nums">
+                {stats.missing_ai_summary_count.toLocaleString()}
+              </div>
+            </div>
+          </div>
         </div>
         <button
           type="button"

@@ -597,6 +597,11 @@ describe("community project domains", () => {
         },
       },
     });
+
+    const stats = await db.getOrganizationProjectCatalogStats();
+    expect(stats.catalog_count).toBeGreaterThanOrEqual(1);
+    expect(stats.unique_project_count).toBeGreaterThanOrEqual(1);
+    expect(stats.organization_count).toBeGreaterThanOrEqual(1);
   });
 
   it("filters project reading mode in SQL before applying the candidate limit", async () => {

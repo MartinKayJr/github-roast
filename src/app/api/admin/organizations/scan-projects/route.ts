@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAdminAccess } from "@/lib/admin";
 import {
   createOrganizationProjectScanJob,
+  getOrganizationProjectCatalogStats,
   getOrganizationProjectScanJob,
   listOrganizationProjectScanJobItemsByStatus,
   listOrganizationProjectScanJobs,
@@ -286,8 +287,11 @@ export async function GET() {
   if (!access.ok) {
     return errorResponse(access.reason, access.reason === "unauthorized" ? 401 : 403);
   }
-  const jobs = await listOrganizationProjectScanJobs(20);
-  return NextResponse.json({ jobs });
+  const [jobs, stats] = await Promise.all([
+    listOrganizationProjectScanJobs(20),
+    getOrganizationProjectCatalogStats(),
+  ]);
+  return NextResponse.json({ jobs, stats });
 }
 
 export async function POST(req: NextRequest) {
