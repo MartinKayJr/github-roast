@@ -27,45 +27,52 @@ export function CommunityJoinEntry({
   const isActive = initialProfile?.status === "active";
 
   return (
-    <section className="mb-8 rounded-2xl border border-emerald-300/20 bg-emerald-500/[0.04] p-5 sm:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <h2 className="text-base font-bold text-emerald-200">{t("joinTitle")}</h2>
-          <p className="mt-1 max-w-2xl text-sm text-zinc-400">
-            {isActive ? t("joinedDesc") : t("joinDesc")}
-          </p>
-        </div>
-
-        {!authConfigured ? (
-          <Button disabled className="shrink-0 bg-zinc-700 text-zinc-300">
-            {t("authUnavailable")}
-          </Button>
-        ) : !username ? (
-          <Button
-            type="button"
-            onClick={() => signIn("github")}
-            className="shrink-0 bg-emerald-500 text-white hover:bg-emerald-600"
-          >
-            <UserPlus className="h-4 w-4" />
-            {t("signInToJoin")}
-          </Button>
-        ) : !hasRoast ? (
-          <Button asChild className="shrink-0 bg-orange-500 text-white hover:bg-orange-600">
-            <Link href={`/?username=${encodeURIComponent(`https://github.com/${username}`)}`}>
-              {t("roastToJoin")}
-            </Link>
-          </Button>
-        ) : (
-          <Button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="shrink-0 bg-emerald-500 text-white hover:bg-emerald-600"
-          >
+    <section className="fixed right-4 top-20 z-40 sm:right-6">
+      {!authConfigured ? (
+        <Button
+          disabled
+          size="icon"
+          shape="pill"
+          aria-label={t("authUnavailable")}
+          className="h-11 w-11 border border-white/10 bg-slate-950/60 text-zinc-400 shadow-[0_0_34px_-14px_rgba(34,211,238,0.8)] backdrop-blur-xl"
+        >
+          <UserPlus className="h-4 w-4" />
+        </Button>
+      ) : !username ? (
+        <Button
+          type="button"
+          size="icon"
+          shape="pill"
+          aria-label={t("signInToJoin")}
+          onClick={() => signIn("github")}
+          className="h-11 w-11 border border-cyan-200/25 bg-cyan-400/15 text-cyan-100 shadow-[0_0_38px_-10px_rgba(34,211,238,0.9)] backdrop-blur-xl hover:bg-cyan-400/25"
+        >
+          <UserPlus className="h-4 w-4" />
+        </Button>
+      ) : !hasRoast ? (
+        <Button
+          asChild
+          size="icon"
+          shape="pill"
+          aria-label={t("roastToJoin")}
+          className="h-11 w-11 border border-orange-200/25 bg-orange-400/15 text-orange-100 shadow-[0_0_38px_-10px_rgba(251,146,60,0.9)] backdrop-blur-xl hover:bg-orange-400/25"
+        >
+          <Link href={`/?username=${encodeURIComponent(`https://github.com/${username}`)}`}>
             <Sparkles className="h-4 w-4" />
-            {isActive ? t("editProfile") : t("joinButton")}
-          </Button>
-        )}
-      </div>
+          </Link>
+        </Button>
+      ) : (
+        <Button
+          type="button"
+          size="icon"
+          shape="pill"
+          aria-label={isActive ? t("editProfile") : t("joinButton")}
+          onClick={() => setOpen(true)}
+          className="h-11 w-11 border border-cyan-200/25 bg-cyan-400/15 text-cyan-100 shadow-[0_0_38px_-10px_rgba(34,211,238,0.9)] backdrop-blur-xl hover:bg-cyan-400/25"
+        >
+          <Sparkles className="h-4 w-4" />
+        </Button>
+      )}
 
       {username && hasRoast && (
         <CommunityOnboardingDialog

@@ -13,6 +13,7 @@
     "leaderboard": "榜单",
     "developers": "发现",
     "community": "圈子",
+    "projects": "项目",
     "versus": "对战",
     "blog": "研究",
     "openMenu": "打开菜单",
@@ -24,6 +25,7 @@
     "myProfile": "我的主页",
     "judgeSelf": "检测我自己",
     "communityProfile": "社区档案",
+    "inbox": "站内信",
     "settings": "设置",
     "admin": "管理员"
   },
@@ -58,6 +60,26 @@
     "growthSubscribed": "已订阅。后续定时任务会按公开贡献变化更新你的近期成长数据。",
     "saving": "保存中…",
     "failed": "保存失败，稍后再试"
+  },
+  "inbox": {
+    "metaTitle": "站内信 | ghsphere",
+    "metaDescription": "查看 ghsphere 圈子推荐、系统通知和后续聊天消息。",
+    "eyebrow": "Inbox",
+    "heading": "站内信",
+    "subtitle": "即使没有填写邮箱，圈子推荐、系统通知和后续聊天消息也会留在这里。",
+    "signInTitle": "登录后查看站内信",
+    "signInBody": "站内信会绑定你的 GitHub 登录身份。请先用右上角的 GitHub 登录入口登录。",
+    "authDisabledBody": "当前部署没有启用 GitHub OAuth，暂时无法使用站内信。",
+    "emptyTitle": "还没有站内信",
+    "emptyBody": "当系统匹配到合适的圈子推荐，或后续有人通过站内聊天联系你时，会出现在这里。",
+    "systemSender": "系统",
+    "unread": "未读",
+    "read": "已读",
+    "allRead": "全部已读",
+    "unreadCount": "{count} 条未读",
+    "markRead": "标记已读",
+    "markAllRead": "全部标记已读",
+    "openAction": "查看"
   },
   "admin": {
     "metaTitle": "管理员 | ghsphere",
@@ -801,8 +823,9 @@
     "empty": "暂无相关社区成员"
   },
   "communityPage": {
-    "heading": "圈子",
-    "subtitle": "找到正在做相近事情、想认识相似伙伴的 GitHub 开发者。",
+    "eyebrow": "Community Galaxy",
+    "heading": "在开发者星域里找到你的圈子",
+    "subtitle": "每个星球都是一个领域或人群。滚动时星尘凝聚成圈子，成员从行星环里浮现，找到更接近你的人。",
     "joinTitle": "加入圈子",
     "joinDesc": "认领你的锐评身份，填写社区档案，也可以让 AI 根据你的 GitHub 锐评和公开项目一键生成草稿。",
     "joinedDesc": "你已经加入圈子，可以继续更新社区档案，让更多合适的人找到你。",
@@ -811,6 +834,9 @@
     "joinButton": "填写并加入",
     "editProfile": "编辑社区档案",
     "authUnavailable": "登录未配置",
+    "orbitUserSub": "当前星球",
+    "orbitGuestSubject": "圈子雷达",
+    "orbitGuestSub": "公共星域",
     "feedHeading": "开发者圈子",
     "feedSub": "公开加入社区的成员，会按最近更新和评分展示。"
   },
@@ -827,5 +853,57 @@
     "tokenEstimate": "预计消耗 {min}-{max} tokens",
     "fallback": "AI 暂不可用，已尽量用标签搜索结果展示。",
     "empty": "雷达暂时没有扫到成员"
+  },
+  "communityGalaxy": {
+    "heading": "领域星域",
+    "sub": "滚动探索开发者领域。每个星球都由环绕它的成员凝聚而成。",
+    "empty": "还没有领域——等更多开发者加入圈子后再来看看。",
+    "loading": "正在凝聚更多星球…",
+    "memberCount": "{count} 位成员",
+    "explore": "探索领域"
+  },
+  "communityDomain": {
+    "back": "← 返回圈子",
+    "notFound": "领域不存在",
+    "domain": "领域星球",
+    "memberCount": "{count} 位成员",
+    "membersHeading": "领域成员",
+    "empty": "这个领域还没有公开成员。",
+    "exploreMore": "继续探索",
+    "challenge": "成员对战",
+    "aiFind": "AI 找人"
+  },
+  "projects": {
+    "metaTitle": "项目星球",
+    "metaDescription": "输入 GitHub 开源项目，扫描项目质量、核心贡献者和项目维度的开发者圈子。",
+    "eyebrow": "Project Galaxy",
+    "heading": "扫描一个开源项目",
+    "subtitle": "项目会变成一个领域星球：中心是项目质量，轨道是贡献者，已有锐评的人会直接出现在项目圈子里。",
+    "placeholder": "输入 GitHub 项目，例如 vercel/next.js",
+    "scan": "扫描项目",
+    "scanning": "扫描中",
+    "projectPlanet": "项目星球",
+    "openCircle": "打开项目圈子",
+    "aiFind": "AI 找人",
+    "pendingUser": "待锐评",
+    "noScoredContributors": "这个项目的贡献者还没有进入锐评库，后续可以从这里批量扫描。",
+    "back": "返回项目扫描",
+    "notFound": "项目还没有扫描",
+    "breakdown": {
+      "activity": "活跃",
+      "quality": "质量",
+      "collaboration": "协作",
+      "impact": "影响",
+      "authenticity": "真实"
+    },
+    "errors": {
+      "invalid_project": "请输入有效的 GitHub 项目地址或 owner/repo。",
+      "project_not_found": "GitHub 上找不到这个项目。",
+      "github_rate_limited": "GitHub API 暂时限流，稍后再试。",
+      "github_unavailable": "GitHub 数据暂时不可用，稍后再试。",
+      "rate_limited": "请求太频繁，稍后再试。",
+      "project_scan_failed": "项目扫描失败，稍后再试。",
+      "invalid_body": "请求格式不正确。"
+    }
   }
 }

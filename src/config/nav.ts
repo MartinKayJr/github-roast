@@ -29,6 +29,7 @@ export const NAV_ITEMS: NavItem[] = [
   { key: "leaderboard", href: "/leaderboard" },
   { key: "developers", href: "/developers" },
   { key: "community", href: "/community" },
+  { key: "projects", href: "/projects" },
   { key: "versus", href: "/vs", exact: true },
   { key: "blog", href: "/blog" },
 ];

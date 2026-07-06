@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
-import { CommunityGalaxyBackdrop } from "@/components/community/CommunityGalaxyBackdrop";
+import { notFound } from "next/navigation";
 import { getTranslations, setRequestLocale } from "next-intl/server";
+import { CommunityGalaxyBackdrop } from "@/components/community/CommunityGalaxyBackdrop";
 import { CommunityJoinEntry } from "@/components/community/CommunityJoinEntry";
-import { CommunityGalaxyWaterfall } from "@/components/community/galaxy/CommunityGalaxyWaterfall";
+import { CommunityDomainGalaxy } from "@/components/community/galaxy/CommunityDomainGalaxy";
 import {
   ensureCommunityProfileDraft,
-  getCommunityDomains,
+  getCommunityDomain,
   getCommunityProfile,
   getProfileSnapshot,
   getScoreBrief,
@@ -15,40 +16,48 @@ import { buildCommunityProfileDraft, sourceFromSnapshot } from "@/lib/community-
 import { normLang } from "@/lib/lang";
 import { localeAlternates } from "@/lib/site";
 
+// Domain membership reflects the latest facet rebuild; keep it fresh rather than
+// caching a stale member list on the CDN.
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
   params,
 }: {
-  params: Promise<{ locale: string }>;
+  params: Promise<{ locale: string; slug: string }>;
 }): Promise<Metadata> {
-  const { locale } = await params;
-  const t = await getTranslations({ locale, namespace: "communityPage" });
+  const { locale, slug } = await params;
+  const decoded = decodeURIComponent(slug);
   const meta = await getTranslations({ locale, namespace: "meta" });
+  const domain = await getCommunityDomain(decoded);
+  if (!domain) {
+    const t = await getTranslations({ locale, namespace: "communityDomain" });
+    return { title: `${t("notFound")} · ${meta("siteName")}`, robots: { index: false, follow: true } };
+  }
+  const name = locale === "en" ? domain.name.en || domain.name.zh : domain.name.zh;
   return {
-    title: `${t("heading")} · ${meta("siteName")}`,
-    description: t("subtitle"),
-    alternates: localeAlternates(locale, "/community"),
+    title: `${name} · ${meta("siteName")}`,
+    alternates: localeAlternates(locale, `/community/${encodeURIComponent(decoded)}`),
   };
 }
 
-export default async function CommunityPage({
+export default async function CommunityDomainPage({
   params,
 }: {
-  params: Promise<{ locale: string }>;
+  params: Promise<{ locale: string; slug: string }>;
 }) {
-  const { locale } = await params;
+  const { locale, slug } = await params;
   setRequestLocale(locale);
-  const t = await getTranslations("communityPage");
   const lang = normLang(locale);
+  const decoded = decodeURIComponent(slug);
+  const domain = await getCommunityDomain(decoded);
+  if (!domain) notFound();
   const session = authConfigured() ? await auth() : null;
   const login = session?.user?.login || null;
   const githubId = session?.user?.githubId || null;
-  const [scoreBrief, initialCommunityProfile, snapshot, domainPage] = await Promise.all([
+  const [scoreBrief, initialCommunityProfile, snapshot] = await Promise.all([
     login ? getScoreBrief(login) : Promise.resolve(null),
     githubId ? getCommunityProfile(githubId) : Promise.resolve(null),
     login ? getProfileSnapshot(login) : Promise.resolve(null),
-    getCommunityDomains({ limit: 10 }),
   ]);
 
   let communityProfile = initialCommunityProfile;
@@ -71,24 +80,15 @@ export default async function CommunityPage({
   return (
     <main className="relative flex w-full flex-1 overflow-hidden bg-[#020617]">
       <CommunityGalaxyBackdrop />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_22%,rgba(2,6,23,0.02),rgba(2,6,23,0.72)_78%)]" />
-      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-[96rem] flex-col px-2 py-6 sm:px-4 sm:py-8">
-        <h1 className="sr-only">{t("heading")}</h1>
-
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_bottom,rgba(2,6,23,0.34),rgba(2,6,23,0.08)_32%,rgba(2,6,23,0.7)_100%)]" />
+      <div className="relative z-10 min-h-screen w-full">
         <CommunityJoinEntry
           username={login}
           hasRoast={Boolean(scoreBrief)}
           authConfigured={authConfigured()}
           initialProfile={communityProfile}
         />
-
-        <div className="flex-1">
-          <CommunityGalaxyWaterfall
-            initialDomains={domainPage.domains}
-            initialCursor={domainPage.nextCursor}
-            lang={lang}
-          />
-        </div>
+        <CommunityDomainGalaxy domain={domain} lang={lang} />
       </div>
     </main>
   );
