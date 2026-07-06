@@ -2,6 +2,7 @@ import { getTranslations } from "next-intl/server";
 import { notFound } from "next/navigation";
 import { getAdminAccess } from "@/lib/admin";
 import { getAdminRoastEmailStats } from "@/lib/db";
+import { AdminOrgProjectScanPanel } from "@/components/admin/AdminOrgProjectScanPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -109,6 +110,8 @@ export default async function AdminPage() {
           </div>
         </dl>
       </section>
+
+      <AdminOrgProjectScanPanel />
     </main>
   );
 }

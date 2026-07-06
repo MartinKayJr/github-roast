@@ -60,6 +60,12 @@ export interface ProjectScanResult {
   band: ProjectBand;
   breakdown: ProjectScoreBreakdown;
   roast_line: { zh: string; en: string };
+  resolved_from_repository: {
+    full_name: string;
+    html_url: string;
+    source_url: string;
+    kind: "source_url" | "homepage" | "description";
+  } | null;
   scanned_at: number;
 }
 
@@ -85,6 +91,8 @@ interface RestRepo {
   default_branch: string;
   created_at: string | null;
   pushed_at: string | null;
+  fork?: boolean;
+  archived?: boolean;
   owner?: RestOwner | null;
 }
 
@@ -107,6 +115,13 @@ interface RestReadme {
   download_url?: string | null;
 }
 
+interface RestContentFile {
+  type?: string;
+  content?: string;
+  encoding?: string;
+  download_url?: string | null;
+}
+
 function authHeaders(useToken = true): Record<string, string> {
   const token = useToken ? process.env.GITHUB_TOKEN : undefined;
   const headers: Record<string, string> = {
@@ -118,7 +133,7 @@ function authHeaders(useToken = true): Record<string, string> {
   return headers;
 }
 
-async function restGet<T>(path: string): Promise<T | null> {
+async function restGetWithHeaders<T>(path: string): Promise<{ data: T | null; headers: Headers }> {
   const request = (useToken: boolean) =>
     fetch(`${GITHUB_API}/${path}`, {
       headers: authHeaders(useToken),
@@ -143,10 +158,15 @@ async function restGet<T>(path: string): Promise<T | null> {
   }
   if (!res.ok) throw new GitHubDataUnavailableError(`GitHub REST HTTP ${res.status}.`);
   try {
-    return (await res.json()) as T;
+    return { data: (await res.json()) as T, headers: res.headers };
   } catch {
-    return null;
+    return { data: null, headers: res.headers };
   }
+}
+
+async function restGet<T>(path: string): Promise<T | null> {
+  const { data } = await restGetWithHeaders<T>(path);
+  return data;
 }
 
 function daysSince(value: string | null | undefined, now = Date.now()): number | null {
@@ -167,6 +187,135 @@ export function parseProjectInput(input: unknown): { owner: string; repo: string
   const nameRe = /^[A-Za-z0-9_.-]+$/;
   if (!owner || !repo || !nameRe.test(owner) || !nameRe.test(repo)) return null;
   return { owner, repo };
+}
+
+function parseGitHubRepoUrl(input: string | null | undefined): {
+  owner: string;
+  repo: string;
+  url: string;
+} | null {
+  if (!input) return null;
+  const match = input.match(/(?:https?:\/\/)?github\.com\/([^/\s?#]+)\/([^/\s?#]+)/i);
+  if (!match) return null;
+  const owner = match[1]?.trim();
+  const repo = match[2]?.replace(/(?:\.git)?[),.\]]*$/i, "").trim();
+  const nameRe = /^[A-Za-z0-9_.-]+$/;
+  if (!owner || !repo || !nameRe.test(owner) || !nameRe.test(repo)) return null;
+  return { owner, repo, url: `https://github.com/${owner}/${repo}` };
+}
+
+export function parseOrganizationInput(input: unknown): string | null {
+  if (typeof input !== "string") return null;
+  const raw = input.trim();
+  const urlMatch = raw.match(/github\.com\/([^/\s?#]+)/i);
+  const org = (urlMatch?.[1] ?? raw).replace(/^@/, "").trim();
+  if (!/^[A-Za-z0-9_.-]+$/.test(org)) return null;
+  return org;
+}
+
+export interface OrganizationRepoSummary {
+  name: string;
+  full_name: string;
+  html_url: string;
+  description: string | null;
+  language: string | null;
+  topics: string[];
+  stars: number;
+  forks: number;
+  pushed_at: string | null;
+  fork: boolean;
+  archived: boolean;
+}
+
+function parseNextPage(link: string | null): number | null {
+  if (!link) return null;
+  const next = link
+    .split(",")
+    .map((part) => part.trim())
+    .find((part) => /rel="next"/.test(part));
+  if (!next) return null;
+  const page = next.match(/[?&]page=(\d+)/)?.[1];
+  return page ? Number(page) : null;
+}
+
+export async function listOrganizationRepos(options: {
+  org: string;
+  page?: number;
+  perPage?: number;
+  includeForks?: boolean;
+  includeArchived?: boolean;
+}): Promise<{ org: string; repos: OrganizationRepoSummary[]; nextPage: number | null }> {
+  const org = parseOrganizationInput(options.org);
+  if (!org) throw new AccountNotFoundError();
+  const page = Math.max(1, Math.floor(options.page ?? 1));
+  const perPage = Math.max(1, Math.min(100, Math.floor(options.perPage ?? 30)));
+  const { data, headers } = await restGetWithHeaders<RestRepo[]>(
+    `orgs/${encodeURIComponent(org)}/repos?type=public&sort=pushed&direction=desc&per_page=${perPage}&page=${page}`,
+  );
+  const repos = (data ?? [])
+    .filter((repo) => options.includeForks || !repo.fork)
+    .filter((repo) => options.includeArchived || !repo.archived)
+    .map((repo): OrganizationRepoSummary => ({
+      name: repo.name,
+      full_name: repo.full_name,
+      html_url: repo.html_url,
+      description: repo.description,
+      language: repo.language,
+      topics: (repo.topics ?? []).slice(0, 12),
+      stars: repo.stargazers_count ?? 0,
+      forks: repo.forks_count ?? 0,
+      pushed_at: repo.pushed_at,
+      fork: Boolean(repo.fork),
+      archived: Boolean(repo.archived),
+    }));
+  return { org, repos, nextPage: parseNextPage(headers.get("link")) };
+}
+
+async function fetchRepoTextFile(owner: string, repo: string, path: string): Promise<string | null> {
+  const file = await restGet<RestContentFile>(
+    `repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodeURIComponent(path)}`,
+  ).catch(() => null);
+  if (!file || file.type !== "file") return null;
+  try {
+    if (file.content && file.encoding === "base64") {
+      return Buffer.from(file.content.replace(/\s+/g, ""), "base64").toString("utf-8");
+    }
+    if (file.download_url) {
+      const res = await fetch(file.download_url, {
+        headers: { "User-Agent": "ghsphere", Range: "bytes=0-4095" },
+        cache: "no-store",
+      });
+      if (res.ok) return res.text();
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+async function resolveSourceRepository(
+  repo: RestRepo,
+): Promise<{
+  owner: string;
+  repo: string;
+  url: string;
+  kind: "source_url" | "homepage" | "description";
+} | null> {
+  const owner = repo.owner?.login ?? repo.full_name.split("/")[0] ?? "";
+  const current = `${owner}/${repo.name}`.toLowerCase();
+  const sourceUrl = await fetchRepoTextFile(owner, repo.name, "SOURCE_URL");
+  const candidates: { kind: "source_url" | "homepage" | "description"; value: string | null }[] = [
+    { kind: "source_url", value: sourceUrl },
+    { kind: "homepage", value: repo.homepage },
+    { kind: "description", value: repo.description },
+  ];
+  for (const candidate of candidates) {
+    const parsed = parseGitHubRepoUrl(candidate.value);
+    if (!parsed) continue;
+    if (`${parsed.owner}/${parsed.repo}`.toLowerCase() === current) continue;
+    return { ...parsed, kind: candidate.kind };
+  }
+  return null;
 }
 
 function projectBand(score: number): ProjectBand {
@@ -271,6 +420,58 @@ function scoreProject(input: {
   return { score: total, band: projectBand(total), breakdown };
 }
 
+export type ProjectSafetyLevel = "A" | "B" | "C" | "D";
+
+export interface ProjectSafetyAssessment {
+  level: ProjectSafetyLevel;
+  notes: { zh: string[]; en: string[] };
+}
+
+export function assessProjectSafety(project: ProjectScanResult): ProjectSafetyAssessment {
+  let risk = 0;
+  const notes = { zh: [] as string[], en: [] as string[] };
+  const pushDays = daysSince(project.pushed_at);
+  if (pushDays === null || pushDays > 365) {
+    risk += 2;
+    notes.zh.push("长期未维护");
+    notes.en.push("stale maintenance signal");
+  } else if (pushDays > 120) {
+    risk += 1;
+    notes.zh.push("近期维护偏弱");
+    notes.en.push("low recent maintenance");
+  }
+  if ((project.readme?.placeholder_score ?? 0) >= 0.55 || (project.readme?.content_depth_score ?? 0) < 0.35) {
+    risk += 1;
+    notes.zh.push("文档信号不足");
+    notes.en.push("weak documentation signal");
+  }
+  if (project.contributors.length <= 1) {
+    risk += 1;
+    notes.zh.push("贡献者较少");
+    notes.en.push("small contributor base");
+  }
+  if (project.breakdown.authenticity < 8) {
+    risk += 2;
+    notes.zh.push("公开信号可信度偏低");
+    notes.en.push("lower public-signal authenticity");
+  }
+  if (project.open_issues > 100 && project.contributors.length <= 2) {
+    risk += 1;
+    notes.zh.push("issue 压力偏高");
+    notes.en.push("high issue load");
+  }
+
+  if (notes.zh.length === 0) {
+    notes.zh.push("公开维护信号健康");
+    notes.en.push("healthy public maintenance signals");
+  }
+
+  return {
+    level: risk >= 5 ? "D" : risk >= 3 ? "C" : risk >= 1 ? "B" : "A",
+    notes,
+  };
+}
+
 function roastLine(result: {
   repo: RestRepo;
   score: number;
@@ -303,7 +504,11 @@ function roastLine(result: {
   };
 }
 
-export async function scanProject(owner: string, repo: string): Promise<ProjectScanResult> {
+export async function scanProject(
+  owner: string,
+  repo: string,
+  options: { followSource?: boolean } = {},
+): Promise<ProjectScanResult> {
   const [repoData, contributorsData, languagesData, releasesData, readme] = await Promise.all([
     restGet<RestRepo>(`repos/${owner}/${repo}`),
     restGet<RestContributor[]>(`repos/${owner}/${repo}/contributors?per_page=30`).catch(() => []),
@@ -313,6 +518,26 @@ export async function scanProject(owner: string, repo: string): Promise<ProjectS
   ]);
   if (!repoData) throw new AccountNotFoundError();
   const ownerLogin = repoData.owner?.login ?? owner;
+  if (options.followSource !== false) {
+    const source = await resolveSourceRepository(repoData).catch(() => null);
+    if (source) {
+      try {
+        const resolved = await scanProject(source.owner, source.repo, { followSource: false });
+        return {
+          ...resolved,
+          resolved_from_repository: {
+            full_name: repoData.full_name,
+            html_url: repoData.html_url,
+            source_url: source.url,
+            kind: source.kind,
+          },
+        };
+      } catch {
+        // If the advertised source repository is unavailable, fall back to the
+        // registry/index repository instead of failing the whole organization batch.
+      }
+    }
+  }
   const contributors = (contributorsData ?? [])
     .filter((c): c is Required<Pick<RestContributor, "login">> & RestContributor => Boolean(c.login))
     .map((c): ProjectContributorScan => ({
@@ -361,6 +586,7 @@ export async function scanProject(owner: string, repo: string): Promise<ProjectS
     band: scored.band,
     breakdown: scored.breakdown,
     roast_line: roastLine({ repo: repoData, ...scored, contributors, readme }),
+    resolved_from_repository: null,
     scanned_at: Date.now(),
   };
 }

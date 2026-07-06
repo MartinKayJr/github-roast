@@ -52,7 +52,7 @@ import type {
 import type { LeaderboardWindow } from "./leaderboardWindow";
 import { bandFor } from "./band";
 import { clampScore, logRatio, spamBotScore } from "./score";
-import type { ProjectBand, ProjectScanResult } from "./project-scan";
+import type { ProjectBand, ProjectSafetyAssessment, ProjectScanResult } from "./project-scan";
 
 const EMPTY_TAGS: Tags = { zh: [], en: [] };
 const HEAT_LOOKUP_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -401,6 +401,47 @@ function ensureSchema(db: Client): Promise<void> {
            )`,
           `CREATE INDEX IF NOT EXISTS idx_project_scan_jobs_status
              ON project_scan_jobs(status, created_at)`,
+          `CREATE TABLE IF NOT EXISTS organization_project_scan_runs (
+             id              TEXT PRIMARY KEY,
+             org_login       TEXT NOT NULL,
+             requested_by    TEXT,
+             page_start      INTEGER NOT NULL,
+             per_page        INTEGER NOT NULL,
+             scanned_count   INTEGER NOT NULL DEFAULT 0,
+             failed_count    INTEGER NOT NULL DEFAULT 0,
+             next_page       INTEGER,
+             created_at      INTEGER NOT NULL,
+             completed_at    INTEGER NOT NULL
+           )`,
+          `CREATE INDEX IF NOT EXISTS idx_org_project_scan_runs_org_created
+             ON organization_project_scan_runs(org_login, created_at DESC)`,
+          `CREATE TABLE IF NOT EXISTS organization_project_catalog (
+             org_login       TEXT NOT NULL,
+             full_name       TEXT NOT NULL,
+             registry_full_name TEXT,
+             registry_html_url  TEXT,
+             source_url      TEXT,
+             owner           TEXT NOT NULL,
+             repo            TEXT NOT NULL,
+             html_url        TEXT NOT NULL,
+             description     TEXT,
+             language        TEXT,
+             topics          TEXT,
+             stars           INTEGER NOT NULL DEFAULT 0,
+             forks           INTEGER NOT NULL DEFAULT 0,
+             score           REAL NOT NULL DEFAULT 0,
+             band            TEXT NOT NULL,
+             safety_level    TEXT NOT NULL,
+             safety_notes    TEXT,
+             roast_line      TEXT,
+             contributors    TEXT,
+             scanned_at      INTEGER NOT NULL,
+             PRIMARY KEY(org_login, full_name)
+           )`,
+          `CREATE INDEX IF NOT EXISTS idx_org_project_catalog_org_score
+             ON organization_project_catalog(org_login, score DESC, stars DESC)`,
+          `CREATE INDEX IF NOT EXISTS idx_org_project_catalog_org_language
+             ON organization_project_catalog(org_login, language, score DESC)`,
           `CREATE TABLE IF NOT EXISTS profile_comments (
              id                TEXT PRIMARY KEY,
              target_username   TEXT NOT NULL,
@@ -602,6 +643,17 @@ function ensureSchema(db: Client): Promise<void> {
         );
       } catch {
         // column already exists — ignore
+      }
+      for (const col of [
+        "registry_full_name TEXT",
+        "registry_html_url TEXT",
+        "source_url TEXT",
+      ]) {
+        try {
+          await db.execute(`ALTER TABLE organization_project_catalog ADD COLUMN ${col}`);
+        } catch {
+          // column already exists — ignore
+        }
       }
     })().catch((e) => {
       schemaReady = null; // allow retry on next call
@@ -2111,6 +2163,29 @@ export interface ProjectScoreDetail {
   domain_slug: string;
 }
 
+export interface OrganizationProjectCatalogItem {
+  org_login: string;
+  full_name: string;
+  registry_full_name: string | null;
+  registry_html_url: string | null;
+  source_url: string | null;
+  owner: string;
+  repo: string;
+  html_url: string;
+  description: string | null;
+  language: string | null;
+  topics: string[];
+  stars: number;
+  forks: number;
+  score: number;
+  band: ProjectBand;
+  safety_level: string;
+  safety_notes: ProjectSafetyAssessment["notes"];
+  roast_line: ProjectScanResult["roast_line"];
+  contributors: ProjectScanResult["contributors"];
+  scanned_at: number;
+}
+
 function parseProjectJson<T>(raw: unknown, fallback: T): T {
   if (typeof raw !== "string" || !raw) return fallback;
   try {
@@ -2409,6 +2484,173 @@ export async function recordProjectScan(project: ProjectScanResult): Promise<voi
   }
 }
 
+export async function recordOrganizationProjectCatalog(input: {
+  orgLogin: string;
+  requestedBy?: string | null;
+  pageStart: number;
+  perPage: number;
+  nextPage: number | null;
+  projects: { project: ProjectScanResult; safety: ProjectSafetyAssessment }[];
+  failures: { repo: string; error: string }[];
+}): Promise<{ runId: string | null; written: number }> {
+  const db = getClient();
+  if (!db) return { runId: null, written: 0 };
+  try {
+    await ensureSchema(db);
+    const now = Date.now();
+    const runId = randomUUID();
+    const org = input.orgLogin.toLowerCase();
+    await db.batch(
+      [
+        {
+          sql: `INSERT INTO organization_project_scan_runs
+                  (id, org_login, requested_by, page_start, per_page, scanned_count,
+                   failed_count, next_page, created_at, completed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [
+            runId,
+            org,
+            input.requestedBy?.toLowerCase() ?? null,
+            Math.max(1, Math.floor(input.pageStart)),
+            Math.max(1, Math.floor(input.perPage)),
+            input.projects.length,
+            input.failures.length,
+            input.nextPage,
+            now,
+            now,
+          ],
+        },
+        ...input.projects.map(({ project, safety }) => ({
+          sql: `INSERT INTO organization_project_catalog
+                  (org_login, full_name, registry_full_name, registry_html_url,
+                   source_url, owner, repo, html_url, description,
+                   language, topics, stars, forks, score, band, safety_level,
+                   safety_notes, roast_line, contributors, scanned_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(org_login, full_name) DO UPDATE SET
+                  registry_full_name = excluded.registry_full_name,
+                  registry_html_url = excluded.registry_html_url,
+                  source_url = excluded.source_url,
+                  owner = excluded.owner,
+                  repo = excluded.repo,
+                  html_url = excluded.html_url,
+                  description = excluded.description,
+                  language = excluded.language,
+                  topics = excluded.topics,
+                  stars = excluded.stars,
+                  forks = excluded.forks,
+                  score = excluded.score,
+                  band = excluded.band,
+                  safety_level = excluded.safety_level,
+                  safety_notes = excluded.safety_notes,
+                  roast_line = excluded.roast_line,
+                  contributors = excluded.contributors,
+                  scanned_at = excluded.scanned_at`,
+          args: [
+            org,
+            project.full_name.toLowerCase(),
+            project.resolved_from_repository?.full_name.toLowerCase() ?? null,
+            project.resolved_from_repository?.html_url ?? null,
+            project.resolved_from_repository?.source_url ?? null,
+            project.owner.toLowerCase(),
+            project.repo.toLowerCase(),
+            project.html_url,
+            project.description,
+            project.language,
+            JSON.stringify(project.topics),
+            project.stars,
+            project.forks,
+            project.score,
+            project.band,
+            safety.level,
+            JSON.stringify(safety.notes),
+            JSON.stringify(project.roast_line),
+            JSON.stringify(project.contributors),
+            project.scanned_at || now,
+          ] as (string | number | null)[],
+        })),
+      ],
+      "write",
+    );
+    return { runId, written: input.projects.length };
+  } catch (e) {
+    console.error("recordOrganizationProjectCatalog failed:", e);
+    return { runId: null, written: 0 };
+  }
+}
+
+export async function searchOrganizationProjectCatalog(
+  orgLogin: string,
+  options: { query?: string | null; limit?: number } = {},
+): Promise<OrganizationProjectCatalogItem[]> {
+  const db = getClient();
+  if (!db || !orgLogin.trim()) return [];
+  try {
+    await ensureSchema(db);
+    const org = orgLogin.trim().toLowerCase();
+    const limit = Math.max(1, Math.min(100, options.limit ?? 30));
+    const query = options.query?.trim().toLowerCase() ?? "";
+    const hasQuery = query.length > 0;
+    const like = `%${query.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
+    const res = await db.execute({
+      sql: `SELECT *
+            FROM organization_project_catalog
+            WHERE org_login = ?
+              AND (
+                ? = 0 OR
+                LOWER(full_name) LIKE ? ESCAPE '\\' OR
+                LOWER(COALESCE(description, '')) LIKE ? ESCAPE '\\' OR
+                LOWER(COALESCE(language, '')) LIKE ? ESCAPE '\\' OR
+                LOWER(COALESCE(topics, '')) LIKE ? ESCAPE '\\' OR
+                LOWER(COALESCE(roast_line, '')) LIKE ? ESCAPE '\\'
+              )
+            ORDER BY score DESC, stars DESC, scanned_at DESC
+            LIMIT ?`,
+      args: [
+        org,
+        hasQuery ? 1 : 0,
+        like,
+        like,
+        like,
+        like,
+        like,
+        limit,
+      ],
+    });
+    return res.rows.map((row) => ({
+      org_login: String(row.org_login),
+      full_name: String(row.full_name),
+      registry_full_name: (row.registry_full_name as string | null) ?? null,
+      registry_html_url: (row.registry_html_url as string | null) ?? null,
+      source_url: (row.source_url as string | null) ?? null,
+      owner: String(row.owner),
+      repo: String(row.repo),
+      html_url: String(row.html_url),
+      description: (row.description as string | null) ?? null,
+      language: (row.language as string | null) ?? null,
+      topics: parseProjectJson<string[]>(row.topics, []),
+      stars: Number(row.stars) || 0,
+      forks: Number(row.forks) || 0,
+      score: Number(row.score) || 0,
+      band: String(row.band) as ProjectBand,
+      safety_level: String(row.safety_level),
+      safety_notes: parseProjectJson<ProjectSafetyAssessment["notes"]>(row.safety_notes, {
+        zh: [],
+        en: [],
+      }),
+      roast_line: parseProjectJson<ProjectScanResult["roast_line"]>(row.roast_line, {
+        zh: "",
+        en: "",
+      }),
+      contributors: parseProjectJson<ProjectScanResult["contributors"]>(row.contributors, []),
+      scanned_at: Number(row.scanned_at) || 0,
+    }));
+  } catch (e) {
+    console.error("searchOrganizationProjectCatalog failed:", e);
+    return [];
+  }
+}
+
 export interface ProjectCircleBackfillOptions {
   limit?: number;
   offset?: number;
@@ -2512,6 +2754,7 @@ function snapshotProjectToScanResult(candidate: SnapshotProjectCandidate): Proje
       zh: `${fullName} 已经从开发者锐评里浮出来，适合作为一个项目维度的圈子入口。`,
       en: `${fullName} surfaced from developer scans and is ready to become a project circle.`,
     },
+    resolved_from_repository: null,
     scanned_at: Date.now(),
   };
 }
