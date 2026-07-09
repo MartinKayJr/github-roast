@@ -4,9 +4,9 @@ import { BookOpen, LoaderCircle, Search, Sparkles, X } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useState } from "react";
 import { ByoKeyModal, loadByoKey, type ByoKeyConfig } from "@/components/ByoKeyModal";
+import { PendingLink } from "@/components/PendingLink";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Link } from "@/i18n/navigation";
 import {
   estimateDiscoverySearchTokens,
   type AiDiscoveryLlmMode,
@@ -50,7 +50,7 @@ export function CommunityProjectSearchDock({
   const [result, setResult] = useState<ProjectSearchResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [byoOpen, setByoOpen] = useState(false);
-  const tokenEstimate = estimateDiscoverySearchTokens(query, 180);
+  const tokenEstimate = estimateDiscoverySearchTokens(query, 90);
 
   async function runSearch(savedByoKey?: ByoKeyConfig | null) {
     const trimmed = query.trim();
@@ -75,13 +75,18 @@ export function CommunityProjectSearchDock({
         | null;
       if (!res.ok) {
         const code = data?.error ?? `search_${res.status}`;
-        if (code === "byo_required") setByoOpen(true);
+        if (code === "byo_required") {
+          setByoOpen(true);
+          return;
+        }
         throw new Error(code);
       }
-      setResult(data as ProjectSearchResponse);
-      setError((data as ProjectSearchResponse).error ?? null);
+      if (!data || !("domains" in data) || !Array.isArray(data.domains)) {
+        throw new Error("invalid_search_response");
+      }
+      setResult(data);
+      setError(null);
     } catch (e) {
-      setResult(null);
       setError(e instanceof Error ? e.message : "search_failed");
     } finally {
       setLoading(false);
@@ -101,13 +106,14 @@ export function CommunityProjectSearchDock({
           <Search className="h-4 w-4" />
           {t("open")}
         </Button>
-          <Link
+          <PendingLink
             href="/community/projects?preset=xposed"
+            pendingClassName="pointer-events-none opacity-80"
             className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-cyan-200/20 bg-slate-950/78 px-4 text-sm font-semibold text-cyan-100 shadow-[0_0_26px_rgba(34,211,238,0.18)] backdrop-blur-xl transition hover:border-cyan-200/35 hover:bg-cyan-300/10"
           >
             <BookOpen className="h-4 w-4" />
             {t("readMode")}
-          </Link>
+          </PendingLink>
         </div>
       </div>
     );
@@ -170,16 +176,21 @@ export function CommunityProjectSearchDock({
 
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
             <span>{t("tokenEstimate", tokenEstimate)}</span>
-            <Link
+            <PendingLink
               href="/community/projects?preset=xposed"
+              pendingClassName="pointer-events-none opacity-75"
               className="text-cyan-300 underline-offset-2 hover:underline"
             >
               {t("readMode")}
-            </Link>
+            </PendingLink>
             {result?.mode === "fallback" && (
               <span className="text-amber-300/90">{t("fallback")}</span>
             )}
-            {error && <span className="text-amber-300/90">{t("error")}</span>}
+            {error && (
+              <span className="text-amber-300/90">
+                {result ? t("error") : t("requestError")}
+              </span>
+            )}
           </div>
 
           {result?.summary && (
@@ -193,10 +204,11 @@ export function CommunityProjectSearchDock({
               ) : (
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {result.domains.map((domain) => (
-                    <Link
+                    <PendingLink
                       key={domain.slug}
                       href={`/community/${encodeURIComponent(domain.slug)}`}
                       prefetch={false}
+                      pendingClassName="pointer-events-none border-cyan-200/45 bg-cyan-300/[0.08] opacity-85"
                       className="group rounded-xl border border-white/10 bg-white/[0.04] p-3 transition hover:border-cyan-200/35 hover:bg-cyan-300/[0.08]"
                     >
                       <div className="flex items-start justify-between gap-3">
@@ -224,7 +236,7 @@ export function CommunityProjectSearchDock({
                           ))}
                         </div>
                       )}
-                    </Link>
+                    </PendingLink>
                   ))}
                 </div>
               )}

@@ -72,7 +72,7 @@ export default async function CommunityPage({
   }
 
   return (
-    <main className="relative flex w-full flex-1 overflow-hidden bg-[#020617]">
+    <main data-force-dark className="relative flex w-full flex-1 overflow-hidden bg-[#020617]">
       <CommunityGalaxyBackdrop />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_22%,rgba(2,6,23,0.02),rgba(2,6,23,0.72)_78%)]" />
       <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-[96rem] flex-col px-2 py-6 sm:px-4 sm:py-8">

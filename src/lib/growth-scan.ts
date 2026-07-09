@@ -12,17 +12,15 @@ const EMPTY_ROAST_LINE = { zh: "", en: "" };
 export interface GrowthScanRunResult {
   login: string;
   ok: boolean;
+  finalScore?: number;
   status?: number;
   error?: string;
 }
 
-export async function runGrowthScanForSubscription(input: {
-  github_id: number;
-  login: string;
-}): Promise<GrowthScanRunResult> {
+export async function runGrowthScanForLogin(login: string): Promise<GrowthScanRunResult> {
   const attemptedAt = Date.now();
   try {
-    const scan = await buildScanResult(input.login);
+    const scan = await buildScanResult(login);
     await recordScore({
       username: scan.metrics.username,
       display_name: scan.metrics.name,
@@ -37,14 +35,33 @@ export async function runGrowthScanForSubscription(input: {
       scanned_at: attemptedAt,
     });
     await recordProfileSnapshot(scan);
+    return { login: scan.metrics.username, ok: true, finalScore: scan.scoring.final_score };
+  } catch (e) {
+    const mapped = scanErrorResponse(e);
+    return {
+      login,
+      ok: false,
+      error: mapped.error || (e instanceof Error ? e.message : String(e)),
+      status: mapped.status,
+    };
+  }
+}
+
+export async function runGrowthScanForSubscription(input: {
+  github_id: number;
+  login: string;
+}): Promise<GrowthScanRunResult> {
+  const attemptedAt = Date.now();
+  const result = await runGrowthScanForLogin(input.login);
+  if (result.ok) {
     await markGrowthScanSubscriptionRun(input.github_id, {
       last_scanned_at: attemptedAt,
       last_error: null,
     });
-    return { login: input.login, ok: true };
-  } catch (e) {
-    const mapped = scanErrorResponse(e);
-    const message = mapped.error || (e instanceof Error ? e.message : String(e));
+    return result;
+  }
+  {
+    const message = result.error ?? "scan_failed";
     await markGrowthScanSubscriptionRun(input.github_id, {
       last_scanned_at: attemptedAt,
       last_error: message,
@@ -53,7 +70,7 @@ export async function runGrowthScanForSubscription(input: {
       login: input.login,
       ok: false,
       error: message,
-      status: mapped.status,
+      status: result.status,
     };
   }
 }

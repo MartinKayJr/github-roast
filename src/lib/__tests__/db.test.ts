@@ -748,6 +748,32 @@ describe("community project domains", () => {
                    readme, languages, scanned_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           args: [
+            "filter-suite/kotlin-second",
+            "filter-suite",
+            "kotlin-second",
+            "https://github.com/filter-suite/kotlin-second",
+            "Another maintained Xposed notification module",
+            "Kotlin",
+            JSON.stringify(["xposed", "notification"]),
+            60,
+            1,
+            70,
+            "A",
+            common.breakdown,
+            common.roast,
+            common.aiSummary,
+            common.readme,
+            common.languages,
+            now - 2,
+          ],
+        },
+        {
+          sql: `INSERT INTO project_scores
+                  (full_name, owner, repo, html_url, description, language, topics,
+                   stars, forks, score, band, breakdown, roast_line, ai_summary,
+                   readme, languages, scanned_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [
             "filter-suite/java-small",
             "filter-suite",
             "java-small",
@@ -785,7 +811,25 @@ describe("community project domains", () => {
       },
     });
     expect(projects.map((project) => project.full_name)).toContain("filter-suite/kotlin-keeper");
+    expect(projects.map((project) => project.full_name)).toContain("filter-suite/kotlin-second");
     expect(projects.map((project) => project.full_name)).not.toContain("filter-suite/java-small");
+
+    const secondPage = await db.listProjectCircleItems({
+      preset: "all",
+      query: "notification",
+      limit: 1,
+      offset: 1,
+      filters: {
+        language: "kotlin",
+        band: "A",
+        minStars: 50,
+        hasAiSummary: true,
+        sort: "stars",
+      },
+    });
+    expect(secondPage.map((project) => project.full_name)).toEqual([
+      "filter-suite/kotlin-second",
+    ]);
   });
 });
 
@@ -852,6 +896,60 @@ describe("growth scan subscriptions", () => {
 
     const inactive = await db.updateGrowthScanSubscriptionStatus(991001, "inactive");
     expect(inactive?.status).toBe("inactive");
+  });
+
+  it("creates recent-growth backfill jobs from subscriptions and qualified scores", async () => {
+    await db.upsertUser({
+      github_id: 991002,
+      login: "GrowthBackfillSub",
+      name: "Growth Backfill Sub",
+      avatar_url: null,
+    });
+    await db.upsertGrowthScanSubscription({
+      github_id: 991002,
+      login: "GrowthBackfillSub",
+      status: "active",
+    });
+
+    const qualified = scanFixture("growth-backfill-qualified", 62, {
+      days_since_last_activity: 3,
+    });
+    await db.recordScore({
+      username: qualified.metrics.username,
+      display_name: qualified.metrics.name,
+      avatar_url: qualified.metrics.avatar_url,
+      profile_url: qualified.metrics.profile_url,
+      final_score: qualified.scoring.final_score,
+      tier: qualified.scoring.tier,
+      tags: entry.tags,
+      roast_line: entry.roast_line,
+      bot_score: 0,
+      sub_scores: qualified.scoring.sub_scores,
+      scanned_at: Date.now(),
+    });
+    await db.recordProfileSnapshot(qualified);
+
+    const candidates = await db.countGrowthBackfillCandidates();
+    expect(candidates).toBeGreaterThanOrEqual(2);
+
+    const job = await db.createGrowthBackfillJob({ requestedBy: "admin", batchSize: 2 });
+    expect(job).toBeTruthy();
+    expect(job?.batch_size).toBe(2);
+
+    const pending = await db.listPendingGrowthBackfillItems(job!.id, 10);
+    expect(pending.map((item) => item.login)).toEqual(
+      expect.arrayContaining(["growthbackfillsub", "growth-backfill-qualified"]),
+    );
+
+    await db.markGrowthBackfillItemRunning(pending[0]!.id);
+    await db.updateGrowthBackfillItemResult({
+      itemId: pending[0]!.id,
+      status: "failed",
+      error: "github_unavailable",
+    });
+    await db.resetFailedGrowthBackfillItems(job!.id);
+    const afterReset = await db.listPendingGrowthBackfillItems(job!.id, 10);
+    expect(afterReset.some((item) => item.id === pending[0]!.id)).toBe(true);
   });
 });
 

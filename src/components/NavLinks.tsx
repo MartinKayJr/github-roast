@@ -2,9 +2,10 @@
 
 import { useTranslations } from "next-intl";
 import { ChevronDown } from "lucide-react";
-import { Link, usePathname } from "@/i18n/navigation";
+import { usePathname } from "@/i18n/navigation";
 import type { NavItem } from "@/config/nav";
 import { Button } from "@/components/ui/button";
+import { PendingLink } from "@/components/PendingLink";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,7 +60,7 @@ export function NavLinks({
         ? "font-semibold text-zinc-100"
         : "text-zinc-400 hover:text-zinc-200";
     return (
-      <Link
+      <PendingLink
         key={item.key}
         href={item.href ?? "/"}
         // The navbar mounts on every page, so prefetching each destination on
@@ -69,7 +70,8 @@ export function NavLinks({
         prefetch={item.href === "/" ? undefined : false}
         onClick={onNavigate}
         aria-current={active ? "page" : undefined}
-        className={`group relative flex items-center text-sm transition-colors ${vertical ? "" : "px-3 py-2"} ${baseClass}`}
+        pendingClassName="pointer-events-none opacity-75"
+        className={`group relative flex items-center gap-1.5 text-sm transition-colors ${vertical ? "" : "px-3 py-2"} ${baseClass}`}
       >
         <span>{t(item.key)}</span>
         {badge(item)}
@@ -83,7 +85,7 @@ export function NavLinks({
             }`}
           />
         )}
-      </Link>
+      </PendingLink>
     );
   };
 
@@ -122,12 +124,13 @@ export function NavLinks({
           className="min-w-[12rem] border-white/10 bg-popover/98 p-1.5 backdrop-blur-xl"
         >
           {children.map((c) => (
-            <Link
+            <PendingLink
               key={c.key}
               href={c.href ?? "/"}
               prefetch={c.href === "/" ? undefined : false}
               onClick={onNavigate}
               aria-current={isActive(c) ? "page" : undefined}
+              pendingClassName="pointer-events-none opacity-75"
               className={`flex items-center rounded-xl px-3 py-2 text-sm transition-colors ${
                 isActive(c)
                   ? "bg-white/[0.06] font-medium text-zinc-100"
@@ -136,7 +139,7 @@ export function NavLinks({
             >
               {t(c.key)}
               {badge(c)}
-            </Link>
+            </PendingLink>
           ))}
         </DropdownMenuContent>
       </DropdownMenu>

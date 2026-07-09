@@ -104,10 +104,10 @@ function buildMessages({
       lang === "en"
         ? item.description?.en || item.description?.zh || ""
         : item.description?.zh || item.description?.en || "",
-    tags: item.tags.slice(0, 8),
+    tags: item.tags.slice(0, 6),
     members: item.member_count,
     heat: Math.round(item.heat_score),
-    search: item.search_text.slice(0, 520),
+    search: item.search_text.slice(0, 280),
   }));
 
   return [
@@ -153,6 +153,22 @@ function validateProjectSlugs(
   return out;
 }
 
+async function keywordFallbackResponse({
+  query,
+  estimatedTokens,
+  error,
+}: {
+  query: string;
+  estimatedTokens: { min: number; max: number };
+  error?: string;
+}) {
+  const domains = await searchProjectCircleDomains(query, { limit: 12 });
+  return NextResponse.json(
+    { query, mode: "fallback", error, estimatedTokens, summary: "", domains },
+    { headers: { "Cache-Control": NO_STORE } },
+  );
+}
+
 export async function POST(req: NextRequest) {
   let body: SearchBody;
   try {
@@ -165,7 +181,7 @@ export async function POST(req: NextRequest) {
   if (!query) return NextResponse.json({ error: "empty_query" }, { status: 400 });
 
   const lang = body.lang === "en" ? "en" : "zh";
-  const estimatedTokens = estimateDiscoverySearchTokens(query, 180);
+  const estimatedTokens = estimateDiscoverySearchTokens(query, 90);
   if (!hasByoKey(body.byoKey) && AI_DISCOVERY_LLM_MODE !== "server") {
     return NextResponse.json(
       {
@@ -179,22 +195,27 @@ export async function POST(req: NextRequest) {
 
   const serverMode = !hasByoKey(body.byoKey) && AI_DISCOVERY_LLM_MODE === "server";
   if (serverMode) {
-    if (!isRedisConfigured()) {
-      return NextResponse.json(
-        { error: "service_unavailable" },
-        { status: 503, headers: { "Cache-Control": NO_STORE } },
-      );
+    const redisConfigured = isRedisConfigured();
+    if (!redisConfigured && process.env.NODE_ENV === "production") {
+      return keywordFallbackResponse({
+        query,
+        estimatedTokens,
+        error: "service_unavailable",
+      });
     }
-    const { success, unavailable } = await checkRadarRateLimit(clientIp(req));
-    if (!success) {
-      return NextResponse.json(
-        { error: unavailable ? "service_unavailable" : "rate_limited" },
-        { status: unavailable ? 503 : 429, headers: { "Cache-Control": NO_STORE } },
-      );
+    if (redisConfigured) {
+      const { success, unavailable } = await checkRadarRateLimit(clientIp(req));
+      if (!success) {
+        return keywordFallbackResponse({
+          query,
+          estimatedTokens,
+          error: unavailable ? "service_unavailable" : "rate_limited",
+        });
+      }
     }
   }
 
-  const catalog = await getProjectCircleSearchCatalog(query, { limit: 160 });
+  const catalog = await getProjectCircleSearchCatalog(query, { limit: 90 });
   if (catalog.length === 0) {
     return NextResponse.json(
       { query, mode: "fallback", estimatedTokens, summary: "", domains: [] },
@@ -215,10 +236,10 @@ export async function POST(req: NextRequest) {
       buildMessages({ query, lang, catalog }),
       {
         temperature: 0.15,
-        connectTimeoutMs: 10_000,
-        idleTimeoutMs: 10_000,
-        deadlineMs: Date.now() + 20_000,
-        attemptBudgetMs: 12_000,
+        connectTimeoutMs: 12_000,
+        idleTimeoutMs: 14_000,
+        deadlineMs: Date.now() + 27_000,
+        attemptBudgetMs: 22_000,
       },
     );
     plan = parseJsonObject(text);

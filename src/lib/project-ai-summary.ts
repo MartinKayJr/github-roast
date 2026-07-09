@@ -54,6 +54,9 @@ function inferCategoryHints(project: ProjectScanResult): string[] {
     project.language,
     ...project.topics,
     project.readme?.prompt_summary,
+    ...(project.commit_evidence?.keywords ?? []),
+    ...(project.source_evidence?.keywords ?? []),
+    ...(project.source_evidence?.signals ?? []),
   ]
     .filter(Boolean)
     .join(" ")
@@ -164,6 +167,8 @@ export async function generateProjectAiSummary(
     band: project.band,
     roast_line: project.roast_line,
     readme_summary: project.readme?.prompt_summary ?? null,
+    commit_evidence: project.commit_evidence,
+    source_evidence: project.source_evidence,
     safety,
     resolved_from_repository: project.resolved_from_repository,
   };

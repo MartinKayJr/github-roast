@@ -82,6 +82,8 @@ export async function HomeGrowthLeaderboard() {
     subscribed: t("subscribed"),
     unsubscribe: t("unsubscribe"),
     subscribeFailed: t("subscribeFailed"),
+    viewInTimeline: t("viewInTimeline"),
+    profile: t("profile"),
   };
 
   const growthEntries = await getContributionGrowthLeaderboard(GROWTH_LIMIT, GROWTH_WINDOW);

@@ -3,7 +3,9 @@ import { notFound } from "next/navigation";
 import { getAdminAccess } from "@/lib/admin";
 import { getAdminRoastEmailStats } from "@/lib/db";
 import { AdminGitHubTokenPanel } from "@/components/admin/AdminGitHubTokenPanel";
+import { AdminGrowthBackfillPanel } from "@/components/admin/AdminGrowthBackfillPanel";
 import { AdminOrgProjectScanPanel } from "@/components/admin/AdminOrgProjectScanPanel";
+import { AdminProjectEvidenceBackfillPanel } from "@/components/admin/AdminProjectEvidenceBackfillPanel";
 import { AdminProjectAiSummaryBackfillPanel } from "@/components/admin/AdminProjectAiSummaryBackfillPanel";
 
 export const dynamic = "force-dynamic";
@@ -114,6 +116,8 @@ export default async function AdminPage() {
       </section>
 
       <AdminOrgProjectScanPanel />
+      <AdminGrowthBackfillPanel />
+      <AdminProjectEvidenceBackfillPanel />
       <AdminProjectAiSummaryBackfillPanel />
       <AdminGitHubTokenPanel />
     </main>

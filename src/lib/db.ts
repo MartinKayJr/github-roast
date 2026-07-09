@@ -383,6 +383,40 @@ function ensureSchema(db: Client): Promise<void> {
            )`,
           `CREATE INDEX IF NOT EXISTS idx_growth_scan_subscriptions_due
              ON growth_scan_subscriptions(status, last_scanned_at)`,
+          `CREATE TABLE IF NOT EXISTS growth_backfill_jobs (
+             id              TEXT PRIMARY KEY,
+             requested_by    TEXT,
+             scope           TEXT NOT NULL DEFAULT 'default',
+             status          TEXT NOT NULL DEFAULT 'pending'
+                             CHECK(status IN ('pending', 'running', 'done', 'failed')),
+             batch_size      INTEGER NOT NULL DEFAULT 10,
+             processed_count INTEGER NOT NULL DEFAULT 0,
+             failed_count    INTEGER NOT NULL DEFAULT 0,
+             skipped_count   INTEGER NOT NULL DEFAULT 0,
+             last_error      TEXT,
+             created_at      INTEGER NOT NULL,
+             updated_at      INTEGER NOT NULL,
+             completed_at    INTEGER
+           )`,
+          `CREATE INDEX IF NOT EXISTS idx_growth_backfill_jobs_status_updated
+             ON growth_backfill_jobs(status, updated_at DESC)`,
+          `CREATE TABLE IF NOT EXISTS growth_backfill_job_items (
+             id          TEXT PRIMARY KEY,
+             job_id      TEXT NOT NULL,
+             login       TEXT NOT NULL,
+             github_id   INTEGER,
+             source      TEXT NOT NULL DEFAULT 'qualified_score'
+                         CHECK(source IN ('subscription', 'qualified_score')),
+             status      TEXT NOT NULL DEFAULT 'pending'
+                         CHECK(status IN ('pending', 'running', 'done', 'failed', 'skipped')),
+             final_score REAL,
+             error       TEXT,
+             attempts    INTEGER NOT NULL DEFAULT 0,
+             updated_at  INTEGER NOT NULL,
+             UNIQUE(job_id, login)
+           )`,
+          `CREATE INDEX IF NOT EXISTS idx_growth_backfill_items_job_status
+             ON growth_backfill_job_items(job_id, status, updated_at)`,
           `CREATE TABLE IF NOT EXISTS project_scores (
              full_name         TEXT PRIMARY KEY,
              owner             TEXT NOT NULL,
@@ -409,6 +443,8 @@ function ensureSchema(db: Client): Promise<void> {
              roast_line        TEXT NOT NULL,
              ai_summary        TEXT,
              readme            TEXT,
+             commit_evidence   TEXT,
+             source_evidence   TEXT,
              languages         TEXT,
              scanned_at        INTEGER NOT NULL
            )`,
@@ -788,6 +824,16 @@ function ensureSchema(db: Client): Promise<void> {
       } catch {
         // column already exists — ignore
       }
+      for (const col of [
+        "commit_evidence TEXT",
+        "source_evidence TEXT",
+      ]) {
+        try {
+          await db.execute(`ALTER TABLE project_scores ADD COLUMN ${col}`);
+        } catch {
+          // column already exists — ignore
+        }
+      }
       try {
         await db.execute(
           `ALTER TABLE github_contribution_days ADD COLUMN representative_repo TEXT`,
@@ -849,6 +895,43 @@ export interface GrowthLeaderboardEntry {
   growth_score: number;
   latest_snapshot_at: number;
   previous_snapshot_at: number | null;
+}
+
+export type GrowthBackfillJobStatus = "pending" | "running" | "done" | "failed";
+export type GrowthBackfillItemStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "failed"
+  | "skipped";
+
+export interface GrowthBackfillJobItem {
+  id: string;
+  job_id: string;
+  login: string;
+  github_id: number | null;
+  source: "subscription" | "qualified_score";
+  status: GrowthBackfillItemStatus;
+  final_score: number | null;
+  error: string | null;
+  attempts: number;
+  updated_at: number;
+}
+
+export interface GrowthBackfillJob {
+  id: string;
+  requested_by: string | null;
+  scope: string;
+  status: GrowthBackfillJobStatus;
+  batch_size: number;
+  processed_count: number;
+  failed_count: number;
+  skipped_count: number;
+  last_error: string | null;
+  created_at: number;
+  updated_at: number;
+  completed_at: number | null;
+  items: GrowthBackfillJobItem[];
 }
 
 export interface GitHubTokenView {
@@ -2537,6 +2620,8 @@ export interface ProjectScoreDetail {
   roast_line: ProjectScanResult["roast_line"];
   ai_summary: ProjectAiSummary | null;
   readme: ProjectScanResult["readme"];
+  commit_evidence: ProjectScanResult["commit_evidence"];
+  source_evidence: ProjectScanResult["source_evidence"];
   languages: { name: string; size: number }[];
   contributors: ProjectContributorEntry[];
   scanned_at: number;
@@ -2701,6 +2786,12 @@ function inferProjectGoals(project: ProjectScanResult): string[] {
     project.readme?.prompt_summary,
     project.roast_line.zh,
     project.roast_line.en,
+    ...(project.commit_evidence?.messages ?? []),
+    ...(project.commit_evidence?.paths ?? []),
+    ...(project.commit_evidence?.keywords ?? []),
+    ...(project.source_evidence?.paths ?? []),
+    ...(project.source_evidence?.keywords ?? []),
+    ...(project.source_evidence?.signals ?? []),
   ]
     .filter(Boolean)
     .join(" ")
@@ -2727,6 +2818,9 @@ function buildProjectCircleSearchProfile(
     project.language,
     ...project.topics,
     ...summarySource.category_hints,
+    ...(project.commit_evidence?.keywords ?? []),
+    ...(project.source_evidence?.keywords ?? []),
+    ...(project.source_evidence?.signals ?? []),
     project.license ? `${project.license} license` : null,
     `${project.band} quality band`,
     project.score >= 70 ? "high quality" : project.score >= 48 ? "mid quality" : "early stage",
@@ -2772,6 +2866,13 @@ function buildProjectCircleSearchProfile(
       ...categories,
       ...goals,
       ...summarySource.keywords,
+      ...(project.commit_evidence?.keywords ?? []),
+      ...(project.commit_evidence?.messages ?? []),
+      ...(project.commit_evidence?.paths ?? []),
+      ...(project.source_evidence?.keywords ?? []),
+      ...(project.source_evidence?.signals ?? []),
+      ...(project.source_evidence?.paths ?? []),
+      ...(project.source_evidence?.sampled_files ?? []),
       summarySource.zh.summary,
       summarySource.zh.target,
       summarySource.zh.use_case,
@@ -2944,8 +3045,8 @@ export async function recordProjectScan(
                    homepage, language, topics, license, stars, forks, watchers,
                    open_issues, size, default_branch, created_at_iso, pushed_at_iso,
                    latest_release_at, score, band, breakdown, roast_line, ai_summary, readme,
-                   languages, scanned_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   commit_evidence, source_evidence, languages, scanned_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(full_name) DO UPDATE SET
                   owner = excluded.owner,
                   repo = excluded.repo,
@@ -2971,6 +3072,8 @@ export async function recordProjectScan(
                   roast_line = excluded.roast_line,
                   ai_summary = excluded.ai_summary,
                   readme = excluded.readme,
+                  commit_evidence = excluded.commit_evidence,
+                  source_evidence = excluded.source_evidence,
                   languages = excluded.languages,
                   scanned_at = excluded.scanned_at`,
           args: [
@@ -2999,6 +3102,8 @@ export async function recordProjectScan(
             JSON.stringify(project.roast_line),
             aiSummaryJson,
             JSON.stringify(project.readme),
+            JSON.stringify(project.commit_evidence ?? { messages: [], paths: [], keywords: [] }),
+            JSON.stringify(project.source_evidence ?? { paths: [], sampled_files: [], keywords: [], signals: [] }),
             JSON.stringify(project.languages),
             now,
           ],
@@ -3285,6 +3390,17 @@ function projectScanFromScoreRow(
       zh: "",
       en: "",
     }),
+    commit_evidence: parseProjectJson<ProjectScanResult["commit_evidence"]>(row.commit_evidence, {
+      messages: [],
+      paths: [],
+      keywords: [],
+    }),
+    source_evidence: parseProjectJson<ProjectScanResult["source_evidence"]>(row.source_evidence, {
+      paths: [],
+      sampled_files: [],
+      keywords: [],
+      signals: [],
+    }),
     resolved_from_repository: null,
     scanned_at: Number(row.scanned_at) || Date.now(),
   };
@@ -3453,6 +3569,98 @@ export async function updateStoredProjectAiSummary(input: {
     );
   } catch (e) {
     console.error("updateStoredProjectAiSummary failed:", e);
+    throw e;
+  }
+}
+
+export async function countProjectsMissingEvidence(): Promise<number> {
+  const db = getClient();
+  if (!db) return 0;
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT COUNT(*) AS n
+            FROM project_scores
+            WHERE COALESCE(commit_evidence, '') = ''
+               OR COALESCE(source_evidence, '') = ''`,
+      args: [],
+    });
+    return Number(res.rows[0]?.n) || 0;
+  } catch (e) {
+    console.error("countProjectsMissingEvidence failed:", e);
+    return 0;
+  }
+}
+
+export async function listProjectsMissingEvidence(
+  limit = 10,
+): Promise<{ owner: string; repo: string; aiSummary: ProjectAiSummary | null }[]> {
+  const db = getClient();
+  if (!db) return [];
+  try {
+    await ensureSchema(db);
+    const capped = Math.max(1, Math.min(30, limit));
+    const res = await db.execute({
+      sql: `SELECT owner, repo, ai_summary
+            FROM project_scores
+            WHERE COALESCE(commit_evidence, '') = ''
+               OR COALESCE(source_evidence, '') = ''
+            ORDER BY scanned_at DESC, score DESC
+            LIMIT ?`,
+      args: [capped],
+    });
+    return res.rows.map((row) => ({
+      owner: String(row.owner),
+      repo: String(row.repo),
+      aiSummary: parseStoredProjectAiSummary(row.ai_summary),
+    }));
+  } catch (e) {
+    console.error("listProjectsMissingEvidence failed:", e);
+    return [];
+  }
+}
+
+export async function updateStoredProjectEvidence(input: {
+  project: ProjectScanResult;
+  aiSummary?: ProjectAiSummary | null;
+}): Promise<void> {
+  const db = getClient();
+  if (!db) return;
+  try {
+    await ensureSchema(db);
+    const fullName = input.project.full_name.toLowerCase();
+    const now = Date.now();
+    const aiSummary = input.aiSummary ?? deterministicProjectAiSummary(input.project);
+    const description = JSON.stringify(buildProjectCircleSearchProfile(input.project, aiSummary));
+    const domainSlug = projectDomainSlug(input.project.owner, input.project.repo);
+    await db.batch(
+      [
+        {
+          sql: `UPDATE project_scores
+                SET commit_evidence = ?,
+                    source_evidence = ?,
+                    scanned_at = ?
+                WHERE full_name = ?`,
+          args: [
+            JSON.stringify(input.project.commit_evidence ?? { messages: [], paths: [], keywords: [] }),
+            JSON.stringify(input.project.source_evidence ?? { paths: [], sampled_files: [], keywords: [], signals: [] }),
+            input.project.scanned_at || now,
+            fullName,
+          ],
+        },
+        {
+          sql: `UPDATE circle_domains
+                SET description_zh = ?,
+                    description_en = ?,
+                    updated_at = ?
+                WHERE slug = ?`,
+          args: [description, description, now, domainSlug],
+        },
+      ],
+      "write",
+    );
+  } catch (e) {
+    console.error("updateStoredProjectEvidence failed:", e);
     throw e;
   }
 }
@@ -4291,6 +4499,17 @@ export async function getProjectScore(
       }),
       ai_summary: parseStoredProjectAiSummary(row.ai_summary),
       readme: parseProjectJson<ProjectScanResult["readme"]>(row.readme, null),
+      commit_evidence: parseProjectJson<ProjectScanResult["commit_evidence"]>(row.commit_evidence, {
+        messages: [],
+        paths: [],
+        keywords: [],
+      }),
+      source_evidence: parseProjectJson<ProjectScanResult["source_evidence"]>(row.source_evidence, {
+        paths: [],
+        sampled_files: [],
+        keywords: [],
+        signals: [],
+      }),
       languages: parseProjectJson<{ name: string; size: number }[]>(row.languages, []),
       contributors: contributorRes.rows.map((r) => ({
         login: String(r.login),
@@ -4983,6 +5202,432 @@ export async function markAllInboxMessagesRead(
 // ============================================================================
 // Growth Scan Subscriptions
 // ============================================================================
+
+function mapGrowthBackfillJob(row: Record<string, unknown>): GrowthBackfillJob {
+  return {
+    id: String(row.id),
+    requested_by: (row.requested_by as string | null) ?? null,
+    scope: String(row.scope ?? "default"),
+    status: String(row.status) as GrowthBackfillJobStatus,
+    batch_size: Number(row.batch_size) || 10,
+    processed_count: Number(row.processed_count) || 0,
+    failed_count: Number(row.failed_count) || 0,
+    skipped_count: Number(row.skipped_count) || 0,
+    last_error: (row.last_error as string | null) ?? null,
+    created_at: Number(row.created_at) || 0,
+    updated_at: Number(row.updated_at) || 0,
+    completed_at: row.completed_at == null ? null : Number(row.completed_at),
+    items: [],
+  };
+}
+
+function mapGrowthBackfillJobItem(row: Record<string, unknown>): GrowthBackfillJobItem {
+  return {
+    id: String(row.id),
+    job_id: String(row.job_id),
+    login: String(row.login),
+    github_id: row.github_id == null ? null : Number(row.github_id),
+    source: row.source === "subscription" ? "subscription" : "qualified_score",
+    status: String(row.status) as GrowthBackfillItemStatus,
+    final_score: row.final_score == null ? null : Number(row.final_score),
+    error: (row.error as string | null) ?? null,
+    attempts: Number(row.attempts) || 0,
+    updated_at: Number(row.updated_at) || 0,
+  };
+}
+
+export async function countGrowthBackfillCandidates(): Promise<number> {
+  const db = getClient();
+  if (!db) return 0;
+  try {
+    await ensureSchema(db);
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const res = await db.execute({
+      sql: `WITH latest_snapshots AS (
+              SELECT username, metrics
+              FROM (
+                SELECT username,
+                       metrics,
+                       ROW_NUMBER() OVER (
+                         PARTITION BY username
+                         ORDER BY scanned_at DESC
+                       ) AS rn
+                FROM profile_snapshots
+              )
+              WHERE rn = 1
+            ),
+            candidates AS (
+              SELECT gss.login
+              FROM growth_scan_subscriptions AS gss
+              WHERE gss.status = 'active'
+
+              UNION
+
+              SELECT s.username
+              FROM scores AS s
+              LEFT JOIN latest_snapshots AS ps ON ps.username = s.username
+              WHERE s.hidden = 0
+                AND s.final_score > 50
+                AND (
+                  COALESCE(json_extract(ps.metrics, '$.days_since_last_activity'), 999999) <= 30
+                  OR EXISTS (
+                    SELECT 1
+                    FROM github_contribution_days AS gcd
+                    WHERE gcd.username = s.username
+                      AND gcd.contribution_date >= date(? / 1000, 'unixepoch')
+                  )
+                )
+            )
+            SELECT COUNT(*) AS n FROM candidates`,
+      args: [cutoff],
+    });
+    return Number(res.rows[0]?.n) || 0;
+  } catch (e) {
+    console.error("countGrowthBackfillCandidates failed:", e);
+    return 0;
+  }
+}
+
+export async function createGrowthBackfillJob(input: {
+  requestedBy?: string | null;
+  batchSize?: number;
+} = {}): Promise<GrowthBackfillJob | null> {
+  const db = getClient();
+  if (!db) return null;
+  try {
+    await ensureSchema(db);
+    const now = Date.now();
+    const cutoff = now - 30 * 24 * 60 * 60 * 1000;
+    const id = randomUUID();
+    const batchSize = Math.max(1, Math.min(30, Math.floor(input.batchSize ?? 10)));
+    await db.batch(
+      [
+        {
+          sql: `INSERT INTO growth_backfill_jobs
+                  (id, requested_by, scope, status, batch_size, created_at, updated_at)
+                VALUES (?, ?, 'default', 'pending', ?, ?, ?)`,
+          args: [id, input.requestedBy?.toLowerCase() ?? null, batchSize, now, now],
+        },
+        {
+          sql: `INSERT OR IGNORE INTO growth_backfill_job_items
+                  (id, job_id, login, github_id, source, status, final_score, updated_at)
+                WITH latest_snapshots AS (
+                  SELECT username, metrics
+                  FROM (
+                    SELECT username,
+                           metrics,
+                           ROW_NUMBER() OVER (
+                             PARTITION BY username
+                             ORDER BY scanned_at DESC
+                           ) AS rn
+                    FROM profile_snapshots
+                  )
+                  WHERE rn = 1
+                ),
+                candidates AS (
+                  SELECT lower(gss.login) AS login,
+                         gss.github_id AS github_id,
+                         'subscription' AS source,
+                         s.final_score AS final_score
+                  FROM growth_scan_subscriptions AS gss
+                  LEFT JOIN scores AS s ON s.username = lower(gss.login)
+                  WHERE gss.status = 'active'
+
+                  UNION
+
+                  SELECT s.username AS login,
+                         u.github_id AS github_id,
+                         'qualified_score' AS source,
+                         s.final_score AS final_score
+                  FROM scores AS s
+                  LEFT JOIN users AS u ON u.login = s.username
+                  LEFT JOIN latest_snapshots AS ps ON ps.username = s.username
+                  WHERE s.hidden = 0
+                    AND s.final_score > 50
+                    AND (
+                      COALESCE(json_extract(ps.metrics, '$.days_since_last_activity'), 999999) <= 30
+                      OR EXISTS (
+                        SELECT 1
+                        FROM github_contribution_days AS gcd
+                        WHERE gcd.username = s.username
+                          AND gcd.contribution_date >= date(? / 1000, 'unixepoch')
+                      )
+                    )
+                )
+                SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-' ||
+                             hex(randomblob(2)) || '-' || hex(randomblob(2)) || '-' ||
+                             hex(randomblob(6))) AS id,
+                       ? AS job_id,
+                       login,
+                       MAX(github_id) AS github_id,
+                       CASE
+                         WHEN SUM(CASE WHEN source = 'subscription' THEN 1 ELSE 0 END) > 0
+                           THEN 'subscription'
+                         ELSE 'qualified_score'
+                       END AS source,
+                       'pending' AS status,
+                       MAX(final_score) AS final_score,
+                       ? AS updated_at
+                FROM candidates
+                WHERE login IS NOT NULL AND login <> ''
+                GROUP BY login`,
+          args: [cutoff, id, now],
+        },
+      ],
+      "write",
+    );
+    return getGrowthBackfillJob(id);
+  } catch (e) {
+    console.error("createGrowthBackfillJob failed:", e);
+    return null;
+  }
+}
+
+export async function getGrowthBackfillJob(jobId: string): Promise<GrowthBackfillJob | null> {
+  const db = getClient();
+  if (!db || !jobId) return null;
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT * FROM growth_backfill_jobs WHERE id = ? LIMIT 1`,
+      args: [jobId],
+    });
+    const row = res.rows[0];
+    if (!row) return null;
+    const job = mapGrowthBackfillJob(row as Record<string, unknown>);
+    const itemRes = await db.execute({
+      sql: `SELECT *
+            FROM growth_backfill_job_items
+            WHERE job_id = ?
+            ORDER BY updated_at DESC
+            LIMIT 12`,
+      args: [job.id],
+    });
+    job.items = itemRes.rows.map((item) =>
+      mapGrowthBackfillJobItem(item as Record<string, unknown>),
+    );
+    return job;
+  } catch (e) {
+    console.error("getGrowthBackfillJob failed:", e);
+    return null;
+  }
+}
+
+export async function listGrowthBackfillJobs(limit = 10): Promise<GrowthBackfillJob[]> {
+  const db = getClient();
+  if (!db) return [];
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT *
+            FROM growth_backfill_jobs
+            ORDER BY updated_at DESC
+            LIMIT ?`,
+      args: [Math.max(1, Math.min(30, limit))],
+    });
+    const jobs = res.rows.map((row) => mapGrowthBackfillJob(row as Record<string, unknown>));
+    if (jobs.length === 0) return [];
+    const placeholders = jobs.map(() => "?").join(", ");
+    const itemRes = await db.execute({
+      sql: `SELECT *
+            FROM (
+              SELECT *,
+                     ROW_NUMBER() OVER (
+                       PARTITION BY job_id
+                       ORDER BY updated_at DESC
+                     ) AS rn
+              FROM growth_backfill_job_items
+              WHERE job_id IN (${placeholders})
+            )
+            WHERE rn <= 8
+            ORDER BY updated_at DESC`,
+      args: jobs.map((job) => job.id),
+    });
+    const byJob = new Map<string, GrowthBackfillJobItem[]>();
+    for (const row of itemRes.rows) {
+      const item = mapGrowthBackfillJobItem(row as Record<string, unknown>);
+      const list = byJob.get(item.job_id) ?? [];
+      list.push(item);
+      byJob.set(item.job_id, list);
+    }
+    return jobs.map((job) => ({ ...job, items: byJob.get(job.id) ?? [] }));
+  } catch (e) {
+    console.error("listGrowthBackfillJobs failed:", e);
+    return [];
+  }
+}
+
+export async function markGrowthBackfillJobRunning(
+  jobId: string,
+): Promise<GrowthBackfillJob | null> {
+  const db = getClient();
+  if (!db || !jobId) return null;
+  try {
+    await ensureSchema(db);
+    const now = Date.now();
+    await db.execute({
+      sql: `UPDATE growth_backfill_jobs
+            SET status = 'running', last_error = NULL, updated_at = ?
+            WHERE id = ?`,
+      args: [now, jobId],
+    });
+    return getGrowthBackfillJob(jobId);
+  } catch (e) {
+    console.error("markGrowthBackfillJobRunning failed:", e);
+    return null;
+  }
+}
+
+export async function listPendingGrowthBackfillItems(
+  jobId: string,
+  limit = 10,
+): Promise<GrowthBackfillJobItem[]> {
+  const db = getClient();
+  if (!db || !jobId) return [];
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT *
+            FROM growth_backfill_job_items
+            WHERE job_id = ?
+              AND status = 'pending'
+            ORDER BY source ASC, updated_at ASC
+            LIMIT ?`,
+      args: [jobId, Math.max(1, Math.min(30, limit))],
+    });
+    return res.rows.map((row) =>
+      mapGrowthBackfillJobItem(row as Record<string, unknown>),
+    );
+  } catch (e) {
+    console.error("listPendingGrowthBackfillItems failed:", e);
+    return [];
+  }
+}
+
+export async function markGrowthBackfillItemRunning(itemId: string): Promise<void> {
+  const db = getClient();
+  if (!db || !itemId) return;
+  try {
+    await ensureSchema(db);
+    await db.execute({
+      sql: `UPDATE growth_backfill_job_items
+            SET status = 'running',
+                attempts = attempts + 1,
+                error = NULL,
+                updated_at = ?
+            WHERE id = ?`,
+      args: [Date.now(), itemId],
+    });
+  } catch (e) {
+    console.error("markGrowthBackfillItemRunning failed:", e);
+  }
+}
+
+export async function updateGrowthBackfillItemResult(input: {
+  itemId: string;
+  status: Exclude<GrowthBackfillItemStatus, "pending" | "running">;
+  finalScore?: number | null;
+  error?: string | null;
+}): Promise<void> {
+  const db = getClient();
+  if (!db) return;
+  try {
+    await ensureSchema(db);
+    await db.execute({
+      sql: `UPDATE growth_backfill_job_items
+            SET status = ?,
+                final_score = COALESCE(?, final_score),
+                error = ?,
+                updated_at = ?
+            WHERE id = ?`,
+      args: [
+        input.status,
+        input.finalScore ?? null,
+        input.error ? input.error.slice(0, 500) : null,
+        Date.now(),
+        input.itemId,
+      ],
+    });
+  } catch (e) {
+    console.error("updateGrowthBackfillItemResult failed:", e);
+  }
+}
+
+export async function resetFailedGrowthBackfillItems(jobId: string): Promise<void> {
+  const db = getClient();
+  if (!db || !jobId) return;
+  try {
+    await ensureSchema(db);
+    await db.execute({
+      sql: `UPDATE growth_backfill_job_items
+            SET status = 'pending', error = NULL, updated_at = ?
+            WHERE job_id = ? AND status = 'failed'`,
+      args: [Date.now(), jobId],
+    });
+  } catch (e) {
+    console.error("resetFailedGrowthBackfillItems failed:", e);
+  }
+}
+
+export async function updateGrowthBackfillJobProgress(input: {
+  jobId: string;
+  processedDelta: number;
+  failedDelta: number;
+  skippedDelta: number;
+  status: GrowthBackfillJobStatus;
+  lastError?: string | null;
+}): Promise<GrowthBackfillJob | null> {
+  const db = getClient();
+  if (!db) return null;
+  try {
+    await ensureSchema(db);
+    const now = Date.now();
+    await db.execute({
+      sql: `UPDATE growth_backfill_jobs
+            SET status = ?,
+                processed_count = processed_count + ?,
+                failed_count = failed_count + ?,
+                skipped_count = skipped_count + ?,
+                last_error = ?,
+                updated_at = ?,
+                completed_at = CASE WHEN ? IN ('done', 'failed') THEN ? ELSE completed_at END
+            WHERE id = ?`,
+      args: [
+        input.status,
+        Math.max(0, input.processedDelta),
+        Math.max(0, input.failedDelta),
+        Math.max(0, input.skippedDelta),
+        input.lastError ?? null,
+        now,
+        input.status,
+        now,
+        input.jobId,
+      ],
+    });
+    return getGrowthBackfillJob(input.jobId);
+  } catch (e) {
+    console.error("updateGrowthBackfillJobProgress failed:", e);
+    return null;
+  }
+}
+
+export async function countPendingGrowthBackfillItems(jobId: string): Promise<number> {
+  const db = getClient();
+  if (!db || !jobId) return 0;
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT COUNT(*) AS n
+            FROM growth_backfill_job_items
+            WHERE job_id = ? AND status = 'pending'`,
+      args: [jobId],
+    });
+    return Number(res.rows[0]?.n) || 0;
+  } catch (e) {
+    console.error("countPendingGrowthBackfillItems failed:", e);
+    return 0;
+  }
+}
 
 export type GrowthScanSubscriptionStatus = "active" | "inactive";
 
@@ -6816,6 +7461,14 @@ function projectCircleCatalogItem(row: Record<string, unknown>): ProjectCircleSe
     null,
   );
   const aiSummary = parseStoredProjectAiSummary(row.project_ai_summary);
+  const commitEvidence = parseProjectJson<ProjectScanResult["commit_evidence"]>(
+    row.project_commit_evidence,
+    { messages: [], paths: [], keywords: [] },
+  );
+  const sourceEvidence = parseProjectJson<ProjectScanResult["source_evidence"]>(
+    row.project_source_evidence,
+    { paths: [], sampled_files: [], keywords: [], signals: [] },
+  );
   const searchText = uniqueCompactStrings(
     [
       String(row.slug ?? ""),
@@ -6837,6 +7490,13 @@ function projectCircleCatalogItem(row: Record<string, unknown>): ProjectCircleSe
       aiSummary?.en.use_case,
       ...(aiSummary?.keywords ?? []),
       ...(aiSummary?.category_hints ?? []),
+      ...(commitEvidence?.messages ?? []),
+      ...(commitEvidence?.paths ?? []),
+      ...(commitEvidence?.keywords ?? []),
+      ...(sourceEvidence?.paths ?? []),
+      ...(sourceEvidence?.sampled_files ?? []),
+      ...(sourceEvidence?.keywords ?? []),
+      ...(sourceEvidence?.signals ?? []),
       ...tags,
     ],
     72,
@@ -6912,7 +7572,9 @@ async function getProjectCircleRows(db: Client, limit: number): Promise<Record<s
                  ps.topics AS project_topics,
                  ps.readme AS project_readme,
                  ps.roast_line AS project_roast_line,
-                 ps.ai_summary AS project_ai_summary
+                 ps.ai_summary AS project_ai_summary,
+                 ps.commit_evidence AS project_commit_evidence,
+                 ps.source_evidence AS project_source_evidence
           FROM circle_domains AS cd
           LEFT JOIN project_scores AS ps
             ON ps.full_name = lower(json_extract(cd.description_zh, '$.tag'))
@@ -7110,6 +7772,7 @@ export async function searchProjectCircleDomains(
 
 export type ProjectCircleListPreset = "all" | "xposed" | "ai" | "security" | "devtools";
 export type ProjectCircleListSort = "relevance" | "score" | "stars" | "recent";
+export type ProjectEvidenceScope = "readme" | "commits" | "source";
 
 export interface ProjectCircleListFilters {
   language?: string | null;
@@ -7119,6 +7782,7 @@ export interface ProjectCircleListFilters {
   minStars?: number | null;
   hasAiSummary?: boolean | null;
   sort?: ProjectCircleListSort | null;
+  evidence?: ProjectEvidenceScope[] | null;
 }
 
 export interface ProjectCircleListItem {
@@ -7137,6 +7801,8 @@ export interface ProjectCircleListItem {
   safety_notes: ProjectSafetyAssessment["notes"] | null;
   roast_line: ProjectScanResult["roast_line"];
   ai_summary: ProjectAiSummary | null;
+  commit_evidence: ProjectScanResult["commit_evidence"];
+  source_evidence: ProjectScanResult["source_evidence"];
   contributors: ProjectScanResult["contributors"];
   scanned_at: number;
   domain_slug: string;
@@ -7164,8 +7830,14 @@ function sqlLikePattern(value: string): string {
   return `%${value.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
 }
 
-function projectListHaystack(item: ProjectCircleListItem): string {
-  return [
+function normalizeProjectEvidenceScopes(raw: ProjectEvidenceScope[] | null | undefined): ProjectEvidenceScope[] {
+  const allowed = new Set<ProjectEvidenceScope>(["readme", "commits", "source"]);
+  const scopes = (raw ?? ["readme"]).filter((scope): scope is ProjectEvidenceScope => allowed.has(scope));
+  return scopes.length > 0 ? [...new Set(scopes)] : ["readme"];
+}
+
+function projectListHaystack(item: ProjectCircleListItem, evidence: ProjectEvidenceScope[]): string {
+  const parts = [
     item.full_name,
     item.description,
     item.language,
@@ -7182,10 +7854,23 @@ function projectListHaystack(item: ProjectCircleListItem): string {
     ...(item.ai_summary?.keywords ?? []),
     ...(item.ai_summary?.category_hints ?? []),
     item.safety_level,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+  ];
+  if (evidence.includes("commits")) {
+    parts.push(
+      ...(item.commit_evidence?.messages ?? []),
+      ...(item.commit_evidence?.paths ?? []),
+      ...(item.commit_evidence?.keywords ?? []),
+    );
+  }
+  if (evidence.includes("source")) {
+    parts.push(
+      ...(item.source_evidence?.paths ?? []),
+      ...(item.source_evidence?.sampled_files ?? []),
+      ...(item.source_evidence?.keywords ?? []),
+      ...(item.source_evidence?.signals ?? []),
+    );
+  }
+  return parts.filter(Boolean).join(" ").toLowerCase();
 }
 
 function scoreProjectListItem(
@@ -7193,10 +7878,11 @@ function scoreProjectListItem(
   query: string,
   preset: ProjectCircleListPreset,
   sort: ProjectCircleListSort = "relevance",
+  evidence: ProjectEvidenceScope[] = ["readme"],
 ): number {
   const effectiveQuery = [projectListPresetQuery(preset), query].filter(Boolean).join(" ");
   const terms = projectListSearchTerms(effectiveQuery);
-  const haystack = projectListHaystack(item);
+  const haystack = projectListHaystack(item, evidence);
   const hits = terms.filter((term) => haystack.includes(term));
   if (terms.length > 0 && hits.length === 0) return Number.NEGATIVE_INFINITY;
   if (sort === "score") return item.score;
@@ -7208,6 +7894,12 @@ function scoreProjectListItem(
     score += 120;
   }
   if (item.ai_summary?.source === "llm") score += 25;
+  if (evidence.includes("commits") && (item.commit_evidence?.messages.length || item.commit_evidence?.paths.length)) {
+    score += 18;
+  }
+  if (evidence.includes("source") && (item.source_evidence?.signals.length || item.source_evidence?.paths.length)) {
+    score += 28;
+  }
   if (item.safety_level === "A") score += 16;
   if (item.safety_level === "B") score += 8;
   return score;
@@ -7217,6 +7909,7 @@ export async function listProjectCircleItems(options: {
   query?: string | null;
   preset?: ProjectCircleListPreset | null;
   limit?: number;
+  offset?: number;
   filters?: ProjectCircleListFilters;
 } = {}): Promise<ProjectCircleListItem[]> {
   const db = getClient();
@@ -7224,6 +7917,7 @@ export async function listProjectCircleItems(options: {
   try {
     await ensureSchema(db);
     const limit = Math.max(1, Math.min(120, options.limit ?? 48));
+    const offset = Math.max(0, Math.min(5000, Math.floor(options.offset ?? 0)));
     const preset = options.preset ?? "all";
     const query = options.query?.trim() ?? "";
     const filters = options.filters ?? {};
@@ -7240,18 +7934,26 @@ export async function listProjectCircleItems(options: {
     const safetyLevel = filters.safetyLevel ?? null;
     const hasAiSummary = filters.hasAiSummary === true;
     const sort = filters.sort ?? "relevance";
+    const evidence = normalizeProjectEvidenceScopes(filters.evidence);
     const terms = projectListSearchTerms(
       [projectListPresetQuery(preset), query].filter(Boolean).join(" "),
     );
-    const searchableSql = `LOWER(
-      ps.full_name || ' ' ||
-      COALESCE(ps.description, '') || ' ' ||
-      COALESCE(ps.language, '') || ' ' ||
-      COALESCE(ps.topics, '') || ' ' ||
-      COALESCE(ps.roast_line, '') || ' ' ||
-      COALESCE(ps.ai_summary, '') || ' ' ||
-      COALESCE(opc.ai_summary, '')
-    )`;
+    const searchableParts = [
+      "ps.full_name",
+      "COALESCE(ps.description, '')",
+      "COALESCE(ps.language, '')",
+      "COALESCE(ps.topics, '')",
+      "COALESCE(ps.roast_line, '')",
+      "COALESCE(ps.ai_summary, '')",
+      "COALESCE(opc.ai_summary, '')",
+    ];
+    if (evidence.includes("commits")) {
+      searchableParts.push("COALESCE(ps.commit_evidence, '')");
+    }
+    if (evidence.includes("source")) {
+      searchableParts.push("COALESCE(ps.source_evidence, '')");
+    }
+    const searchableSql = `LOWER(${searchableParts.join(" || ' ' || ")})`;
     const whereParts: string[] = [];
     const args: (string | number)[] = [];
     if (terms.length > 0) {
@@ -7310,7 +8012,7 @@ export async function listProjectCircleItems(options: {
             ${whereSql}
             ORDER BY ${orderSql}
             LIMIT ?`,
-      args: [...args, Math.max(1000, limit * 12)],
+      args: [...args, Math.min(6000, Math.max(1000, (offset + limit) * 12))],
     });
     const items = res.rows.map((row): ProjectCircleListItem => {
       const owner = String(row.owner);
@@ -7342,6 +8044,17 @@ export async function listProjectCircleItems(options: {
         ai_summary:
           parseStoredProjectAiSummary(row.ai_summary) ??
           parseStoredProjectAiSummary(row.org_ai_summary),
+        commit_evidence: parseProjectJson<ProjectScanResult["commit_evidence"]>(row.commit_evidence, {
+          messages: [],
+          paths: [],
+          keywords: [],
+        }),
+        source_evidence: parseProjectJson<ProjectScanResult["source_evidence"]>(row.source_evidence, {
+          paths: [],
+          sampled_files: [],
+          keywords: [],
+          signals: [],
+        }),
         contributors: parseProjectJson<ProjectScanResult["contributors"]>(
           row.org_contributors,
           [],
@@ -7353,7 +8066,7 @@ export async function listProjectCircleItems(options: {
     return items
       .map((item) => ({
         item,
-        score: scoreProjectListItem(item, query, preset, sort),
+        score: scoreProjectListItem(item, query, preset, sort, evidence),
       }))
       .filter((entry) => Number.isFinite(entry.score))
       .sort(
@@ -7363,7 +8076,7 @@ export async function listProjectCircleItems(options: {
           b.item.stars - a.item.stars ||
           a.item.full_name.localeCompare(b.item.full_name),
       )
-      .slice(0, limit)
+      .slice(offset, offset + limit)
       .map((entry) => entry.item);
   } catch (e) {
     console.error("listProjectCircleItems failed:", e);

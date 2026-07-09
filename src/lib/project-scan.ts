@@ -34,6 +34,19 @@ export interface ProjectScoreBreakdown {
   authenticity: number;
 }
 
+export interface ProjectCommitEvidence {
+  messages: string[];
+  paths: string[];
+  keywords: string[];
+}
+
+export interface ProjectSourceEvidence {
+  paths: string[];
+  sampled_files: string[];
+  keywords: string[];
+  signals: string[];
+}
+
 export interface ProjectScanResult {
   owner: string;
   repo: string;
@@ -67,6 +80,8 @@ export interface ProjectScanResult {
   band: ProjectBand;
   breakdown: ProjectScoreBreakdown;
   roast_line: { zh: string; en: string };
+  commit_evidence?: ProjectCommitEvidence;
+  source_evidence?: ProjectSourceEvidence;
   resolved_from_repository: {
     full_name: string;
     html_url: string;
@@ -113,6 +128,25 @@ interface RestContributor {
 interface RestRelease {
   published_at?: string | null;
   created_at?: string | null;
+}
+
+interface RestCommitListItem {
+  sha?: string;
+  commit?: {
+    message?: string;
+  };
+}
+
+interface RestCommitDetail {
+  files?: { filename?: string | null }[];
+}
+
+interface RestTree {
+  truncated?: boolean;
+  tree?: {
+    path?: string;
+    type?: string;
+  }[];
 }
 
 interface RestReadme {
@@ -375,6 +409,155 @@ async function fetchReadme(owner: string, repo: string): Promise<ProjectScanResu
   };
 }
 
+function compactEvidenceText(value: string | null | undefined, limit = 120): string {
+  return (value ?? "").replace(/\s+/g, " ").trim().slice(0, limit);
+}
+
+function uniqueEvidence(values: (string | null | undefined)[], limit = 40): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of values) {
+    const value = compactEvidenceText(raw, 180);
+    if (!value) continue;
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function detectHookKeywords(text: string): string[] {
+  const lower = text.toLowerCase();
+  const hits: string[] = [];
+  const rules: [RegExp, string][] = [
+    [/\bxposed\b|lsposed|edxposed|libxposed/, "Xposed"],
+    [/\bzygisk\b/, "Zygisk"],
+    [/\bmagisk\b|module\.prop/, "Magisk"],
+    [/\briru\b/, "Riru"],
+    [/\bhook\b|hookmethod|findandhook|xchook|inline hook|native hook/, "hook"],
+    [/\bandroid\b|androidmanifest|gradle|kotlin|java/, "Android"],
+    [/\blibart\b|\bartmethod\b|jni_onload|dlsym|dlopen/, "Android runtime/native"],
+    [/\bpermission\b|privacy|root|system_server|framework/, "system layer"],
+  ];
+  for (const [re, label] of rules) {
+    if (re.test(lower)) hits.push(label);
+  }
+  return uniqueEvidence(hits, 16);
+}
+
+async function fetchRecentCommitEvidence(
+  owner: string,
+  repo: string,
+): Promise<ProjectCommitEvidence> {
+  const commits = await restGet<RestCommitListItem[]>(
+    `repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits?per_page=12`,
+  ).catch(() => []);
+  const messages = uniqueEvidence(
+    (commits ?? []).map((commit) => commit.commit?.message?.split(/\r?\n/)[0]),
+    12,
+  );
+  const paths: string[] = [];
+  for (const commit of (commits ?? []).slice(0, 5)) {
+    if (!commit.sha) continue;
+    const detail = await restGet<RestCommitDetail>(
+      `repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(commit.sha)}`,
+    ).catch(() => null);
+    paths.push(...((detail?.files ?? []).map((file) => file.filename ?? null).filter(Boolean) as string[]));
+  }
+  const compactPaths = uniqueEvidence(paths, 48);
+  return {
+    messages,
+    paths: compactPaths,
+    keywords: detectHookKeywords([...messages, ...compactPaths].join(" ")),
+  };
+}
+
+function sourceCandidateScore(path: string): number {
+  const lower = path.toLowerCase();
+  let score = 0;
+  if (/androidmanifest\.xml$|module\.prop$|xposed_init$|build\.gradle|settings\.gradle/.test(lower)) score += 40;
+  if (/xposed|lsposed|zygisk|magisk|riru|hook|module/.test(lower)) score += 32;
+  if (/src\/main\/(java|kotlin|cpp|jni|c|aidl)\//.test(lower)) score += 16;
+  if (/\.(kt|java|cpp|c|h|hpp|gradle|xml|prop)$/.test(lower)) score += 8;
+  if (/readme|license|test|sample|example|docs?\//.test(lower)) score -= 12;
+  return score;
+}
+
+async function fetchRawText(
+  owner: string,
+  repo: string,
+  branch: string,
+  filePath: string,
+): Promise<string | null> {
+  try {
+    const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
+    const url = `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${encodeURIComponent(branch)}/${encodedPath}`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": "ghsphere", Range: "bytes=0-12287" },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return (await res.text()).slice(0, 12_288);
+  } catch {
+    return null;
+  }
+}
+
+async function fetchSourceEvidence(
+  owner: string,
+  repo: string,
+  branch: string,
+): Promise<ProjectSourceEvidence> {
+  const tree = await restGet<RestTree>(
+    `repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/${encodeURIComponent(branch)}?recursive=1`,
+  ).catch(() => null);
+  const paths = uniqueEvidence(
+    (tree?.tree ?? [])
+      .filter((entry) => entry.type === "blob")
+      .map((entry) => entry.path),
+    160,
+  );
+  const candidates = paths
+    .map((path) => ({ path, score: sourceCandidateScore(path) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
+    .slice(0, 10)
+    .map((entry) => entry.path);
+
+  const sampledText: string[] = [];
+  const sampledFiles: string[] = [];
+  for (const filePath of candidates.slice(0, 6)) {
+    const text = await fetchRawText(owner, repo, branch, filePath);
+    if (!text) continue;
+    sampledFiles.push(filePath);
+    sampledText.push(`${filePath}\n${text}`);
+  }
+
+  const combined = [...paths, ...sampledText].join("\n");
+  const lower = combined.toLowerCase();
+  return {
+    paths: paths.filter((path) => sourceCandidateScore(path) > 0).slice(0, 80),
+    sampled_files: sampledFiles,
+    keywords: detectHookKeywords(combined),
+    signals: uniqueEvidence(
+      [
+        /de\.robv\.android\.xposed|io\.github\.libxposed/.test(lower) ? "Xposed API import" : null,
+        /ixposedhookloadpackage|handleloadpackage|hookmethod|findandhookmethod/.test(lower)
+          ? "Xposed load-package hook entry"
+          : null,
+        /zygisk|app_specialize|server_specialize/.test(lower) ? "Zygisk module entry" : null,
+        /module\.prop|magisk/.test(lower) ? "Magisk module metadata" : null,
+        /jni_onload|dlsym|dlopen|libart|artmethod/.test(lower) ? "native/runtime hook signal" : null,
+        /androidmanifest\.xml|uses-permission/.test(lower) ? "Android manifest/permission signal" : null,
+        tree?.truncated ? "GitHub tree truncated" : null,
+      ],
+      20,
+    ),
+  };
+}
+
 function scoreProject(input: {
   repo: RestRepo;
   contributors: ProjectContributorScan[];
@@ -570,6 +753,10 @@ export async function scanProject(
     .sort((a, b) => b.size - a.size);
   const latestReleaseAt =
     releasesData?.[0]?.published_at ?? releasesData?.[0]?.created_at ?? null;
+  const [commitEvidence, sourceEvidence] = await Promise.all([
+    fetchRecentCommitEvidence(ownerLogin, repoData.name),
+    fetchSourceEvidence(ownerLogin, repoData.name, repoData.default_branch),
+  ]);
   const scored = scoreProject({
     repo: repoData,
     contributors,
@@ -604,6 +791,8 @@ export async function scanProject(
     band: scored.band,
     breakdown: scored.breakdown,
     roast_line: roastLine({ repo: repoData, ...scored, contributors, readme }),
+    commit_evidence: commitEvidence,
+    source_evidence: sourceEvidence,
     resolved_from_repository: null,
     scanned_at: Date.now(),
   };

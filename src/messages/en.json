@@ -141,6 +141,43 @@
       "failed": "Failed",
       "skipped": "Skipped"
     },
+    "growthBackfillTitle": "Repair recent growth data",
+    "growthBackfillBody": "Rescan users subscribed to Recent Growth, plus accounts above 50 with recent public activity, to backfill contribution dates, representative repositories, and snapshots including organization contributions. Farmed or low-quality activity is still excluded from growth.",
+    "growthBackfillCandidates": "{count} candidate accounts",
+    "growthBackfillBatch": "Batch size",
+    "growthBackfillRun": "Repair growth in background",
+    "growthBackfillStarting": "Starting…",
+    "growthBackfillRefresh": "Refresh jobs",
+    "growthBackfillNoJobs": "No recent-growth repair jobs yet.",
+    "growthBackfillResume": "Resume background job",
+    "growthBackfillRetryFailures": "Retry failures",
+    "growthBackfillProcessed": "{count} repaired",
+    "growthBackfillFailed": "{count} failed",
+    "growthBackfillSkipped": "{count} skipped",
+    "growthBackfillBatchValue": "{count} per batch",
+    "growthBackfillStatus": {
+      "pending": "Pending",
+      "running": "Running",
+      "done": "Done",
+      "failed": "Failed"
+    },
+    "growthBackfillItemStatus": {
+      "pending": "Pending",
+      "running": "Scanning",
+      "done": "Done",
+      "failed": "Failed",
+      "skipped": "Skipped"
+    },
+    "projectEvidenceBackfillTitle": "Backfill old project search evidence",
+    "projectEvidenceBackfillBody": "Rescan historical projects that are missing commit-history and source-code signals. This keeps existing AI summaries intact and only enriches the Commit history / Source code evidence modes in reading mode.",
+    "projectEvidenceBackfillMissing": "{count} projects need evidence",
+    "projectEvidenceBackfillBatch": "Batch size",
+    "projectEvidenceBackfillRun": "Backfill one batch",
+    "projectEvidenceBackfillRunning": "Backfilling…",
+    "projectEvidenceBackfillRefresh": "Refresh count",
+    "projectEvidenceBackfillProcessed": "{count} backfilled",
+    "projectEvidenceBackfillFailed": "{count} failed",
+    "projectEvidenceBackfillRemaining": "{count} remaining",
     "projectAiBackfillTitle": "Repair old project AI summaries",
     "projectAiBackfillBody": "Backfill AI summaries, use cases, safety notes, and search keywords for projects scanned before this field existed. The background job processes them in batches so exact search and reading mode can hit old data too.",
     "projectAiBackfillMissing": "{count} projects need repair",
@@ -267,7 +304,9 @@
     "subscribe": "Subscribe to recent growth",
     "subscribed": "Subscribed to recent growth",
     "unsubscribe": "Unsubscribe",
-    "subscribeFailed": "Could not subscribe. Try again later."
+    "subscribeFailed": "Could not subscribe. Try again later.",
+    "viewInTimeline": "View",
+    "profile": "Profile"
   },
   "developers": {
     "heading": "Discover developers",
@@ -960,6 +999,7 @@
     "readMode": "Open reading mode",
     "fallback": "AI is unavailable, showing keyword matches.",
     "error": "Search failed; showing any available result.",
+    "requestError": "Search failed. Please try again later.",
     "empty": "No matching project circles.",
     "noDescription": "This project circle does not have a full description yet.",
     "members": "{count} people",
@@ -974,6 +1014,10 @@
     "reset": "Reset",
     "empty": "No matching projects.",
     "resultCount": "{count} projects shown",
+    "loadingMore": "Loading more projects…",
+    "scrollHint": "Keep scrolling to load more",
+    "loadMoreError": "Load failed, click to retry",
+    "end": "You reached the end",
     "filters": {
       "language": "Language",
       "band": "Quality band",
@@ -982,7 +1026,13 @@
       "minScore": "Minimum score",
       "minStars": "Minimum stars",
       "aiSummary": "Only with AI summary",
+      "evidence": "Search evidence",
       "any": "Any"
+    },
+    "evidence": {
+      "readme": "Project intro / README",
+      "commits": "Commit history",
+      "source": "Source code"
     },
     "sorts": {
       "relevance": "Relevance",

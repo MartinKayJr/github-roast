@@ -141,6 +141,43 @@
       "failed": "失败",
       "skipped": "跳过"
     },
+    "growthBackfillTitle": "修复近期成长数据",
+    "growthBackfillBody": "重新扫描已订阅近期成长的用户，以及分数高于 50 且最近仍有公开活动的账号，补齐包含组织贡献在内的近期成长日期、代表仓库和快照数据。刷量或低质量活动仍不会计入成长。",
+    "growthBackfillCandidates": "候选 {count} 个账号",
+    "growthBackfillBatch": "每批数量",
+    "growthBackfillRun": "后台修复成长",
+    "growthBackfillStarting": "启动中…",
+    "growthBackfillRefresh": "刷新任务",
+    "growthBackfillNoJobs": "还没有近期成长修复任务。",
+    "growthBackfillResume": "恢复后台任务",
+    "growthBackfillRetryFailures": "重试失败项",
+    "growthBackfillProcessed": "已修复 {count}",
+    "growthBackfillFailed": "失败 {count}",
+    "growthBackfillSkipped": "跳过 {count}",
+    "growthBackfillBatchValue": "每批 {count}",
+    "growthBackfillStatus": {
+      "pending": "待开始",
+      "running": "进行中",
+      "done": "已完成",
+      "failed": "失败待重试"
+    },
+    "growthBackfillItemStatus": {
+      "pending": "待开始",
+      "running": "扫描中",
+      "done": "成功",
+      "failed": "失败",
+      "skipped": "跳过"
+    },
+    "projectEvidenceBackfillTitle": "补齐旧项目搜索证据",
+    "projectEvidenceBackfillBody": "为历史扫描过但缺少提交记录/源码信号的项目重新抓取最近提交、关键路径和少量源码抽样。不会覆盖已有 AI 摘要，只会增强阅读模式里的“提交记录 / 项目源代码”搜索依据。",
+    "projectEvidenceBackfillMissing": "待补齐 {count} 个项目",
+    "projectEvidenceBackfillBatch": "每批数量",
+    "projectEvidenceBackfillRun": "补齐一批证据",
+    "projectEvidenceBackfillRunning": "补齐中…",
+    "projectEvidenceBackfillRefresh": "刷新数量",
+    "projectEvidenceBackfillProcessed": "已补齐 {count}",
+    "projectEvidenceBackfillFailed": "失败 {count}",
+    "projectEvidenceBackfillRemaining": "剩余 {count}",
     "projectAiBackfillTitle": "修复老项目 AI 摘要",
     "projectAiBackfillBody": "为历史扫描过但缺少 AI 项目总结的项目补齐摘要、用途、安全说明和搜索关键词。后台会自动按批处理，修复后精确查和阅读模式都能命中这些老数据。",
     "projectAiBackfillMissing": "待修复 {count} 个项目",
@@ -267,7 +304,9 @@
     "subscribe": "订阅近期成长",
     "subscribed": "已订阅近期成长",
     "unsubscribe": "取消订阅",
-    "subscribeFailed": "订阅失败，稍后再试"
+    "subscribeFailed": "订阅失败，稍后再试",
+    "viewInTimeline": "查看",
+    "profile": "主页"
   },
   "developers": {
     "heading": "发现开发者",
@@ -960,6 +999,7 @@
     "readMode": "进入阅读模式",
     "fallback": "AI 暂不可用，已展示关键词匹配结果。",
     "error": "搜索失败，已保留可用结果。",
+    "requestError": "搜索失败，请稍后重试。",
     "empty": "没有匹配到项目圈子。",
     "noDescription": "这个项目圈子还没有完整描述。",
     "members": "{count} 人",
@@ -974,6 +1014,10 @@
     "reset": "重置",
     "empty": "没有找到匹配项目。",
     "resultCount": "当前显示 {count} 个项目",
+    "loadingMore": "加载更多项目…",
+    "scrollHint": "继续向下滚动加载更多",
+    "loadMoreError": "加载失败，点击重试",
+    "end": "已经到底了",
     "filters": {
       "language": "语言",
       "band": "质量分段",
@@ -982,7 +1026,13 @@
       "minScore": "最低评分",
       "minStars": "最低星标",
       "aiSummary": "只看已补 AI 摘要",
+      "evidence": "搜索依据",
       "any": "不限"
+    },
+    "evidence": {
+      "readme": "项目介绍 / README",
+      "commits": "提交记录",
+      "source": "项目源代码"
     },
     "sorts": {
       "relevance": "相关度",

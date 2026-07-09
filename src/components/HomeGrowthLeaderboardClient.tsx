@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
 import { Link } from "@/i18n/navigation";
+import { Eye } from "lucide-react";
 import { BAND_KEYS, bandStyle, type BandKey } from "@/lib/band";
 import type { GrowthEntry } from "./HomeGrowthLeaderboard";
 import {
@@ -54,6 +55,8 @@ export interface GrowthLabels {
   subscribed: string;
   unsubscribe: string;
   subscribeFailed: string;
+  viewInTimeline: string;
+  profile: string;
 }
 
 type MeResponse = {
@@ -98,9 +101,11 @@ function BandTab({
 function GrowthCard({
   entry,
   labels,
+  onView,
 }: {
   entry: GrowthEntry;
   labels: GrowthLabels;
+  onView: () => void;
 }) {
   const style = bandStyle(entry.band);
   const avatar = entry.avatar_url ?? `https://github.com/${entry.username}.png`;
@@ -110,9 +115,7 @@ function GrowthCard({
   const impactCommits = Math.max(0, Math.round(entry.impact_commit_delta));
 
   return (
-    <Link
-      href={`/u/${entry.username}`}
-      prefetch={false}
+    <div
       className="group flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.03] px-4 py-3 transition-colors hover:border-white/10 hover:bg-white/[0.06]"
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -151,8 +154,25 @@ function GrowthCard({
           +{recentCommits}
         </div>
         <div className="text-[10px] text-zinc-500">{labels.commitsLabel}</div>
+        <div className="mt-2 flex justify-end gap-1">
+          <button
+            type="button"
+            onClick={onView}
+            className="inline-flex h-7 items-center gap-1 rounded-full border border-emerald-300/20 bg-emerald-300/10 px-2 text-[11px] font-semibold text-emerald-100 transition hover:bg-emerald-300/15"
+          >
+            <Eye className="h-3 w-3" />
+            {labels.viewInTimeline}
+          </button>
+          <Link
+            href={`/u/${entry.username}`}
+            prefetch={false}
+            className="inline-flex h-7 items-center rounded-full border border-white/10 px-2 text-[11px] font-semibold text-zinc-300 transition hover:bg-white/10 hover:text-zinc-100"
+          >
+            {labels.profile}
+          </Link>
+        </div>
       </div>
-    </Link>
+    </div>
   );
 }
 
@@ -253,6 +273,7 @@ export function HomeGrowthLeaderboardClient({
   allByBand: Record<BandKey, GrowthEntry[]>;
 }) {
   const [tab, setTab] = useState<TabKey>("all");
+  const [selectedTimelineUsers, setSelectedTimelineUsers] = useState<string[]>([]);
 
   // Timeline state (lazy-loaded when "all" tab first activated).
   // `loading` is derived, not stored, so the effect never calls setState
@@ -390,6 +411,8 @@ export function HomeGrowthLeaderboardClient({
               labels={timelineLabels}
               windowDays={30}
               updatedAt={timelineUpdatedAt}
+              selectedUsernames={selectedTimelineUsers}
+              onSelectedUsernamesChange={setSelectedTimelineUsers}
             />
           )}
         </div>
@@ -400,7 +423,15 @@ export function HomeGrowthLeaderboardClient({
       ) : (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {entries.map((e) => (
-            <GrowthCard key={e.username} entry={e} labels={labels} />
+            <GrowthCard
+              key={e.username}
+              entry={e}
+              labels={labels}
+              onView={() => {
+                setSelectedTimelineUsers([e.username]);
+                setTab("all");
+              }}
+            />
           ))}
         </div>
       )}

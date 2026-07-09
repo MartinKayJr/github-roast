@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bot, GitFork, Orbit, Star, Users } from "lucide-react";
+import { Bot, GitFork, LoaderCircle, Orbit, Star, Users } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { PendingLink } from "@/components/PendingLink";
 import { Link } from "@/i18n/navigation";
 import type { ProjectScoreDetail } from "@/lib/db";
 import { tierStyle } from "@/lib/tier";
@@ -104,13 +105,15 @@ export function ProjectGalaxy({ project, lang }: ProjectGalaxyProps) {
       </div>
 
       <div className="absolute right-4 top-5 z-30 flex items-center gap-2 sm:right-8">
-        <Link
+        <PendingLink
           href={`/community/${encodeURIComponent(project.domain_slug)}`}
+          pendingChildren={<LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />}
+          pendingClassName="pointer-events-none opacity-80"
           className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-cyan-200/15 bg-slate-950/35 text-cyan-100 backdrop-blur-xl hover:bg-cyan-400/10"
           aria-label={t("openCircle")}
         >
           <Orbit className="h-4 w-4" />
-        </Link>
+        </PendingLink>
       </div>
 
       <div className="relative mx-auto h-[72vh] min-h-[35rem] w-full max-w-7xl pt-16">

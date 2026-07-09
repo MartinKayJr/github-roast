@@ -116,12 +116,16 @@ export function GrowthTimelineChart({
   labels,
   windowDays = 30,
   updatedAt,
+  selectedUsernames: controlledSelectedUsernames,
+  onSelectedUsernamesChange,
 }: {
   points: TimelinePoint[];
   labels: TimelineLabels;
   windowDays?: number;
   /** Server "now" (ms epoch). Deterministic — avoids Date.now() in render. */
   updatedAt?: number;
+  selectedUsernames?: string[];
+  onSelectedUsernamesChange?: (usernames: string[]) => void;
 }) {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const [focusedNode, setFocusedNode] = useState<string | null>(null);
@@ -129,9 +133,24 @@ export function GrowthTimelineChart({
     null,
   );
   const [filterInput, setFilterInput] = useState("");
-  const [selectedUsernames, setSelectedUsernames] = useState<string[]>([]);
+  const [internalSelectedUsernames, setInternalSelectedUsernames] = useState<string[]>([]);
   const [columnDialog, setColumnDialog] = useState<TimelinePoint[] | null>(
     null,
+  );
+  const selectedUsernames = controlledSelectedUsernames ?? internalSelectedUsernames;
+  const setSelectedUsernames = useCallback(
+    (next: string[] | ((current: string[]) => string[])) => {
+      const resolved =
+        typeof next === "function"
+          ? next(selectedUsernames)
+          : next;
+      if (onSelectedUsernamesChange) {
+        onSelectedUsernamesChange(resolved);
+      } else {
+        setInternalSelectedUsernames(resolved);
+      }
+    },
+    [onSelectedUsernamesChange, selectedUsernames],
   );
 
   const showTooltip = useCallback(
@@ -162,7 +181,7 @@ export function GrowthTimelineChart({
       setSelectedPoint(null);
       hideTooltip();
     },
-    [hideTooltip, points],
+    [hideTooltip, points, setSelectedUsernames],
   );
 
   if (points.length === 0) {

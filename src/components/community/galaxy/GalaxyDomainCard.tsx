@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
+import { PendingLink } from "@/components/PendingLink";
 import { Link } from "@/i18n/navigation";
 import { tierStyle } from "@/lib/tier";
 import type { CircleDomain } from "@/lib/db";
@@ -171,9 +172,11 @@ export function GalaxyDomainCard({
         transform: `scale(${scale})`,
       }}
     >
-      <Link
+      <PendingLink
         href={`/community/${encodeURIComponent(domain.slug)}`}
         prefetch={false}
+        showSpinner={false}
+        pendingClassName="pointer-events-none ring-2 ring-cyan-300/60"
         aria-label={`${t("explore")} ${name}`}
         className="absolute inset-[10%] z-10 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70"
       />
