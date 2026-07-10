@@ -179,8 +179,9 @@ export function profileJsonLd(opts: {
   };
 }
 
-/** A research/blog article. `date`/`updated` are ISO dates from the post frontmatter. */
+/** A long-form research or vulnerability article. */
 export function articleJsonLd(opts: {
+  kind?: "blog" | "vulnerability";
   slug: string;
   locale: string;
   title: string;
@@ -189,7 +190,8 @@ export function articleJsonLd(opts: {
   updated?: string;
   tags: string[];
 }) {
-  const path = opts.locale === "en" ? `/en/blog/${opts.slug}` : `/blog/${opts.slug}`;
+  const section = opts.kind === "vulnerability" ? "vulnerabilities" : "blog";
+  const path = opts.locale === "en" ? `/en/${section}/${opts.slug}` : `/${section}/${opts.slug}`;
   return {
     "@context": "https://schema.org",
     "@type": "Article",
@@ -199,7 +201,7 @@ export function articleJsonLd(opts: {
     ...(opts.updated ? { dateModified: opts.updated } : {}),
     inLanguage: opts.locale === "en" ? "en" : "zh-CN",
     ...(opts.tags.length ? { keywords: opts.tags.join(", ") } : {}),
-    image: [`${SITE_URL}/api/og/blog/${opts.slug}`],
+    image: [`${SITE_URL}/api/og/${section}/${opts.slug}`],
     mainEntityOfPage: { "@type": "WebPage", "@id": `${SITE_URL}${path}` },
     // Named author (E-E-A-T) with an identity link, plus the org publisher.
     author: {

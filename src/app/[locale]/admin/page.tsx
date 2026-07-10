@@ -7,6 +7,7 @@ import { AdminGrowthBackfillPanel } from "@/components/admin/AdminGrowthBackfill
 import { AdminOrgProjectScanPanel } from "@/components/admin/AdminOrgProjectScanPanel";
 import { AdminProjectEvidenceBackfillPanel } from "@/components/admin/AdminProjectEvidenceBackfillPanel";
 import { AdminProjectAiSummaryBackfillPanel } from "@/components/admin/AdminProjectAiSummaryBackfillPanel";
+import { AdminArticlePublisher } from "@/components/admin/AdminArticlePublisher";
 
 export const dynamic = "force-dynamic";
 
@@ -119,6 +120,7 @@ export default async function AdminPage() {
       <AdminGrowthBackfillPanel />
       <AdminProjectEvidenceBackfillPanel />
       <AdminProjectAiSummaryBackfillPanel />
+      <AdminArticlePublisher />
       <AdminGitHubTokenPanel />
     </main>
   );

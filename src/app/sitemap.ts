@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import { getAllPublicUsernames, getIndexableMatchups } from "@/lib/db";
-import { getPost, getPostSlugs } from "@/lib/blog";
+import { listPosts } from "@/lib/blog";
+import { listVulnerabilities } from "@/lib/vulnerabilities";
 import { getFacetCategoriesCached } from "@/lib/developers";
 import type { FacetType } from "@/lib/facets";
 import { PUBLIC_INDEX_MIN_SCORE, SITE_URL } from "@/lib/site";
@@ -57,20 +58,30 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     entry("/privacy", { changeFrequency: "yearly", priority: 0.3 }),
   ];
 
-  // Blog posts: synchronous fs reads, no timeout guard needed. `entry()` emits
-  // the zh+en alternate pair — correct while every post ships both locales
-  // (fallback pages canonicalize onto en anyway, so a missing translation only
-  // costs an extra hreflang hint, never a duplicate-content page).
+  // Articles are database-backed so newly published research and vulnerability
+  // reports appear without a deployment. `entry()` emits the zh+en pair;
+  // fallback pages still canonicalize to their available source locale.
+  const [blogPosts, vulnerabilities] = await Promise.all([
+    listPosts("en"),
+    listVulnerabilities("en"),
+  ]);
   const blogRoutes: MetadataRoute.Sitemap = [
     entry("/blog", { changeFrequency: "weekly", priority: 0.7 }),
-    ...getPostSlugs().map((slug) => {
-      const post = getPost(slug, "en");
-      return entry(`/blog/${slug}`, {
-        lastModified: post ? new Date(post.updated ?? post.date) : undefined,
+    ...blogPosts.map((post) =>
+      entry(`/blog/${post.slug}`, {
+        lastModified: new Date(post.updated ?? post.date),
         changeFrequency: "monthly",
         priority: 0.8,
-      });
-    }),
+      }),
+    ),
+    entry("/vulnerabilities", { changeFrequency: "weekly", priority: 0.7 }),
+    ...vulnerabilities.map((post) =>
+      entry(`/vulnerabilities/${post.slug}`, {
+        lastModified: new Date(post.updated ?? post.date),
+        changeFrequency: "weekly",
+        priority: 0.8,
+      }),
+    ),
   ];
 
   // Directory buckets (top languages + projects + orgs). Reads the same cached

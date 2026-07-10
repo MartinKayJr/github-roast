@@ -15,7 +15,9 @@
     "community": "圈子",
     "projects": "项目",
     "versus": "对战",
-    "blog": "研究",
+    "research": "研究",
+    "blog": "研究文章",
+    "vulnerabilities": "漏洞",
     "openMenu": "打开菜单",
     "closeMenu": "关闭菜单"
   },
@@ -590,6 +592,14 @@
     "backToList": "全部研究",
     "empty": "还没有文章。"
   },
+  "vulnerabilities": {
+    "heading": "漏洞",
+    "subtitle": "面向开发者的漏洞分析、披露与修复追踪。",
+    "readingTime": "阅读约 {minutes} 分钟",
+    "notTranslated": "这篇漏洞文章还没有中文版，以下为英文原文。",
+    "backToList": "全部漏洞",
+    "empty": "还没有已发布的漏洞文章。"
+  },
   "footer": {
     "tagline": "GitHub 开发者含金量与可信度评分。",
     "about": "关于",
@@ -597,7 +607,8 @@
     "privacy": "隐私",
     "methodology": "评分方法",
     "docs": "API 文档",
-    "blog": "研究",
+    "blog": "研究文章",
+    "vulnerabilities": "漏洞",
     "source": "GitHub 源码",
     "sectionProduct": "产品",
     "sectionResources": "资源",

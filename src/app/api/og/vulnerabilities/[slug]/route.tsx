@@ -1,21 +1,16 @@
 import { ImageResponse } from "next/og";
 import { CDN_CACHE, fonts } from "../../../card/shared";
-import { getPost } from "@/lib/blog";
+import { getVulnerability } from "@/lib/vulnerabilities";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/**
- * OG image for a blog post. Always rendered from the en title — the shared
- * card fonts are Latin-only Inter (a CJK title would render tofu), and the
- * scrapers that matter for articles (HN, Twitter, Slack) show the en card.
- */
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ slug: string }> },
 ) {
   const { slug } = await params;
-  const post = await getPost(slug, "en");
+  const post = await getVulnerability(slug, "en");
   if (!post) return new Response("not found", { status: 404 });
 
   const date = new Date(post.date).toLocaleDateString("en-US", {
@@ -45,13 +40,11 @@ export async function GET(
                 width: 14,
                 height: 14,
                 borderRadius: 7,
-                background: "#ea580c",
+                background: "#ef4444",
               }}
             />
-            <div style={{ fontSize: 28, fontWeight: 800, color: "#fafafa" }}>
-              ghsphere
-            </div>
-            <div style={{ fontSize: 26, color: "#52525b" }}>Research</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: "#fafafa" }}>ghsphere</div>
+            <div style={{ fontSize: 26, color: "#a1a1aa" }}>Vulnerabilities</div>
           </div>
           <div
             style={{
@@ -60,7 +53,6 @@ export async function GET(
               fontWeight: 800,
               lineHeight: 1.15,
               color: "#fafafa",
-              letterSpacing: "-0.02em",
             }}
           >
             {post.title}
@@ -76,7 +68,7 @@ export async function GET(
           }}
         >
           <div style={{ fontSize: 26, color: "#a1a1aa" }}>{date}</div>
-          <div style={{ fontSize: 26, color: "#ea580c" }}>ghsphere.com/blog</div>
+          <div style={{ fontSize: 26, color: "#ef4444" }}>ghsphere.com/vulnerabilities</div>
         </div>
       </div>
     ),

@@ -3,12 +3,17 @@ import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
-import { JsonLd, articleJsonLd, datasetJsonLd } from "@/components/JsonLd";
+import { JsonLd, articleJsonLd } from "@/components/JsonLd";
 import { ArticleCommentsSection } from "@/components/blog/ArticleCommentsSection";
 import { PostBody } from "@/components/blog/PostBody";
-import { getPost, postAlternates } from "@/lib/blog";
+import { getVulnerability } from "@/lib/vulnerabilities";
+import type { ArticleLocale } from "@/lib/articles";
 
 export const dynamic = "force-dynamic";
+
+function vulnerabilityPath(locale: string, slug: string): string {
+  return locale === "en" ? `/en/vulnerabilities/${slug}` : `/vulnerabilities/${slug}`;
+}
 
 export async function generateMetadata({
   params,
@@ -16,23 +21,32 @@ export async function generateMetadata({
   params: Promise<{ locale: string; slug: string }>;
 }): Promise<Metadata> {
   const { locale, slug } = await params;
-  const post = await getPost(slug, locale);
+  const articleLocale: ArticleLocale = locale === "en" ? "en" : "zh";
+  const post = await getVulnerability(slug, articleLocale);
   if (!post) return {};
-  const og = `/api/og/blog/${slug}`;
-  const url = locale === "en" ? `/en/blog/${slug}` : `/blog/${slug}`;
+  const og = `/api/og/vulnerabilities/${slug}`;
+  const languages: Record<string, string> = {};
+  for (const available of post.availableLocales) {
+    languages[available === "zh" ? "zh-CN" : available] = vulnerabilityPath(available, slug);
+  }
+  languages["x-default"] = vulnerabilityPath(post.availableLocales.includes("en") ? "en" : "zh", slug);
+  const canonicalLocale = post.isFallback
+    ? post.availableLocales.includes("en")
+      ? "en"
+      : "zh"
+    : articleLocale;
   return {
     title: `${post.title} · ghsphere`,
     description: post.description,
     alternates: {
-      ...postAlternates(locale, slug, post.availableLocales),
-      // Per-page markdown twin (served via the /blog/{slug}.md rewrite).
-      types: { "text/markdown": `/blog/${slug}.md` },
+      canonical: vulnerabilityPath(canonicalLocale, slug),
+      languages,
     },
     openGraph: {
       title: post.title,
       description: post.description,
       type: "article",
-      url,
+      url: vulnerabilityPath(articleLocale, slug),
       publishedTime: post.date,
       ...(post.updated ? { modifiedTime: post.updated } : {}),
       images: [{ url: og, width: 1200, height: 630 }],
@@ -46,16 +60,17 @@ export async function generateMetadata({
   };
 }
 
-export default async function BlogPostPage({
+export default async function VulnerabilityPostPage({
   params,
 }: {
   params: Promise<{ locale: string; slug: string }>;
 }) {
   const { locale, slug } = await params;
   setRequestLocale(locale);
-  const post = await getPost(slug, locale);
+  const articleLocale: ArticleLocale = locale === "en" ? "en" : "zh";
+  const post = await getVulnerability(slug, articleLocale);
   if (!post) notFound();
-  const t = await getTranslations("blog");
+  const t = await getTranslations("vulnerabilities");
   const dateFmt = new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : locale, {
     year: "numeric",
     month: "long",
@@ -64,39 +79,24 @@ export default async function BlogPostPage({
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-5 py-14 sm:py-20">
-      <JsonLd data={articleJsonLd(post)} />
-      {post.tags.includes("data") && (
-        <JsonLd
-          data={datasetJsonLd({
-            slug,
-            locale,
-            name: post.title,
-            description: post.description,
-            date: post.date,
-            updated: post.updated,
-          })}
-        />
-      )}
+      <JsonLd data={articleJsonLd({ ...post, kind: "vulnerability" })} />
       <article>
         <header>
           <Link
-            href="/blog"
-            className="text-sm text-zinc-500 transition-colors hover:text-[var(--primary)]"
+            href="/vulnerabilities"
+            className="text-sm text-[var(--muted-foreground)] transition-colors hover:text-[var(--primary)]"
           >
             ← {t("backToList")}
           </Link>
           <h1 className="mt-4 text-3xl font-black leading-tight text-[var(--foreground)] sm:text-4xl">
             {post.title}
           </h1>
-          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-zinc-500">
+          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-[var(--muted-foreground)]">
             <time dateTime={post.date}>{dateFmt.format(new Date(post.date))}</time>
             <span aria-hidden>·</span>
             <span>{t("readingTime", { minutes: post.readingMinutes })}</span>
             {post.tags.map((tag) => (
-              <span
-                key={tag}
-                className="rounded-full border border-[var(--border)] px-2 py-0.5 text-xs"
-              >
+              <span key={tag} className="rounded-full border border-[var(--border)] px-2 py-0.5 text-xs">
                 {tag}
               </span>
             ))}
@@ -104,7 +104,7 @@ export default async function BlogPostPage({
         </header>
 
         {post.isFallback && (
-          <p className="mt-6 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-2.5 text-sm text-zinc-400">
+          <p className="mt-6 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-2.5 text-sm text-[var(--muted-foreground)]">
             {t("notTranslated")}
           </p>
         )}
@@ -116,7 +116,7 @@ export default async function BlogPostPage({
       <Suspense fallback={<div className="mt-12 h-24 border-t border-[var(--border)] sm:mt-16" />}>
         <ArticleCommentsSection
           articleId={post.id}
-          redirectTo={locale === "en" ? `/en/blog/${slug}` : `/blog/${slug}`}
+          redirectTo={vulnerabilityPath(articleLocale, slug)}
           locale={locale}
         />
       </Suspense>

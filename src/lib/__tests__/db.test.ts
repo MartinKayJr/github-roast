@@ -336,6 +336,115 @@ describe("profile comments", () => {
   });
 });
 
+describe("database-backed articles", () => {
+  it("keeps drafts private, falls back by locale, and stores authenticated comments", async () => {
+    const draft = await db.createAdminArticle({
+      kind: "vulnerability",
+      slug: "draft-security-note",
+      status: "draft",
+      tags: ["security"],
+      authorLogin: "AdminEditor",
+      titleZh: "",
+      descriptionZh: "",
+      bodyZh: "",
+      titleEn: "Draft security note",
+      descriptionEn: "Not public yet",
+      bodyEn: "# Draft\n\nThis should not be listed.",
+    });
+    expect(draft?.status).toBe("draft");
+    await expect(db.listPublishedArticles("vulnerability", "en")).resolves.not.toContainEqual(
+      expect.objectContaining({ slug: "draft-security-note" }),
+    );
+
+    const published = await db.createAdminArticle({
+      kind: "blog",
+      slug: "database-article-test",
+      status: "published",
+      tags: ["security", "database", "security"],
+      authorLogin: "AdminEditor",
+      titleZh: "",
+      descriptionZh: "",
+      bodyZh: "",
+      titleEn: "Database article",
+      descriptionEn: "A persisted research article.",
+      bodyEn: "# Evidence\n\nA database-backed article body.",
+    });
+    expect(published).toMatchObject({
+      kind: "blog",
+      slug: "database-article-test",
+      status: "published",
+      tags: ["security", "database"],
+    });
+
+    const english = await db.getPublishedArticle("blog", "database-article-test", "en");
+    const chineseFallback = await db.getPublishedArticle("blog", "database-article-test", "zh");
+    expect(english).toMatchObject({ title: "Database article", isFallback: false });
+    expect(chineseFallback).toMatchObject({ title: "Database article", isFallback: true });
+
+    const comment = await db.createArticleComment({
+      articleId: published!.id,
+      authorGithubId: 42,
+      authorLogin: "CommentAuthor",
+      authorAvatarUrl: "https://avatars.githubusercontent.com/u/42",
+      body: "Useful evidence.",
+    });
+    expect(comment).toMatchObject({
+      articleId: published!.id,
+      author: { githubId: 42, login: "commentauthor" },
+      body: "Useful evidence.",
+    });
+    await expect(db.getArticleComments(published!.id)).resolves.toMatchObject([
+      { author: { login: "commentauthor" }, body: "Useful evidence." },
+    ]);
+
+    const unpublished = await db.updateAdminArticle(published!.id, {
+      kind: "blog",
+      slug: "database-article-test",
+      status: "draft",
+      tags: ["security"],
+      authorLogin: "AdminEditor",
+      titleZh: "",
+      descriptionZh: "",
+      bodyZh: "",
+      titleEn: "Database article",
+      descriptionEn: "A persisted research article.",
+      bodyEn: "# Evidence\n\nA database-backed article body.",
+    });
+    expect(unpublished?.status).toBe("draft");
+    await expect(db.getPublishedArticleById(published!.id)).resolves.toBeNull();
+    await expect(db.getArticleComments(published!.id)).resolves.toEqual([]);
+  });
+
+  it("does not let legacy Markdown imports overwrite an admin-owned slug", async () => {
+    const admin = await db.createAdminArticle({
+      kind: "blog",
+      slug: "legacy-ownership-test",
+      status: "published",
+      tags: ["admin"],
+      authorLogin: "AdminEditor",
+      titleZh: "",
+      descriptionZh: "",
+      bodyZh: "",
+      titleEn: "Admin version",
+      descriptionEn: "Managed by an editor.",
+      bodyEn: "Admin content.",
+    });
+    await db.upsertLegacyBlogArticle({
+      slug: "legacy-ownership-test",
+      tags: ["legacy"],
+      date: "2025-01-01",
+      translations: {
+        en: { title: "Legacy version", description: "Old", body: "Legacy content." },
+      },
+    });
+    await expect(db.getPublishedArticle("blog", "legacy-ownership-test", "en")).resolves.toMatchObject({
+      id: admin!.id,
+      title: "Admin version",
+      tags: ["admin"],
+    });
+  });
+});
+
 describe("profile reactions", () => {
   it("stores one durable reaction per GitHub user and target profile", async () => {
     await db.setProfileReaction({

@@ -15,7 +15,9 @@
     "community": "Circle",
     "projects": "Projects",
     "versus": "Versus",
-    "blog": "Research",
+    "research": "Research",
+    "blog": "Research articles",
+    "vulnerabilities": "Vulnerabilities",
     "openMenu": "Open menu",
     "closeMenu": "Close menu"
   },
@@ -590,6 +592,14 @@
     "backToList": "All research",
     "empty": "No articles yet."
   },
+  "vulnerabilities": {
+    "heading": "Vulnerabilities",
+    "subtitle": "Developer-focused vulnerability analysis, disclosures, and remediation tracking.",
+    "readingTime": "{minutes} min read",
+    "notTranslated": "This vulnerability article has not been translated yet. Showing the English original.",
+    "backToList": "All vulnerabilities",
+    "empty": "No vulnerability articles have been published yet."
+  },
   "footer": {
     "tagline": "GitHub developer value & trust scoring.",
     "about": "About",
@@ -597,7 +607,8 @@
     "privacy": "Privacy",
     "methodology": "Methodology",
     "docs": "API docs",
-    "blog": "Research",
+    "blog": "Research articles",
+    "vulnerabilities": "Vulnerabilities",
     "source": "Source on GitHub",
     "sectionProduct": "Product",
     "sectionResources": "Resources",

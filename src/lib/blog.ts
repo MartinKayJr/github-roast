@@ -2,123 +2,168 @@ import fs from "node:fs";
 import path from "node:path";
 import matter from "gray-matter";
 import { routing } from "@/i18n/routing";
-
-/**
- * Filesystem blog loader. Posts live in `content/blog/<slug>/<locale>.md` —
- * `en.md` is required and is the source of truth for locale-invariant
- * frontmatter (`date`, `updated`, `tags`), so translations can never drift on
- * those fields. Translated files only own `title`/`description`/body.
- *
- * The per-post-per-locale layout is deliberately wider than the UI's current
- * zh/en routing: adding an article language later is dropping a `<locale>.md`
- * file, no restructuring. When a UI locale has no translation yet, the en body
- * is served under that route with an "untranslated" note (see `isFallback`),
- * and `postAlternates` canonicalizes the page onto the en URL so search
- * engines never index duplicate English content twice.
- */
+import {
+  getPublishedArticle,
+  legacyBlogArticleId,
+  listPublishedArticles,
+  upsertLegacyBlogArticle,
+} from "@/lib/db";
+import {
+  readingMinutes,
+  type ArticleLocale,
+  type ArticleTranslation,
+  type PublicArticle,
+  type PublicArticleMeta,
+} from "@/lib/articles";
 
 const BLOG_DIR = path.join(process.cwd(), "content", "blog");
+const ARTICLE_DATABASE_TIMEOUT_MS = 750;
+const legacySeedAttempts = new Set<string>();
 
-export type PostMeta = {
+export type PostMeta = PublicArticleMeta;
+export type Post = PublicArticle;
+
+interface LegacyArticle {
   slug: string;
-  title: string;
-  description: string;
-  /** ISO date, always from `en.md`. */
   date: string;
   updated?: string;
   tags: string[];
-  locale: string;
-  /** True when `locale` has no translation and the en body is being served. */
-  isFallback: boolean;
-  /** Locales that actually have a markdown file for this post. */
-  availableLocales: string[];
-  readingMinutes: number;
-};
+  translations: Partial<Record<ArticleLocale, ArticleTranslation>>;
+}
 
-export type Post = PostMeta & { body: string };
+function requestedLocale(locale: string): ArticleLocale {
+  return locale === "en" ? "en" : "zh";
+}
 
+/** Kept for legacy tooling; public page reads now query the article database. */
 export function getPostSlugs(): string[] {
   if (!fs.existsSync(BLOG_DIR)) return [];
   return fs
     .readdirSync(BLOG_DIR, { withFileTypes: true })
-    .filter(
-      (d) => d.isDirectory() && fs.existsSync(path.join(BLOG_DIR, d.name, "en.md")),
-    )
-    .map((d) => d.name);
+    .filter((entry) => entry.isDirectory() && fs.existsSync(path.join(BLOG_DIR, entry.name, "en.md")))
+    .map((entry) => entry.name);
 }
 
-function localesFor(slug: string): string[] {
-  return fs
-    .readdirSync(path.join(BLOG_DIR, slug))
-    .filter((f) => f.endsWith(".md"))
-    .map((f) => f.slice(0, -3));
-}
-
-export function getPost(slug: string, locale: string): Post | null {
-  // Slugs come from route params — refuse anything that could escape BLOG_DIR.
+function readLegacyArticle(slug: string): LegacyArticle | null {
   if (!/^[a-z0-9-]+$/.test(slug)) return null;
   const dir = path.join(BLOG_DIR, slug);
-  if (!fs.existsSync(path.join(dir, "en.md"))) return null;
-  const availableLocales = localesFor(slug);
-  const isFallback = !availableLocales.includes(locale);
-  const file = path.join(dir, `${isFallback ? "en" : locale}.md`);
-  const { data, content } = matter(fs.readFileSync(file, "utf8"));
-  const en = isFallback
-    ? data
-    : matter(fs.readFileSync(path.join(dir, "en.md"), "utf8")).data;
+  const englishFile = path.join(dir, "en.md");
+  if (!fs.existsSync(englishFile)) return null;
+
+  const english = matter(fs.readFileSync(englishFile, "utf8"));
+  const translations: Partial<Record<ArticleLocale, ArticleTranslation>> = {};
+  for (const locale of ["zh", "en"] as const) {
+    const file = path.join(dir, `${locale}.md`);
+    if (!fs.existsSync(file)) continue;
+    const parsed = matter(fs.readFileSync(file, "utf8"));
+    translations[locale] = {
+      title: String(parsed.data.title ?? slug),
+      description: String(parsed.data.description ?? ""),
+      body: parsed.content,
+    };
+  }
+  if (!translations.en) return null;
   return {
     slug,
-    locale,
-    isFallback,
-    availableLocales,
-    title: String(data.title ?? slug),
-    description: String(data.description ?? ""),
-    date: String(en.date ?? ""),
-    updated: en.updated ? String(en.updated) : undefined,
-    tags: Array.isArray(en.tags) ? en.tags.map(String) : [],
-    readingMinutes: readingMinutes(content),
-    body: content,
+    date: String(english.data.date ?? ""),
+    updated: english.data.updated ? String(english.data.updated) : undefined,
+    tags: Array.isArray(english.data.tags) ? english.data.tags.map(String) : [],
+    translations,
   };
 }
 
-export function listPosts(locale: string): PostMeta[] {
-  return getPostSlugs()
-    .map((slug) => getPost(slug, locale))
-    .filter((p): p is Post => p !== null)
-    .map(({ body: _body, ...meta }) => meta)
-    .sort((a, b) => (a.date < b.date ? 1 : -1));
+function legacyToPost(article: LegacyArticle, locale: ArticleLocale): Post | null {
+  const translation = article.translations[locale] ?? article.translations.en ?? article.translations.zh;
+  if (!translation) return null;
+  const availableLocales = (["zh", "en"] as const).filter((item) => Boolean(article.translations[item]));
+  return {
+    id: legacyBlogArticleId(article.slug),
+    kind: "blog",
+    slug: article.slug,
+    title: translation.title,
+    description: translation.description,
+    date: article.date,
+    ...(article.updated ? { updated: article.updated } : {}),
+    tags: article.tags,
+    locale,
+    isFallback: !article.translations[locale],
+    availableLocales,
+    readingMinutes: readingMinutes(translation.body),
+    body: translation.body,
+    authorLogin: null,
+  };
 }
 
-/** CJK-aware reading time: ideographs read per-char, latin per-word. */
-function readingMinutes(text: string): number {
-  const cjk = (text.match(/[一-鿿぀-ヿ가-힯]/g) ?? []).length;
-  const words = text
-    .replace(/[一-鿿぀-ヿ가-힯]/g, " ")
-    .split(/\s+/)
-    .filter(Boolean).length;
-  return Math.max(1, Math.round(cjk / 400 + words / 220));
+async function seedLegacyArticle(article: LegacyArticle): Promise<void> {
+  if (legacySeedAttempts.has(article.slug)) return;
+  legacySeedAttempts.add(article.slug);
+  await withTimeout(
+    upsertLegacyBlogArticle({
+      slug: article.slug,
+      tags: article.tags,
+      date: article.date,
+      ...(article.updated ? { updated: article.updated } : {}),
+      translations: article.translations,
+    }),
+    undefined,
+  );
+}
+
+async function withTimeout<T>(promise: Promise<T>, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ARTICLE_DATABASE_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/** Database first; bundled Markdown remains a no-database and migration fallback. */
+export async function getPost(slug: string, locale: string): Promise<Post | null> {
+  const articleLocale = requestedLocale(locale);
+  const legacy = readLegacyArticle(slug);
+  if (legacy) void seedLegacyArticle(legacy);
+  const stored = legacy
+    ? await withTimeout(getPublishedArticle("blog", slug, articleLocale), null)
+    : await getPublishedArticle("blog", slug, articleLocale);
+  return stored ?? (legacy ? legacyToPost(legacy, articleLocale) : null);
+}
+
+export async function listPosts(locale: string): Promise<PostMeta[]> {
+  const articleLocale = requestedLocale(locale);
+  const legacy = getPostSlugs()
+    .map(readLegacyArticle)
+    .filter((article): article is LegacyArticle => article !== null);
+  for (const article of legacy) void seedLegacyArticle(article);
+
+  const stored = await listPublishedArticles("blog", articleLocale);
+  if (stored.length > 0 || legacy.length === 0) return stored;
+  return legacy
+    .map((article) => legacyToPost(article, articleLocale))
+    .filter((article): article is Post => article !== null)
+    .map(({ body: _body, ...meta }) => meta)
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
 }
 
 function postPath(locale: string, slug: string): string {
   return locale === routing.defaultLocale ? `/blog/${slug}` : `/${locale}/blog/${slug}`;
 }
 
-/**
- * Blog-post `alternates`: unlike the site-wide `localeAlternates` (which
- * assumes both locales always exist), hreflang here lists only locales with a
- * real translation, and a fallback page canonicalizes onto the en post.
- */
 export function postAlternates(locale: string, slug: string, availableLocales: string[]) {
   const isFallback = !availableLocales.includes(locale);
+  const fallbackLocale = availableLocales.includes("en") ? "en" : "zh";
   const languages: Record<string, string> = {};
-  for (const l of routing.locales) {
-    if (availableLocales.includes(l)) {
-      languages[l === "zh" ? "zh-CN" : l] = postPath(l, slug);
+  for (const item of routing.locales) {
+    if (availableLocales.includes(item)) {
+      languages[item === "zh" ? "zh-CN" : item] = postPath(item, slug);
     }
   }
-  languages["x-default"] = postPath(availableLocales.includes("en") ? "en" : "zh", slug);
+  languages["x-default"] = postPath(fallbackLocale, slug);
   return {
-    canonical: isFallback ? postPath("en", slug) : postPath(locale, slug),
+    canonical: isFallback ? postPath(fallbackLocale, slug) : postPath(locale, slug),
     languages,
   };
 }

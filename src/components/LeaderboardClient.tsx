@@ -438,6 +438,7 @@ export function LeaderboardClient({
             className="flex items-center gap-1 tabular-nums text-zinc-500"
           >
             <input
+              suppressHydrationWarning
               aria-label={labels.pageJumpLabel}
               type="text"
               inputMode="numeric"

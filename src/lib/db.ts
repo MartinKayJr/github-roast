@@ -21,6 +21,39 @@ import {
   type ProfileComment,
   type ProfileCommentAuthor,
 } from "./comments";
+import {
+  ARTICLE_BODY_MAX_LENGTH,
+  ARTICLE_DESCRIPTION_MAX_LENGTH,
+  ARTICLE_LOCALES,
+  ARTICLE_TITLE_MAX_LENGTH,
+  isArticleKind,
+  isArticleStatus,
+  normalizeArticleCommentText,
+  normalizeArticleSlug,
+  normalizeArticleTags,
+  normalizeOptionalArticleText,
+  readingMinutes,
+  type AdminArticleView,
+  type ArticleComment,
+  type ArticleKind,
+  type ArticleLocale,
+  type ArticleStatus,
+  type ArticleTranslation,
+  type PublicArticle,
+  type PublicArticleMeta,
+  type SaveArticleInput,
+} from "./articles";
+export type {
+  AdminArticleView,
+  ArticleComment,
+  ArticleKind,
+  ArticleLocale,
+  ArticleStatus,
+  ArticleTranslation,
+  PublicArticle,
+  PublicArticleMeta,
+  SaveArticleInput,
+} from "./articles";
 import { extractFacets, type FacetType } from "./facets";
 import {
   emptyReactionCounts,
@@ -605,6 +638,47 @@ function ensureSchema(db: Client): Promise<void> {
            )`,
           `CREATE INDEX IF NOT EXISTS idx_github_tokens_status_priority
              ON github_tokens(status, priority, cooldown_until, last_used_at)`,
+          // Long-form content is intentionally independent from filesystem
+          // deployments: admins can publish research and vulnerability posts at
+          // runtime, while translations remain normalized per locale.
+          `CREATE TABLE IF NOT EXISTS articles (
+             id           TEXT PRIMARY KEY,
+             kind         TEXT NOT NULL CHECK(kind IN ('blog', 'vulnerability')),
+             slug         TEXT NOT NULL UNIQUE,
+             status       TEXT NOT NULL CHECK(status IN ('draft', 'published')),
+             tags         TEXT NOT NULL DEFAULT '[]',
+             author_login TEXT,
+             published_at INTEGER,
+             created_at   INTEGER NOT NULL,
+             updated_at   INTEGER NOT NULL,
+             source       TEXT NOT NULL DEFAULT 'admin' CHECK(source IN ('admin', 'legacy'))
+           )`,
+          `CREATE INDEX IF NOT EXISTS idx_articles_kind_status_published
+             ON articles(kind, status, published_at DESC)`,
+          `CREATE INDEX IF NOT EXISTS idx_articles_kind_updated
+             ON articles(kind, updated_at DESC)`,
+          `CREATE TABLE IF NOT EXISTS article_translations (
+             article_id  TEXT NOT NULL,
+             locale      TEXT NOT NULL CHECK(locale IN ('zh', 'en')),
+             title       TEXT NOT NULL,
+             description TEXT NOT NULL DEFAULT '',
+             body        TEXT NOT NULL,
+             PRIMARY KEY(article_id, locale),
+             FOREIGN KEY(article_id) REFERENCES articles(id) ON DELETE CASCADE
+           )`,
+          `CREATE TABLE IF NOT EXISTS article_comments (
+             id                TEXT PRIMARY KEY,
+             article_id        TEXT NOT NULL,
+             author_github_id  INTEGER NOT NULL,
+             author_login      TEXT NOT NULL,
+             author_avatar_url TEXT,
+             body              TEXT NOT NULL,
+             hidden            INTEGER NOT NULL DEFAULT 0,
+             created_at        INTEGER NOT NULL,
+             FOREIGN KEY(article_id) REFERENCES articles(id) ON DELETE CASCADE
+           )`,
+          `CREATE INDEX IF NOT EXISTS idx_article_comments_article_created
+             ON article_comments(article_id, hidden, created_at ASC)`,
           `CREATE TABLE IF NOT EXISTS profile_comments (
              id                TEXT PRIMARY KEY,
              target_username   TEXT NOT NULL,
@@ -837,6 +911,13 @@ function ensureSchema(db: Client): Promise<void> {
       try {
         await db.execute(
           `ALTER TABLE github_contribution_days ADD COLUMN representative_repo TEXT`,
+        );
+      } catch {
+        // column already exists — ignore
+      }
+      try {
+        await db.execute(
+          `ALTER TABLE articles ADD COLUMN source TEXT NOT NULL DEFAULT 'admin'`,
         );
       } catch {
         // column already exists — ignore
@@ -8081,6 +8162,554 @@ export async function listProjectCircleItems(options: {
   } catch (e) {
     console.error("listProjectCircleItems failed:", e);
     return [];
+  }
+}
+
+type ArticleTranslationMap = Partial<Record<ArticleLocale, ArticleTranslation>>;
+
+interface NormalizedSaveArticleInput {
+  kind: ArticleKind;
+  slug: string;
+  status: ArticleStatus;
+  tags: string[];
+  authorLogin: string;
+  translations: ArticleTranslationMap;
+}
+
+interface LegacyBlogArticleInput {
+  slug: string;
+  tags: string[];
+  date: string;
+  updated?: string;
+  translations: ArticleTranslationMap;
+}
+
+interface CreateArticleCommentInput {
+  articleId: string;
+  authorGithubId: number;
+  authorLogin: string;
+  authorAvatarUrl?: string | null;
+  body: string;
+}
+
+function articleLocale(value: unknown): ArticleLocale | null {
+  return typeof value === "string" && ARTICLE_LOCALES.includes(value as ArticleLocale)
+    ? (value as ArticleLocale)
+    : null;
+}
+
+function normalizeArticleId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const id = value.trim().toLowerCase();
+  return /^[0-9a-f-]{16,64}$/.test(id) ? id : null;
+}
+
+function parseArticleTags(raw: unknown): string[] {
+  if (typeof raw !== "string") return [];
+  try {
+    return normalizeArticleTags(JSON.parse(raw));
+  } catch {
+    return [];
+  }
+}
+
+function normalizeArticleTranslation(
+  titleInput: unknown,
+  descriptionInput: unknown,
+  bodyInput: unknown,
+): ArticleTranslation | undefined | null {
+  const title = normalizeOptionalArticleText(titleInput, ARTICLE_TITLE_MAX_LENGTH);
+  const description = normalizeOptionalArticleText(descriptionInput, ARTICLE_DESCRIPTION_MAX_LENGTH);
+  const body = normalizeOptionalArticleText(bodyInput, ARTICLE_BODY_MAX_LENGTH);
+  if (title === null || description === null || body === null) return null;
+  if (!title && !description && !body) return undefined;
+  if (!title || !body) return null;
+  return { title, description, body };
+}
+
+function normalizeSaveArticleInput(input: SaveArticleInput): NormalizedSaveArticleInput | null {
+  if (!isArticleKind(input.kind) || !isArticleStatus(input.status) || !Array.isArray(input.tags)) {
+    return null;
+  }
+  const slug = normalizeArticleSlug(input.slug);
+  const authorLogin = normalizeGitHubUsername(input.authorLogin);
+  if (!slug || !authorLogin) return null;
+  const zh = normalizeArticleTranslation(input.titleZh, input.descriptionZh, input.bodyZh);
+  const en = normalizeArticleTranslation(input.titleEn, input.descriptionEn, input.bodyEn);
+  if (zh === null || en === null) return null;
+  const translations: ArticleTranslationMap = {
+    ...(zh ? { zh } : {}),
+    ...(en ? { en } : {}),
+  };
+  if (Object.keys(translations).length === 0) return null;
+  return {
+    kind: input.kind,
+    slug,
+    status: input.status,
+    tags: normalizeArticleTags(input.tags),
+    authorLogin,
+    translations,
+  };
+}
+
+function articleDate(view: AdminArticleView): { date: string; updated?: string } {
+  const publishedAt = view.publishedAt ?? view.createdAt;
+  const date = new Date(publishedAt).toISOString();
+  return view.updatedAt > publishedAt ? { date, updated: new Date(view.updatedAt).toISOString() } : { date };
+}
+
+function toPublicArticle(view: AdminArticleView, locale: ArticleLocale): PublicArticle | null {
+  const selected = view.translations[locale] ?? view.translations.en ?? view.translations.zh;
+  if (!selected) return null;
+  const availableLocales = ARTICLE_LOCALES.filter((item) => Boolean(view.translations[item]));
+  const { date, updated } = articleDate(view);
+  return {
+    id: view.id,
+    kind: view.kind,
+    slug: view.slug,
+    title: selected.title,
+    description: selected.description,
+    date,
+    ...(updated ? { updated } : {}),
+    tags: view.tags,
+    locale,
+    isFallback: !view.translations[locale],
+    availableLocales,
+    readingMinutes: readingMinutes(selected.body),
+    body: selected.body,
+    authorLogin: view.authorLogin,
+  };
+}
+
+function toPublicArticleMeta(view: AdminArticleView, locale: ArticleLocale): PublicArticleMeta | null {
+  const article = toPublicArticle(view, locale);
+  if (!article) return null;
+  const { body: _body, ...meta } = article;
+  return meta;
+}
+
+function hydrateAdminArticles(rows: Array<Record<string, unknown>>): AdminArticleView[] {
+  const byId = new Map<string, AdminArticleView>();
+  for (const row of rows) {
+    const id = String(row.id ?? "");
+    if (!id) continue;
+    let article = byId.get(id);
+    if (!article) {
+      const kind = isArticleKind(row.kind) ? row.kind : null;
+      const status = isArticleStatus(row.status) ? row.status : null;
+      if (!kind || !status) continue;
+      article = {
+        id,
+        kind,
+        slug: String(row.slug ?? ""),
+        status,
+        tags: parseArticleTags(row.tags),
+        authorLogin: typeof row.author_login === "string" && row.author_login ? row.author_login : null,
+        publishedAt: row.published_at == null ? null : Number(row.published_at),
+        createdAt: Number(row.created_at) || 0,
+        updatedAt: Number(row.updated_at) || 0,
+        translations: {},
+      };
+      byId.set(id, article);
+    }
+    const locale = articleLocale(row.translation_locale);
+    if (locale && typeof row.title === "string" && typeof row.body === "string") {
+      article.translations[locale] = {
+        title: row.title,
+        description: typeof row.description === "string" ? row.description : "",
+        body: row.body,
+      };
+    }
+  }
+  return [...byId.values()];
+}
+
+async function selectAdminArticles(
+  db: Client,
+  options: { kind?: ArticleKind; id?: string; slug?: string; publishedOnly?: boolean } = {},
+): Promise<AdminArticleView[]> {
+  const where: string[] = [];
+  const args: string[] = [];
+  if (options.kind) {
+    where.push("a.kind = ?");
+    args.push(options.kind);
+  }
+  if (options.id) {
+    where.push("a.id = ?");
+    args.push(options.id);
+  }
+  if (options.slug) {
+    where.push("a.slug = ?");
+    args.push(options.slug);
+  }
+  if (options.publishedOnly) where.push("a.status = 'published'");
+  const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+  const res = await db.execute({
+    sql: `SELECT a.id, a.kind, a.slug, a.status, a.tags, a.author_login,
+                 a.published_at, a.created_at, a.updated_at,
+                 t.locale AS translation_locale, t.title, t.description, t.body
+          FROM articles AS a
+          LEFT JOIN article_translations AS t ON t.article_id = a.id
+          ${whereSql}
+          ORDER BY a.updated_at DESC, t.locale ASC`,
+    args,
+  });
+  return hydrateAdminArticles(res.rows as Array<Record<string, unknown>>);
+}
+
+async function getAdminArticleById(db: Client, id: string): Promise<AdminArticleView | null> {
+  return (await selectAdminArticles(db, { id }))[0] ?? null;
+}
+
+export async function listAdminArticles(kind?: ArticleKind): Promise<AdminArticleView[]> {
+  const db = getClient();
+  if (!db || (kind !== undefined && !isArticleKind(kind))) return [];
+  try {
+    await ensureSchema(db);
+    return await selectAdminArticles(db, { kind });
+  } catch (e) {
+    console.error("listAdminArticles failed:", e);
+    return [];
+  }
+}
+
+export async function createAdminArticle(
+  input: SaveArticleInput,
+): Promise<AdminArticleView | null> {
+  const db = getClient();
+  const article = normalizeSaveArticleInput(input);
+  if (!db || !article) return null;
+  const id = randomUUID();
+  const now = Date.now();
+  const publishedAt = article.status === "published" ? now : null;
+  try {
+    await ensureSchema(db);
+    const statements = [
+      {
+        sql: `INSERT INTO articles
+                (id, kind, slug, status, tags, author_login, published_at,
+                 created_at, updated_at, source)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin')`,
+        args: [
+          id,
+          article.kind,
+          article.slug,
+          article.status,
+          JSON.stringify(article.tags),
+          article.authorLogin,
+          publishedAt,
+          now,
+          now,
+        ],
+      },
+      ...ARTICLE_LOCALES.flatMap((locale) => {
+        const translation = article.translations[locale];
+        return translation
+          ? [
+              {
+                sql: `INSERT INTO article_translations
+                        (article_id, locale, title, description, body)
+                      VALUES (?, ?, ?, ?, ?)`,
+                args: [id, locale, translation.title, translation.description, translation.body],
+              },
+            ]
+          : [];
+      }),
+    ];
+    await db.batch(statements, "write");
+    return getAdminArticleById(db, id);
+  } catch (e) {
+    console.error("createAdminArticle failed:", e);
+    return null;
+  }
+}
+
+export async function updateAdminArticle(
+  idInput: string,
+  input: SaveArticleInput,
+): Promise<AdminArticleView | null> {
+  const db = getClient();
+  const id = normalizeArticleId(idInput);
+  const article = normalizeSaveArticleInput(input);
+  if (!db || !id || !article) return null;
+  try {
+    await ensureSchema(db);
+    const existing = await getAdminArticleById(db, id);
+    if (!existing) return null;
+    const now = Date.now();
+    const publishedAt =
+      article.status === "published"
+        ? existing.status === "published" && existing.publishedAt
+          ? existing.publishedAt
+          : now
+        : null;
+    const statements = [
+      {
+        sql: `UPDATE articles
+              SET kind = ?, slug = ?, status = ?, tags = ?, author_login = ?,
+                  published_at = ?, updated_at = ?, source = 'admin'
+              WHERE id = ?`,
+        args: [
+          article.kind,
+          article.slug,
+          article.status,
+          JSON.stringify(article.tags),
+          article.authorLogin,
+          publishedAt,
+          now,
+          id,
+        ],
+      },
+      { sql: `DELETE FROM article_translations WHERE article_id = ?`, args: [id] },
+      ...ARTICLE_LOCALES.flatMap((locale) => {
+        const translation = article.translations[locale];
+        return translation
+          ? [
+              {
+                sql: `INSERT INTO article_translations
+                        (article_id, locale, title, description, body)
+                      VALUES (?, ?, ?, ?, ?)`,
+                args: [id, locale, translation.title, translation.description, translation.body],
+              },
+            ]
+          : [];
+      }),
+    ];
+    await db.batch(statements, "write");
+    return getAdminArticleById(db, id);
+  } catch (e) {
+    console.error("updateAdminArticle failed:", e);
+    return null;
+  }
+}
+
+export async function listPublishedArticles(
+  kind: ArticleKind,
+  locale: ArticleLocale,
+): Promise<PublicArticleMeta[]> {
+  const db = getClient();
+  if (!db || !isArticleKind(kind) || !articleLocale(locale)) return [];
+  try {
+    await ensureSchema(db);
+    return (await selectAdminArticles(db, { kind, publishedOnly: true }))
+      .map((article) => toPublicArticleMeta(article, locale))
+      .filter((article): article is PublicArticleMeta => article !== null)
+      .sort((a, b) => (a.date < b.date ? 1 : -1));
+  } catch (e) {
+    console.error("listPublishedArticles failed:", e);
+    return [];
+  }
+}
+
+export async function getPublishedArticle(
+  kind: ArticleKind,
+  slugInput: string,
+  locale: ArticleLocale,
+): Promise<PublicArticle | null> {
+  const db = getClient();
+  const slug = normalizeArticleSlug(slugInput);
+  if (!db || !isArticleKind(kind) || !slug || !articleLocale(locale)) return null;
+  try {
+    await ensureSchema(db);
+    const article = (await selectAdminArticles(db, {
+      kind,
+      slug,
+      publishedOnly: true,
+    }))[0];
+    return article ? toPublicArticle(article, locale) : null;
+  } catch (e) {
+    console.error("getPublishedArticle failed:", e);
+    return null;
+  }
+}
+
+export async function getPublishedArticleById(
+  idInput: string,
+  locale: ArticleLocale = "en",
+): Promise<PublicArticle | null> {
+  const db = getClient();
+  const id = normalizeArticleId(idInput);
+  if (!db || !id || !articleLocale(locale)) return null;
+  try {
+    await ensureSchema(db);
+    const article = (await selectAdminArticles(db, { id, publishedOnly: true }))[0];
+    return article ? toPublicArticle(article, locale) : null;
+  } catch (e) {
+    console.error("getPublishedArticleById failed:", e);
+    return null;
+  }
+}
+
+export function legacyBlogArticleId(slugInput: string): string {
+  const slug = normalizeArticleSlug(slugInput) ?? "invalid";
+  const hash = createHash("sha256").update("legacy-blog:").update(slug).digest("hex");
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-${hash.slice(12, 16)}-${hash.slice(16, 20)}-${hash.slice(20, 32)}`;
+}
+
+function timestampFromIso(value: string | undefined): number | null {
+  if (!value) return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+export async function upsertLegacyBlogArticle(input: LegacyBlogArticleInput): Promise<void> {
+  const db = getClient();
+  const slug = normalizeArticleSlug(input.slug);
+  const publishedAt = timestampFromIso(input.date);
+  const updatedAt = timestampFromIso(input.updated) ?? publishedAt;
+  if (!db || !slug || !publishedAt || !updatedAt || !Array.isArray(input.tags)) return;
+  const translations: ArticleTranslationMap = {};
+  for (const locale of ARTICLE_LOCALES) {
+    const translation = input.translations[locale];
+    if (!translation) continue;
+    const normalized = normalizeArticleTranslation(
+      translation.title,
+      translation.description,
+      translation.body,
+    );
+    if (!normalized) return;
+    translations[locale] = normalized;
+  }
+  if (Object.keys(translations).length === 0) return;
+
+  const id = legacyBlogArticleId(slug);
+  const tags = normalizeArticleTags(input.tags);
+  try {
+    await ensureSchema(db);
+    const statements = [
+      {
+        sql: `INSERT INTO articles
+                (id, kind, slug, status, tags, author_login, published_at,
+                 created_at, updated_at, source)
+              VALUES (?, 'blog', ?, 'published', ?, 'ghsphere', ?, ?, ?, 'legacy')
+              ON CONFLICT(slug) DO UPDATE SET
+                kind = excluded.kind,
+                status = excluded.status,
+                tags = excluded.tags,
+                author_login = excluded.author_login,
+                published_at = excluded.published_at,
+                updated_at = excluded.updated_at
+              WHERE articles.source = 'legacy'`,
+        args: [id, slug, JSON.stringify(tags), publishedAt, publishedAt, updatedAt],
+      },
+      ...ARTICLE_LOCALES.flatMap((locale) => {
+        const translation = translations[locale];
+        return translation
+          ? [
+              {
+                sql: `INSERT INTO article_translations
+                        (article_id, locale, title, description, body)
+                      SELECT id, ?, ?, ?, ?
+                      FROM articles
+                      WHERE slug = ? AND source = 'legacy'
+                      ON CONFLICT(article_id, locale) DO UPDATE SET
+                        title = excluded.title,
+                        description = excluded.description,
+                        body = excluded.body`,
+                args: [
+                  locale,
+                  translation.title,
+                  translation.description,
+                  translation.body,
+                  slug,
+                ],
+              },
+            ]
+          : [];
+      }),
+    ];
+    await db.batch(statements, "write");
+  } catch (e) {
+    console.error("upsertLegacyBlogArticle failed:", e);
+  }
+}
+
+export async function getArticleComments(
+  articleIdInput: string,
+  limit = 24,
+): Promise<ArticleComment[]> {
+  const db = getClient();
+  const articleId = normalizeArticleId(articleIdInput);
+  if (!db || !articleId) return [];
+  try {
+    await ensureSchema(db);
+    const res = await db.execute({
+      sql: `SELECT id, article_id, author_github_id, author_login, author_avatar_url, body, created_at
+            FROM (
+              SELECT c.rowid AS sort_rowid, c.id, c.article_id, c.author_github_id,
+                     c.author_login, c.author_avatar_url, c.body, c.created_at
+              FROM article_comments AS c
+              INNER JOIN articles AS a ON a.id = c.article_id
+              WHERE c.article_id = ? AND c.hidden = 0 AND a.status = 'published'
+              ORDER BY c.created_at DESC, c.rowid DESC
+              LIMIT ?
+            )
+            ORDER BY created_at ASC, sort_rowid ASC`,
+      args: [articleId, Math.max(1, Math.min(100, limit))],
+    });
+    return res.rows.map((row): ArticleComment => ({
+      id: String(row.id),
+      articleId: String(row.article_id),
+      author: {
+        githubId: Number(row.author_github_id),
+        login: String(row.author_login),
+        avatarUrl: typeof row.author_avatar_url === "string" ? row.author_avatar_url : null,
+      },
+      body: String(row.body),
+      createdAt: Number(row.created_at),
+    }));
+  } catch (e) {
+    console.error("getArticleComments failed:", e);
+    return [];
+  }
+}
+
+export async function createArticleComment(
+  input: CreateArticleCommentInput,
+): Promise<ArticleComment | null> {
+  const db = getClient();
+  const articleId = normalizeArticleId(input.articleId);
+  const authorLogin = normalizeGitHubUsername(input.authorLogin);
+  const body = normalizeArticleCommentText(input.body);
+  const authorGithubId = input.authorGithubId;
+  if (
+    !db ||
+    !articleId ||
+    !authorLogin ||
+    !body ||
+    !Number.isSafeInteger(authorGithubId) ||
+    authorGithubId <= 0
+  ) {
+    return null;
+  }
+  const avatarUrl =
+    typeof input.authorAvatarUrl === "string" && input.authorAvatarUrl.trim().length <= 2048
+      ? input.authorAvatarUrl.trim() || null
+      : null;
+  const id = randomUUID();
+  const createdAt = Date.now();
+  try {
+    await ensureSchema(db);
+    const result = await db.execute({
+      sql: `INSERT INTO article_comments
+              (id, article_id, author_github_id, author_login, author_avatar_url, body, created_at)
+            SELECT ?, ?, ?, ?, ?, ?, ?
+            WHERE EXISTS (
+              SELECT 1 FROM articles WHERE id = ? AND status = 'published'
+            )`,
+      args: [id, articleId, authorGithubId, authorLogin, avatarUrl, body, createdAt, articleId],
+    });
+    if (Number(result.rowsAffected ?? 0) === 0) return null;
+    return {
+      id,
+      articleId,
+      author: { githubId: authorGithubId, login: authorLogin, avatarUrl },
+      body,
+      createdAt,
+    };
+  } catch (e) {
+    console.error("createArticleComment failed:", e);
+    return null;
   }
 }
 
