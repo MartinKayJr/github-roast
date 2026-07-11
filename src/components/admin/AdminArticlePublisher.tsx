@@ -11,6 +11,7 @@ import {
   ShieldAlert,
   X,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
 
 type ArticleKind = "blog" | "vulnerability";
@@ -89,23 +90,6 @@ function titleFor(article: AdminArticleView) {
   return article.translations.zh?.title || article.translations.en?.title || article.slug;
 }
 
-function formatDate(value: number | null) {
-  return value ? new Date(value).toLocaleString() : "Not published";
-}
-
-function errorMessage(error: string) {
-  switch (error) {
-    case "duplicate_slug":
-      return "This slug is already used by another article.";
-    case "invalid_request":
-      return "Check the slug and article content before saving.";
-    case "save_failed":
-      return "The article could not be saved. Please try again.";
-    default:
-      return error;
-  }
-}
-
 async function responseJson(response: Response): Promise<ArticleResponse> {
   const data = (await response.json().catch(() => ({}))) as ArticleResponse;
   if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
@@ -113,6 +97,7 @@ async function responseJson(response: Response): Promise<ArticleResponse> {
 }
 
 export function AdminArticlePublisher() {
+  const t = useTranslations("admin.articlePublisher");
   const [articles, setArticles] = useState<AdminArticleView[]>([]);
   const [form, setForm] = useState<ArticleForm>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -121,6 +106,23 @@ export function AdminArticlePublisher() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  function formatDate(value: number | null) {
+    return value ? new Date(value).toLocaleString() : t("notPublished");
+  }
+
+  const errorMessage = useCallback((message: string) => {
+    switch (message) {
+      case "duplicate_slug":
+        return t("errors.duplicateSlug");
+      case "invalid_request":
+        return t("errors.invalidRequest");
+      case "save_failed":
+        return t("errors.saveFailed");
+      default:
+        return message;
+    }
+  }, [t]);
 
   const loadArticles = useCallback(async () => {
     setLoading(true);
@@ -135,7 +137,7 @@ export function AdminArticlePublisher() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [errorMessage]);
 
   useEffect(() => {
     let cancelled = false;
@@ -196,7 +198,7 @@ export function AdminArticlePublisher() {
       ]);
       setEditingId(data.article.id);
       setForm(toForm(data.article));
-      setNotice(data.article.status === "published" ? "Article published." : "Draft saved.");
+      setNotice(data.article.status === "published" ? t("publishedNotice") : t("draftSavedNotice"));
     } catch (saveError) {
       setError(errorMessage(saveError instanceof Error ? saveError.message : "save_failed"));
     } finally {
@@ -208,9 +210,9 @@ export function AdminArticlePublisher() {
     <section className="mt-5 rounded-lg border border-white/10 bg-white/[0.03] p-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h2 className="text-base font-bold text-zinc-100">Article publisher</h2>
+          <h2 className="text-base font-bold text-zinc-100">{t("title")}</h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-zinc-400">
-            Create and maintain research posts and vulnerability notices.
+            {t("body")}
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -220,14 +222,14 @@ export function AdminArticlePublisher() {
             className="inline-flex items-center justify-center gap-2 rounded-lg border border-orange-300/20 bg-orange-500/10 px-3 py-2 text-sm font-semibold text-orange-200 transition hover:bg-orange-500/15"
           >
             <FilePlus2 className="h-4 w-4" aria-hidden="true" />
-            New article
+            {t("newArticle")}
           </button>
           <button
             type="button"
             onClick={() => void loadArticles()}
             disabled={loading}
-            title="Refresh article list"
-            aria-label="Refresh article list"
+            title={t("refresh")}
+            aria-label={t("refresh")}
             className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 text-zinc-300 transition hover:bg-white/5 disabled:cursor-wait disabled:opacity-60"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} aria-hidden="true" />
@@ -249,15 +251,15 @@ export function AdminArticlePublisher() {
       <div className="mt-5 grid gap-6 border-t border-white/10 pt-5 lg:grid-cols-[minmax(15rem,0.72fr)_minmax(0,1.28fr)]">
         <aside className="min-w-0 lg:border-r lg:border-white/10 lg:pr-6">
           <label className="block text-xs font-semibold text-zinc-400">
-            Article type
+            {t("articleType")}
             <select
               value={filter}
               onChange={(event) => setFilter(event.target.value as ArticleKind | "all")}
               className="mt-2 h-10 w-full rounded-lg border border-white/10 bg-input px-3 text-sm text-zinc-100 outline-none transition focus:border-orange-300/30 focus:ring-2 focus:ring-orange-500/20"
             >
-              <option value="all">All articles</option>
-              <option value="blog">Research</option>
-              <option value="vulnerability">Vulnerabilities</option>
+              <option value="all">{t("filterAll")}</option>
+              <option value="blog">{t("kind.blog")}</option>
+              <option value="vulnerability">{t("kind.vulnerability")}</option>
             </select>
           </label>
 
@@ -265,10 +267,10 @@ export function AdminArticlePublisher() {
             {loading ? (
               <div className="flex items-center gap-2 py-6 text-sm text-zinc-500">
                 <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
-                Loading articles
+                {t("loading")}
               </div>
             ) : visibleArticles.length === 0 ? (
-              <p className="py-6 text-sm text-zinc-500">No articles in this view.</p>
+              <p className="py-6 text-sm text-zinc-500">{t("empty")}</p>
             ) : (
               visibleArticles.map((article) => {
                 const selected = article.id === editingId;
@@ -280,7 +282,7 @@ export function AdminArticlePublisher() {
                     key={article.id}
                     type="button"
                     onClick={() => editArticle(article)}
-                    title={`Edit ${article.slug}`}
+                    title={t("editArticle", { slug: article.slug })}
                     className={`w-full rounded-lg border p-3 text-left transition ${
                       selected
                         ? "border-orange-300/30 bg-orange-500/10"
@@ -300,14 +302,14 @@ export function AdminArticlePublisher() {
                             {titleFor(article)}
                           </span>
                           <span className="rounded-md border border-white/10 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400">
-                            {article.status}
+                            {t(`status.${article.status}`)}
                           </span>
                         </div>
                         <p className="mt-1 break-all text-xs text-zinc-500">{article.slug}</p>
                         <p className="mt-2 text-[11px] text-zinc-500">
                           {article.status === "published"
                             ? formatDate(article.publishedAt)
-                            : `Updated ${formatDate(article.updatedAt)}`}
+                            : t("updatedAt", { date: formatDate(article.updatedAt) })}
                         </p>
                       </div>
                       <Pencil className="h-3.5 w-3.5 shrink-0 text-zinc-500" aria-hidden="true" />
@@ -322,14 +324,14 @@ export function AdminArticlePublisher() {
         <form onSubmit={saveArticle} className="min-w-0">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-sm font-bold text-zinc-100">
-              {editingId ? "Edit article" : "New article"}
+              {editingId ? t("editArticleHeading") : t("newArticleHeading")}
             </h3>
             {editingId && (
               <button
                 type="button"
                 onClick={startNewArticle}
-                title="Create a new article"
-                aria-label="Create a new article"
+                title={t("createNew")}
+                aria-label={t("createNew")}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-zinc-400 transition hover:bg-white/5 hover:text-zinc-200"
               >
                 <X className="h-4 w-4" aria-hidden="true" />
@@ -340,7 +342,7 @@ export function AdminArticlePublisher() {
           <fieldset disabled={saving} className="mt-4 grid gap-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <span className="block text-xs font-semibold text-zinc-400">Content type</span>
+                <span className="block text-xs font-semibold text-zinc-400">{t("contentType")}</span>
                 <div className="mt-2 grid grid-cols-2 rounded-lg border border-white/10 p-1">
                   {(["blog", "vulnerability"] as const).map((kind) => (
                     <button
@@ -353,26 +355,26 @@ export function AdminArticlePublisher() {
                           : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
                       }`}
                     >
-                      {kind === "blog" ? "Research" : "Vulnerability"}
+                      {t(`kind.${kind}`)}
                     </button>
                   ))}
                 </div>
               </div>
               <div>
-                <span className="block text-xs font-semibold text-zinc-400">Status</span>
+                <span className="block text-xs font-semibold text-zinc-400">{t("statusLabel")}</span>
                 <div className="mt-2 grid grid-cols-2 rounded-lg border border-white/10 p-1">
                   {(["draft", "published"] as const).map((status) => (
                     <button
                       key={status}
                       type="button"
                       onClick={() => setForm((current) => ({ ...current, status }))}
-                      className={`rounded-md px-3 py-2 text-sm font-semibold capitalize transition ${
+                      className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
                         form.status === status
                           ? "bg-orange-500/10 text-orange-200"
                           : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
                       }`}
                     >
-                      {status}
+                      {t(`status.${status}`)}
                     </button>
                   ))}
                 </div>
@@ -381,13 +383,13 @@ export function AdminArticlePublisher() {
 
             <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)]">
               <label className="block text-xs font-semibold text-zinc-400">
-                Slug
+                {t("slug")}
                 <Input
                   value={form.slug}
                   onChange={(event) =>
                     setForm((current) => ({ ...current, slug: event.target.value.toLowerCase() }))
                   }
-                  placeholder="article-slug"
+                  placeholder={t("slugPlaceholder")}
                   autoCapitalize="off"
                   autoCorrect="off"
                   spellCheck={false}
@@ -396,51 +398,51 @@ export function AdminArticlePublisher() {
                 />
               </label>
               <label className="block text-xs font-semibold text-zinc-400">
-                Tags
+                {t("tags")}
                 <Input
                   value={form.tags}
                   onChange={(event) => setForm((current) => ({ ...current, tags: event.target.value }))}
-                  placeholder="security, research"
+                  placeholder={t("tagsPlaceholder")}
                   className="mt-2 border-white/10 bg-input text-zinc-100"
                 />
               </label>
             </div>
 
             <div className="border-t border-white/10 pt-4">
-              <h4 className="text-sm font-bold text-zinc-100">Chinese</h4>
+              <h4 className="text-sm font-bold text-zinc-100">{t("localeZh")}</h4>
               <div className="mt-3 grid gap-4">
                 <label className="block text-xs font-semibold text-zinc-400">
-                  Title
+                  {t("fieldTitle")}
                   <Input
                     value={form.titleZh}
                     onChange={(event) =>
                       setForm((current) => ({ ...current, titleZh: event.target.value }))
                     }
-                    placeholder="文章标题"
+                    placeholder={t("zhTitlePlaceholder")}
                     className="mt-2 border-white/10 bg-input text-zinc-100"
                   />
                 </label>
                 <label className="block text-xs font-semibold text-zinc-400">
-                  Summary
+                  {t("summary")}
                   <textarea
                     value={form.descriptionZh}
                     onChange={(event) =>
                       setForm((current) => ({ ...current, descriptionZh: event.target.value }))
                     }
                     rows={3}
-                    placeholder="文章摘要"
+                    placeholder={t("zhSummaryPlaceholder")}
                     className="mt-2 block w-full resize-y rounded-lg border border-white/10 bg-input px-3 py-2 text-sm leading-6 text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-orange-300/30 focus:ring-2 focus:ring-orange-500/20"
                   />
                 </label>
                 <label className="block text-xs font-semibold text-zinc-400">
-                  Markdown body
+                  {t("markdownBody")}
                   <textarea
                     value={form.bodyZh}
                     onChange={(event) =>
                       setForm((current) => ({ ...current, bodyZh: event.target.value }))
                     }
                     rows={12}
-                    placeholder="# 正文"
+                    placeholder={t("zhBodyPlaceholder")}
                     className="mt-2 block min-h-52 w-full resize-y rounded-lg border border-white/10 bg-input px-3 py-2 font-mono text-sm leading-6 text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-orange-300/30 focus:ring-2 focus:ring-orange-500/20"
                   />
                 </label>
@@ -448,40 +450,40 @@ export function AdminArticlePublisher() {
             </div>
 
             <div className="border-t border-white/10 pt-4">
-              <h4 className="text-sm font-bold text-zinc-100">English</h4>
+              <h4 className="text-sm font-bold text-zinc-100">{t("localeEn")}</h4>
               <div className="mt-3 grid gap-4">
                 <label className="block text-xs font-semibold text-zinc-400">
-                  Title
+                  {t("fieldTitle")}
                   <Input
                     value={form.titleEn}
                     onChange={(event) =>
                       setForm((current) => ({ ...current, titleEn: event.target.value }))
                     }
-                    placeholder="Article title"
+                    placeholder={t("enTitlePlaceholder")}
                     className="mt-2 border-white/10 bg-input text-zinc-100"
                   />
                 </label>
                 <label className="block text-xs font-semibold text-zinc-400">
-                  Summary
+                  {t("summary")}
                   <textarea
                     value={form.descriptionEn}
                     onChange={(event) =>
                       setForm((current) => ({ ...current, descriptionEn: event.target.value }))
                     }
                     rows={3}
-                    placeholder="Short article summary"
+                    placeholder={t("enSummaryPlaceholder")}
                     className="mt-2 block w-full resize-y rounded-lg border border-white/10 bg-input px-3 py-2 text-sm leading-6 text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-orange-300/30 focus:ring-2 focus:ring-orange-500/20"
                   />
                 </label>
                 <label className="block text-xs font-semibold text-zinc-400">
-                  Markdown body
+                  {t("markdownBody")}
                   <textarea
                     value={form.bodyEn}
                     onChange={(event) =>
                       setForm((current) => ({ ...current, bodyEn: event.target.value }))
                     }
                     rows={12}
-                    placeholder="# Article body"
+                    placeholder={t("enBodyPlaceholder")}
                     className="mt-2 block min-h-52 w-full resize-y rounded-lg border border-white/10 bg-input px-3 py-2 font-mono text-sm leading-6 text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-orange-300/30 focus:ring-2 focus:ring-orange-500/20"
                   />
                 </label>
@@ -500,7 +502,7 @@ export function AdminArticlePublisher() {
               ) : (
                 <Save className="h-4 w-4" aria-hidden="true" />
               )}
-              {form.status === "published" ? "Publish article" : "Save draft"}
+              {form.status === "published" ? t("publish") : t("saveDraft")}
             </button>
           </div>
         </form>
